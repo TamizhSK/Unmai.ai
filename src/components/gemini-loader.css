@@ -1,0 +1,36 @@
+.gemini-loader {
+    width: 60px;
+    height: 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.gemini-loader .bar {
+    width: 8px;
+    height: 100%;
+    background-color: hsl(var(--primary));
+    border-radius: 4px;
+    animation: bar-animation 1.2s infinite ease-in-out;
+}
+
+.gemini-loader .bar:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.gemini-loader .bar:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.gemini-loader .bar:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes bar-animation {
+    0%, 40%, 100% {
+        transform: scaleY(0.4);
+    }
+    20% {
+        transform: scaleY(1);
+    }
+}
