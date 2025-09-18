@@ -8,8 +8,8 @@
  * - ProvideEducationalInsightsOutput - The return type for the provideEducationalInsights function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {z} from 'zod';
+import {generativeModel} from '@/ai/genkit';
 
 const ProvideEducationalInsightsInputSchema = z.object({
   text: z.string().describe('The text content to analyze for educational insights.'),
@@ -32,31 +32,36 @@ export type ProvideEducationalInsightsOutput = z.infer<
 export async function provideEducationalInsights(
   input: ProvideEducationalInsightsInput
 ): Promise<ProvideEducationalInsightsOutput> {
-  return provideEducationalInsightsFlow(input);
-}
-
-const prompt = ai.definePrompt({
-  name: 'provideEducationalInsightsPrompt',
-  input: {schema: ProvideEducationalInsightsInputSchema},
-  output: {schema: ProvideEducationalInsightsOutputSchema},
-  prompt: `You are an AI assistant designed to provide educational insights and analysis reports about the type and means of misleading content.
+  const prompt = `You are an AI assistant designed to provide educational insights and analysis reports about the type and means of misleading content.
 
   Analyze the following text and provide insights on the potential misleading indicators, such as emotional language, lack of credible sources, or inconsistencies with known facts. Explain the underlying reasons a piece of content might be misleading.
 
-  Text: {{{text}}}
+  Text: ${input.text}
 
-  Provide a detailed analysis report:
-  `,
-});
+  Provide a detailed analysis report in a JSON object with an "insights" field.
+  `;
 
-const provideEducationalInsightsFlow = ai.defineFlow(
-  {
-    name: 'provideEducationalInsightsFlow',
-    inputSchema: ProvideEducationalInsightsInputSchema,
-    outputSchema: ProvideEducationalInsightsOutputSchema,
-  },
-  async input => {
-    const {output} = await prompt(input);
-    return output!;
+  const result = await generativeModel.generateContent({
+    contents: [{role: 'user', parts: [{text: prompt}]}],
+    generationConfig: {
+      responseMimeType: 'application/json',
+    },
+  });
+
+  const response = result.response;
+  const responseText = response.candidates[0].content.parts[0].text;
+
+  if (!responseText) {
+    throw new Error('No response text received from the model');
   }
-);
+
+  try {
+    const parsedJson = JSON.parse(responseText);
+    return ProvideEducationalInsightsOutputSchema.parse(parsedJson);
+  } catch (error) {
+    console.error('Error parsing or validating model output:', error);
+    return {
+      insights: 'The model returned a response that was not in the expected JSON format.',
+    };
+  }
+}

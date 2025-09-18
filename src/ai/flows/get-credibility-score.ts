@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview AI agent to get a credibility score for a given piece of content.
@@ -8,9 +7,9 @@
  * - GetCredibilityScoreOutput - The return type for the getCredibilityScore function.
  */
 
-import {ai} from '@/ai/genkit';
-import {GenerateRequest} from 'genkit';
-import {z} from 'genkit';
+import {z} from 'zod';
+import {generativeModel, generativeVisionModel} from '@/ai/genkit';
+import {Part} from '@google-cloud/vertexai';
 
 const GetCredibilityScoreInputSchema = z.object({
   content: z
@@ -47,89 +46,84 @@ export type GetCredibilityScoreOutput = z.infer<
 export async function getCredibilityScore(
   input: GetCredibilityScoreInput
 ): Promise<GetCredibilityScoreOutput> {
-  return getCredibilityScoreFlow(input);
-}
+  let source: string;
+  if (input.contentType === 'url') {
+    try {
+      const url = new URL(input.content);
+      source = url.hostname;
+    } catch (e) {
+      source = 'Invalid URL';
+    }
+  } else if (input.contentType === 'text') {
+    source = 'User Text';
+  } else {
+    source = 'Uploaded Image';
+  }
 
-const textPrompt = ai.definePrompt({
-  name: 'getCredibilityScoreTextPrompt',
-  input: {
-    schema: z.object({
-      contentType: z.enum(['text', 'url']),
-      content: z.string(),
-    }),
-  },
-  output: {schema: GetCredibilityScoreOutputSchema},
-  model: 'googleai/gemini-1.5-flash-latest',
-  prompt: `You are an AI assistant designed to assess the credibility of content.
+  const textPrompt = `You are an AI assistant designed to assess the credibility of content.
 
-  Analyze the following content. Identify the main claim, and provide a credibility score, a very brief factual summary of the assessment (max 2 sentences), and any misleading indicators. The content type is '{{{contentType}}}'.
+  Analyze the following content. Identify the main claim, and provide a credibility score, a very brief factual summary of the assessment (max 2 sentences), and any misleading indicators. The content type is '${input.contentType}'.
 
-  Content: {{{content}}}
+  Content: ${input.content}
 
   If the content is a URL, extract and return the domain as the 'source'.
   If the content is plain text, return 'User Text' as the 'source'.
 
   Respond in a structured JSON format.
-  `,
-});
+  `;
 
-const imagePrompt = ai.definePrompt({
-  name: 'getCredibilityScoreImagePrompt',
-  input: {
-    schema: z.object({
-      contentType: z.literal('image'),
-      content: z.string(),
-    }),
-  },
-  output: {schema: GetCredibilityScoreOutputSchema},
-  model: 'googleai/gemini-1.5-flash-latest',
-  prompt: `You are an AI assistant designed to assess the credibility of images.
+  const imagePrompt = `You are an AI assistant designed to assess the credibility of images.
 
   Analyze the following image. Identify its main claim or message, and provide a credibility score, a very brief factual summary of your assessment (max 2 sentences), and any misleading indicators.
-
-  Image:
-  {{media url=content}}
 
   Return 'Uploaded Image' as the 'source'.
   
   Respond in a structured JSON format.
-  `,
-});
+  `;
 
-const getCredibilityScoreFlow = ai.defineFlow(
-  {
-    name: 'getCredibilityScoreFlow',
-    inputSchema: GetCredibilityScoreInputSchema,
-    outputSchema: GetCredibilityScoreOutputSchema,
-  },
-  async input => {
-    let output;
-    if (input.contentType === 'image') {
-      const {output: imageOutput} = await imagePrompt(input);
-      output = imageOutput;
-    } else {
-      const {output: textOutput} = await textPrompt(input);
-      output = textOutput;
-    }
-
-    if (!output) {
-      throw new Error("Analysis failed to produce an output.");
-    }
-    
-    // Ensure source is set based on content type
-    if (input.contentType === 'url') {
-      try {
-        const url = new URL(input.content);
-        output.source = url.hostname;
-      } catch (e) {
-        output.source = 'Invalid URL';
-      }
-    } else if (input.contentType === 'text') {
-        output.source = 'User Text';
-    } else if (input.contentType === 'image') {
-        output.source = 'Uploaded Image';
-    }
-
-    return output;
+  let result;
+  if (input.contentType === 'image') {
+    const [mimeType, base64Data] = input.content.split(';base64,');
+    const imagePart: Part = {
+      inlineData: {
+        mimeType: mimeType.replace('data:', ''),
+        data: base64Data,
+      },
+    };
+    result = await generativeVisionModel.generateContent({
+      contents: [{role: 'user', parts: [imagePart, {text: imagePrompt}]}],
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
+    });
+  } else {
+    result = await generativeModel.generateContent({
+      contents: [{role: 'user', parts: [{text: textPrompt}]}],
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
+    });
   }
-);
+
+  const response = result.response;
+  const responseText = response.candidates[0].content.parts[0].text;
+
+  if (!responseText) {
+    throw new Error('No response text received from the model');
+  }
+
+  try {
+    const parsedJson = JSON.parse(responseText);
+    const validatedOutput = GetCredibilityScoreOutputSchema.parse(parsedJson);
+    validatedOutput.source = source; // Ensure the source is correctly set
+    return validatedOutput;
+  } catch (error) {
+    console.error('Error parsing or validating model output:', error);
+    return {
+      credibilityScore: 0,
+      assessmentSummary: 'The model returned a response that was not in the expected JSON format.',
+      misleadingIndicators: [],
+      source: source,
+    };
+  }
+}
