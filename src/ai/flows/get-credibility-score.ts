@@ -66,20 +66,43 @@ export async function getCredibilityScore(
 
   Content: ${input.content}
 
-  If the content is a URL, extract and return the domain as the 'source'.
-  If the content is plain text, return 'User Text' as the 'source'.
+  Your response must be in the following JSON format:
 
-  Respond in a structured JSON format.
-  `;
+  {
+    "credibilityScore": number,     // A score from 0-100 indicating credibility
+    "assessmentSummary": string,    // Brief factual summary (1-2 sentences)
+    "misleadingIndicators": string[],  // Array of specific misleading elements found
+    "source": string                // For URLs: domain name, for text: "User Text"
+  }
+
+  Example response:
+  {
+    "credibilityScore": 75,
+    "assessmentSummary": "The article presents factual information with credible sources but includes some emotional language.",
+    "misleadingIndicators": ["Use of emotional language", "Missing context for key claims"],
+    "source": "example.com"
+  }`;
 
   const imagePrompt = `You are an AI assistant designed to assess the credibility of images.
 
   Analyze the following image. Identify its main claim or message, and provide a credibility score, a very brief factual summary of your assessment (max 2 sentences), and any misleading indicators.
 
-  Return 'Uploaded Image' as the 'source'.
-  
-  Respond in a structured JSON format.
-  `;
+  Your response must be in the following JSON format:
+
+  {
+    "credibilityScore": number,     // A score from 0-100 indicating credibility
+    "assessmentSummary": string,    // Brief factual summary (1-2 sentences)
+    "misleadingIndicators": string[],  // Array of specific manipulation or misleading elements
+    "source": string                // Should always be "Uploaded Image"
+  }
+
+  Example response:
+  {
+    "credibilityScore": 30,
+    "assessmentSummary": "The image shows signs of digital manipulation in lighting and shadows.",
+    "misleadingIndicators": ["Inconsistent lighting", "Unnatural shadows", "Blurred edges"],
+    "source": "Uploaded Image"
+  }`;
 
   let result;
   if (input.contentType === 'image') {
@@ -106,11 +129,18 @@ export async function getCredibilityScore(
   }
 
   const response = result.response;
+  
+  if (!response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+    throw new Error('Invalid or empty response received from the model');
+  }
+
   const responseText = response.candidates[0].content.parts[0].text;
 
-  if (!responseText) {
-    throw new Error('No response text received from the model');
-  }
+  // Clean up the response text by removing markdown code block markers if present
+  const cleanJson = responseText
+    .replace(/^```json\s*/, '')  // Remove opening ```json
+    .replace(/```\s*$/, '')      // Remove closing ```
+    .trim();                     // Remove any extra whitespace
 
   try {
     const parsedJson = JSON.parse(responseText);

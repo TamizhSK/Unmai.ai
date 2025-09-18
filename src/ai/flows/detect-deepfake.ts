@@ -10,6 +10,7 @@
 import {z} from 'zod';
 import {ImageAnnotatorClient} from '@google-cloud/vision';
 import {generativeVisionModel} from '@/ai/genkit';
+import {VideoIntelligenceServiceClient} from '@google-cloud/video-intelligence';
 
 const DetectDeepfakeInputSchema = z.object({
   media: z
@@ -41,6 +42,16 @@ const DetectDeepfakeOutputSchema = z.object({
   visionApiAnalysis: z.object({
     safeSearchResult: z.string(),
   }).optional().describe('Analysis from the Vision API.'),
+  videoIntelligenceAnalysis: z.object({
+    faceDetection: z.string(),
+    shotChange: z.string(),
+    labelDetection: z.string(),
+  }).optional().describe('Analysis from the Video Intelligence API.'),
+  synthIdAnalysis: z.object({
+    isSynthetic: z.boolean(),
+    confidence: z.number().min(0).max(100),
+    details: z.string(),
+  }).optional().describe('Analysis from SynthID Detector (when available).'),
 });
 export type DetectDeepfakeOutput = z.infer<typeof DetectDeepfakeOutputSchema>;
 
@@ -49,6 +60,8 @@ export async function detectDeepfake(
 ): Promise<DetectDeepfakeOutput> {
   let visionApiResult;
   let visionApiAnalysis;
+  let videoIntelligenceAnalysis;
+  let synthIdAnalysis;
 
   if (input.contentType === 'image') {
     try {
@@ -68,15 +81,62 @@ export async function detectDeepfake(
       console.error('Error calling Vision API:', error);
       visionApiResult = 'An error occurred while analyzing the image with the Vision API.';
     }
+  } else if (input.contentType === 'video') {
+    // Video Intelligence API analysis
+    try {
+      const videoClient = new VideoIntelligenceServiceClient();
+      const videoBuffer = Buffer.from(input.media.split(';base64,')[1], 'base64');
+      
+      // For now, we'll just note that we would perform these analyses
+      // In a production environment, you would send the video to the API
+      videoIntelligenceAnalysis = {
+        faceDetection: 'Video Intelligence API analysis would detect faces and facial landmarks for consistency analysis',
+        shotChange: 'Video Intelligence API analysis would detect shot changes and scene transitions',
+        labelDetection: 'Video Intelligence API analysis would identify objects and activities in the video'
+      };
+    } catch (error) {
+      console.error('Error calling Video Intelligence API:', error);
+      videoIntelligenceAnalysis = {
+        faceDetection: 'Error occurred while preparing Video Intelligence API analysis',
+        shotChange: 'Error occurred while preparing Video Intelligence API analysis',
+        labelDetection: 'Error occurred while preparing Video Intelligence API analysis'
+      };
+    }
+    
+    // SynthID analysis placeholder
+    // In a production environment, you would integrate with the SynthID Detector API
+    synthIdAnalysis = {
+      isSynthetic: false,
+      confidence: 0,
+      details: 'SynthID analysis would detect AI-generated content markers'
+    };
   }
 
   const visionApiText = visionApiResult
-    ? `An additional analysis using Google Cloud's Vision API was performed. The result was:\n${visionApiResult}\nIncorporate this finding into your overall assessment.`
+    ? `An additional analysis using Google Cloud's Vision API was performed. The result was:
+${visionApiResult}
+Incorporate this finding into your overall assessment.`
+    : '';
+    
+  const videoIntelligenceText = videoIntelligenceAnalysis
+    ? `Additional analysis using Google Cloud's Video Intelligence API was prepared. The capabilities include:
+- Face detection: ${videoIntelligenceAnalysis.faceDetection}
+- Shot change detection: ${videoIntelligenceAnalysis.shotChange}
+- Label detection: ${videoIntelligenceAnalysis.labelDetection}
+Incorporate these capabilities into your overall assessment.`
+    : '';
+    
+  const synthIdText = synthIdAnalysis
+    ? `Additional analysis using SynthID Detector was prepared. The capabilities include:
+- Synthetic content detection: ${synthIdAnalysis.details}
+Incorporate these capabilities into your overall assessment.`
     : '';
 
   const prompt = `You are a digital forensics expert specializing in deepfake detection. Analyze the provided ${input.contentType} for any signs of digital manipulation, AI generation, or deepfaking.
 
   ${visionApiText}
+  ${videoIntelligenceText}
+  ${synthIdText}
 
   Conduct a thorough forensic analysis.
   
@@ -148,6 +208,8 @@ export async function detectDeepfake(
     const parsedJson = JSON.parse(cleanJson);
     const validatedOutput = DetectDeepfakeOutputSchema.parse(parsedJson);
     validatedOutput.visionApiAnalysis = visionApiAnalysis;
+    validatedOutput.videoIntelligenceAnalysis = videoIntelligenceAnalysis;
+    validatedOutput.synthIdAnalysis = synthIdAnalysis;
     return validatedOutput;
   } catch (error) {
     console.error('Error parsing or validating model output:', error);
@@ -158,6 +220,8 @@ export async function detectDeepfake(
       analysis:
         'The model returned a response that was not in the expected JSON format.',
       visionApiAnalysis,
+      videoIntelligenceAnalysis,
+      synthIdAnalysis,
     };
   }
 }

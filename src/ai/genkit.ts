@@ -15,3 +15,16 @@ export const generativeModel = vertexAI.getGenerativeModel({
 export const generativeVisionModel = vertexAI.getGenerativeModel({
   model: visionModel,
 });
+
+// Instantiate grounded model for web grounding capabilities
+export const groundedModel = vertexAI.getGenerativeModel({
+  model: textModel,
+  generationConfig: {
+    responseMimeType: 'application/json',
+  },
+  tools: [{
+    googleSearchRetrieval: {
+      disableAttribution: false
+    }
+  }]
+});
