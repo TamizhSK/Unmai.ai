@@ -3,10 +3,15 @@
 import { useState, useRef, ChangeEvent, FormEvent, DragEvent, ClipboardEvent } from 'react';
 import { Textarea } from './ui/textarea';
 import { Button } from './ui/button';
-import { Paperclip, Send, X, Mic, Square, UploadCloud } from 'lucide-react';
+import { Paperclip, Send, X, Mic, Square, UploadCloud, Languages } from 'lucide-react';
 import Image from 'next/image';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -124,7 +129,7 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
       <form
         onSubmit={handleSubmit}
         onDragEnter={handleDragEnter}
-        className="relative rounded-xl bg-secondary/80 p-2 flex flex-col gap-2"
+        className="relative rounded-xl bg-background border p-2 flex flex-col gap-2"
       >
         {isDragging && (
           <div
@@ -162,94 +167,57 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
             </Button>
           </div>
         )}
-        <div className="flex items-end gap-2">
-          <div className="flex-1 flex flex-col gap-2">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onPaste={handlePaste}
-              placeholder="Analyze text, a URL, or paste/drop an image, video, or audio file..."
-              className="flex-1 resize-none bg-transparent border-0 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-0 self-center"
-              rows={1}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmit(e);
-                }
-              }}
-              disabled={disabled || isRecognizing}
-            />
-            <div className="flex items-center gap-2">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={disabled || isRecognizing}
-                    className='flex-shrink-0'
-                  >
-                    <Paperclip />
-                    <span className="sr-only">Attach file</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Attach file (image, video, or audio)</p>
-                </TooltipContent>
-              </Tooltip>
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                onChange={handleFileChange}
-                accept="image/*,video/*,audio/*"
-              />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant={isRecognizing ? "destructive" : "ghost"}
-                    size="icon"
-                    onClick={handleMicClick}
-                    disabled={disabled}
-                    className='flex-shrink-0'
-                  >
-                    {isRecognizing ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-                    <span className="sr-only">{isRecognizing ? 'Stop recognition' : 'Start recognition'}</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{isRecognizing ? 'Stop voice recognition' : 'Start voice recognition'}</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 items-end">
-            <div className="flex items-center gap-2">
-              <Select value={selectedLanguage} onValueChange={onLanguageChange}>
-                <SelectTrigger className="w-fit flex-shrink-0">
-                  <SelectValue placeholder="Language" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en-US">English</SelectItem>
-                  <SelectItem value="es-ES">Español</SelectItem>
-                  <SelectItem value="fr-FR">Français</SelectItem>
-                </SelectContent>
-              </Select>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button type="submit" size="icon" disabled={disabled || isRecognizing || (!input.trim() && !file)} className='flex-shrink-0'>
-                    <Send />
-                    <span className="sr-only">Submit</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Submit for analysis</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" disabled={disabled || isRecognizing}>
+                <Paperclip />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                Attach File
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleMicClick}>
+                {isRecognizing ? 'Stop Recognition' : 'Start Recognition'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={handleFileChange}
+            accept="image/*,video/*,audio/*"
+          />
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onPaste={handlePaste}
+            placeholder="Analyze text, a URL, or paste/drop an image, video, or audio file..."
+            className="flex-1 resize-none bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+            rows={1}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit(e);
+              }
+            }}
+            disabled={disabled || isRecognizing}
+          />
+          <Select value={selectedLanguage} onValueChange={onLanguageChange}>
+            <SelectTrigger className="w-fit">
+              <Languages className="h-5 w-5" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="en-US">English</SelectItem>
+              <SelectItem value="es-ES">Español</SelectItem>
+              <SelectItem value="fr-FR">Français</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button type="submit" size="icon" disabled={disabled || isRecognizing || (!input.trim() && !file)}>
+            <Send />
+          </Button>
         </div>
       </form>
     </TooltipProvider>

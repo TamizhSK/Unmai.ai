@@ -181,16 +181,36 @@ export function UnifiedAnalysisClient() {
       <ScrollArea className="flex-1 pr-4" ref={scrollAreaRef}>
         <div className="space-y-6 pb-4">
           {messages.length === 0 && !isLoading && (
-              <div className="text-center flex flex-col justify-center h-full pt-24">
-                  <div>
-                      <h1 className="font-headline text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl text-primary">
-                          Verity AI
-                      </h1>
-                      <p className="mx-auto mt-4 max-w-[700px] text-muted-foreground md:text-xl">
-                          How can I help you analyze content today?
-                      </p>
-                  </div>
+            <div className="flex flex-col justify-center items-center h-full pt-12">
+              <div className="text-center">
+                <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl text-google-blue">
+                  Verity AI
+                </h1>
+                <p className="mx-auto mt-4 max-w-[700px] text-muted-foreground md:text-xl">
+                  How can I help you analyze content today?
+                </p>
               </div>
+              <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="p-4 border rounded-lg hover:shadow-lg transition-shadow">
+                  <h3 className="font-semibold">Fact-check a claim</h3>
+                  <p className="text-sm text-muted-foreground">
+                    "Is it true that..."
+                  </p>
+                </div>
+                <div className="p-4 border rounded-lg hover:shadow-lg transition-shadow">
+                  <h3 className="font-semibold">Analyze a URL</h3>
+                  <p className="text-sm text-muted-foreground">
+                    "How credible is this source? [URL]"
+                  </p>
+                </div>
+                <div className="p-4 border rounded-lg hover:shadow-lg transition-shadow">
+                  <h3 className="font-semibold">Detect a deepfake</h3>
+                  <p className="text-sm text-muted-foreground">
+                    [Upload an image or video]
+                  </p>
+                </div>
+              </div>
+            </div>
           )}
           {messages.map((msg, index) => (
               <Message key={index} isUser={msg.type === 'user'}>

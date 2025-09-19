@@ -1,8 +1,9 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { User, Bot, FileImage, FileVideo, FileAudio } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { User, Bot, FileVideo, FileAudio } from 'lucide-react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Card } from '@/components/ui/card';
 import Image from 'next/image';
 
 export function Message({ children, isUser = false }: { children: ReactNode; isUser?: boolean }) {
@@ -13,9 +14,11 @@ export function Message({ children, isUser = false }: { children: ReactNode; isU
           <AvatarFallback><Bot /></AvatarFallback>
         </Avatar>
       )}
-      <div className={`max-w-lg sm:max-w-xl rounded-xl px-4 py-3 ${isUser ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`}>
-        {children}
-      </div>
+      <Card className={`max-w-lg sm:max-w-xl ${isUser ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`}>
+        <div className="px-4 py-3">
+          {children}
+        </div>
+      </Card>
       {isUser && (
         <Avatar className="h-8 w-8">
           <AvatarFallback><User /></AvatarFallback>

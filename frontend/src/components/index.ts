@@ -11,14 +11,15 @@ export { UnifiedDeepfakeAnalysis } from './unified-deepfake-analysis';
 export { VerifySourceResults } from './verify-source-results';
 
 // UI components
-export { GeminiLoader } from './gemini-loader';
+export { GeminiLoader, GeminiLoaderRing } from './gemini-loader';
 export { IndicatorExplanation } from './indicator-explanation';
 export { InputBar } from './input-bar';
 export { Message, UserMessage } from './messages';
 export { ResultCard } from './ui/result-card';
+export { LandingPage } from './landing-page';
 
 // Layout components
-export { Header } from './layout/header';
+export { SimpleHeader } from './layout/simple-header';
 
 // Theme components
 export { ThemeProvider } from './theme-provider';

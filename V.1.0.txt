@@ -203,4 +203,8 @@ please analyse the project and tell me in detail of what kind of features are im
 
 
 
-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
+ > please read the frontend folders and files. ensure that only shadcn components are used to make a professional look. also use only custom UI          │
+│   components strcilty whereveer required (only in the result card which can also incorporate the card component from ShadCN UI). please analyse         │
+│   the existing UI layout and make the changes. also follow a theme like google colors. use these color codes to build the circularloader UI to consists         │
+│   of the colors and also implement a seamless UI feel in the web app page. please use the ShadCN component for this too with the color codes are : Blue is #4285F4, Red is #DB4437, Yellow is             │
+│   #F4B400, and Green is #0F9D58. please think ultra harder before fixing the UI and make the corrections(the landing page still has layout mismatch and overflows which has to be corrected).also, I need you to check the existing UI and list out which ShadCN UI components are unused in the project. I want every single code in the frontend UI to use ShadnCN UI component to reduce burden and increase professional look.    

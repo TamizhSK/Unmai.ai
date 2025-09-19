@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
-import { Header } from '@/components';
+import { SimpleHeader } from '@/components/layout/simple-header';
 import { ThemeProvider } from '@/components';
 import { cn } from "@/lib/utils";
 import { LanguageProvider } from "@/context/language-context";
@@ -38,7 +38,7 @@ export default function RootLayout({
         >
           <LanguageProvider>
             <div className="flex flex-col min-h-screen">
-              <Header />
+              <SimpleHeader />
               <main className="flex-1 overflow-y-auto">
                 {children}
               </main>

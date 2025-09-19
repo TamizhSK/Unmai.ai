@@ -18,6 +18,10 @@ const config: Config = {
     },
     extend: {
       colors: {
+        'google-blue': '#4285F4',
+        'google-red': '#DB4437',
+        'google-yellow': '#F4B400',
+        'google-green': '#0F9D58',
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
