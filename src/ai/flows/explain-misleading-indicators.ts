@@ -7,8 +7,8 @@
  * - ExplainMisleadingIndicatorsOutput - The return type for the explainMisleadingIndicators function.
  */
 
-import {z} from 'zod';
-import {generativeModel} from '@/ai/genkit';
+import { z } from 'zod';
+import { generativeModel } from '@/ai/genkit';
 
 const ExplainMisleadingIndicatorsInputSchema = z.object({
   content: z.string().describe('The content to be analyzed for misleading indicators.'),
@@ -24,13 +24,18 @@ export async function explainMisleadingIndicators(input: ExplainMisleadingIndica
   const prompt = `Analyze the following content and explain why it might be misleading. Consider factors such as emotional language, lack of credible sources, inconsistencies with known facts, and potential biases.\n\nContent: ${input.content}\n\nYour response should be a JSON object with an \"explanation\" field.`;
 
   const result = await generativeModel.generateContent({
-    contents: [{role: 'user', parts: [{text: prompt}]}],
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       responseMimeType: 'application/json',
     },
   });
 
   const response = result.response;
+
+  if (!response.candidates || response.candidates.length === 0) {
+    throw new Error('No candidates received from the model');
+  }
+
   const responseText = response.candidates[0].content.parts[0].text;
 
   if (!responseText) {
