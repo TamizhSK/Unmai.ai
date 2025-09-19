@@ -10,6 +10,7 @@
 
 import {z} from 'zod';
 import {groundedModel} from '@/ai/genkit';
+import {scrapeUrl} from './web-scraper';
 
 const PerformWebAnalysisInputSchema = z.object({
   query: z.string().describe('The query or content to analyze in real-time.'),
@@ -34,10 +35,25 @@ export type PerformWebAnalysisOutput = z.infer<typeof PerformWebAnalysisOutputSc
 export async function performWebAnalysis(
   input: PerformWebAnalysisInput
 ): Promise<PerformWebAnalysisOutput> {
+  let content = input.query;
+  if (input.contentType === 'url') {
+    try {
+      content = await scrapeUrl(input.query);
+    } catch (error) {
+      console.error('Error scraping URL:', error);
+      return {
+        realTimeFactCheck: false,
+        currentInformation: [],
+        informationGaps: [],
+        analysisSummary: `Failed to scrape the provided URL: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
   const prompt = `You are an expert in real-time web analysis and fact-checking.
 
-  Perform a real-time analysis of the following ${input.contentType} content:
-  "${input.query}"
+  Perform a real-time analysis of the following content:
+  "${content}"
   
   Your task is to:
   1. Search for current information related to this content

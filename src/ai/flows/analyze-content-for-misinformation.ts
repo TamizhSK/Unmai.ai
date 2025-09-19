@@ -49,7 +49,7 @@ export async function analyzeContentForMisinformation(
   });
 
   const response = result.response;
-  const responseText = response.candidates[0].content.parts[0].text;
+  const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!responseText) {
     throw new Error('No response text received from the model');
