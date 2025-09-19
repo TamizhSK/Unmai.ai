@@ -1,12 +1,14 @@
 'use client';
 
-import { AssessSafetyOutput } from '@/lib/api-client';
+import { AssessSafetyOutput, VerifySourceOutput } from '@/lib/api-client';
+import { SourceInformation } from './source-information';
 import { Shield, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { getScoreColorClass, getSafetyRatingColor, getSafetyRatingIcon } from '@/lib/component-utils';
 import { Progress } from '@/components/ui/progress';
 
 interface SafetyAssessmentResultsProps {
   result: AssessSafetyOutput;
+  sourceResult?: VerifySourceOutput;
 }
 
 export function SafetyAssessmentResults({ result, sourceResult }: SafetyAssessmentResultsProps) {

@@ -14,6 +14,8 @@ export interface FactCheckClaimOutput {
     snippet: string;
   }>;
   explanation: string;
+  confidence?: number;
+  reasoningSteps?: string[];
 }
 
 export interface GetCredibilityScoreInput {
@@ -21,8 +23,12 @@ export interface GetCredibilityScoreInput {
 }
 
 export interface GetCredibilityScoreOutput {
+  credibilityScore: number;
   score: number;
   explanation: string;
+  assessmentSummary: string;
+  source?: string;
+  misleadingIndicators?: string[];
   factors: Array<{
     factor: string;
     impact: 'positive' | 'negative' | 'neutral';
@@ -39,7 +45,9 @@ export interface DetectDeepfakeInput {
 export interface DetectDeepfakeOutput {
   isDeepfake: boolean;
   confidence: number;
+  confidenceScore: number;
   explanation: string;
+  analysis: string;
   indicators: Array<{
     indicator: string;
     severity: 'low' | 'medium' | 'high';
@@ -52,11 +60,7 @@ export interface ProvideEducationalInsightsInput {
 }
 
 export interface ProvideEducationalInsightsOutput {
-  insights: Array<{
-    topic: string;
-    explanation: string;
-    sources: string[];
-  }>;
+  insights: string;
   keyConcepts: string[];
   recommendations: string[];
 }
@@ -68,6 +72,11 @@ export interface AssessSafetyInput {
 
 export interface AssessSafetyOutput {
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  safetyRating: 'SAFE' | 'HARMFUL' | 'MISLEADING' | 'UNKNOWN';
+  confidenceScore: number;
+  explanation: string;
+  contentAnalysis: string;
+  topics: string[];
   categories: Array<{
     category: string;
     risk: 'low' | 'medium' | 'high' | 'critical';
@@ -84,7 +93,15 @@ export interface VerifySourceInput {
 export interface VerifySourceOutput {
   sourceCredibility: number;
   sourceType: string;
+  sourceVerified: boolean;
+  originTraced: boolean;
   verificationStatus: 'verified' | 'unverified' | 'suspicious';
+  verificationDetails: string;
+  relatedSources?: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+  }>;
   details: {
     domain: string;
     reputation: string;
@@ -98,6 +115,15 @@ export interface PerformWebAnalysisInput {
 }
 
 export interface PerformWebAnalysisOutput {
+  realTimeFactCheck: boolean;
+  analysisSummary: string;
+  currentInformation?: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+    relevance: number;
+  }>;
+  informationGaps?: string[];
   results: Array<{
     title: string;
     url: string;
@@ -116,7 +142,10 @@ export interface DetectSyntheticContentInput {
 export interface DetectSyntheticContentOutput {
   isSynthetic: boolean;
   confidence: number;
+  confidenceScore: number;
   explanation: string;
+  analysis: string;
+  markersDetected?: string[];
   indicators: Array<{
     indicator: string;
     severity: 'low' | 'medium' | 'high';
@@ -139,12 +168,20 @@ export interface AnalyzeContentForMisinformationOutput {
   }>;
 }
 
+// Alias for backward compatibility
+export type AnalyzeContentOutput = AnalyzeContentForMisinformationOutput;
+
 export interface SafeSearchUrlInput {
   url: string;
 }
 
 export interface SafeSearchUrlOutput {
   isSafe: boolean;
+  adult: 'VERY_UNLIKELY' | 'UNLIKELY' | 'POSSIBLE' | 'LIKELY' | 'VERY_LIKELY';
+  violence: 'VERY_UNLIKELY' | 'UNLIKELY' | 'POSSIBLE' | 'LIKELY' | 'VERY_LIKELY';
+  medical: 'VERY_UNLIKELY' | 'UNLIKELY' | 'POSSIBLE' | 'LIKELY' | 'VERY_LIKELY';
+  racy: 'VERY_UNLIKELY' | 'UNLIKELY' | 'POSSIBLE' | 'LIKELY' | 'VERY_LIKELY';
+  spoof: 'VERY_UNLIKELY' | 'UNLIKELY' | 'POSSIBLE' | 'LIKELY' | 'VERY_LIKELY';
   threats: Array<{
     type: string;
     severity: 'low' | 'medium' | 'high';
@@ -174,11 +211,11 @@ export async function factCheckClaim(input: FactCheckClaimInput): Promise<FactCh
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Fact check failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -188,11 +225,11 @@ export async function getCredibilityScore(input: GetCredibilityScoreInput): Prom
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Credibility score failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -202,11 +239,11 @@ export async function detectDeepfake(input: DetectDeepfakeInput): Promise<Detect
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Deepfake detection failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -216,11 +253,11 @@ export async function provideEducationalInsights(input: ProvideEducationalInsigh
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Educational insights failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -230,11 +267,11 @@ export async function assessSafety(input: AssessSafetyInput): Promise<AssessSafe
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Safety assessment failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -244,11 +281,11 @@ export async function verifySource(input: VerifySourceInput): Promise<VerifySour
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Source verification failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -258,11 +295,11 @@ export async function performWebAnalysis(input: PerformWebAnalysisInput): Promis
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Web analysis failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -272,11 +309,11 @@ export async function detectSyntheticContent(input: DetectSyntheticContentInput)
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Synthetic content detection failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -286,11 +323,11 @@ export async function analyzeContentForMisinformation(input: AnalyzeContentForMi
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Misinformation analysis failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -300,11 +337,11 @@ export async function safeSearchUrl(input: SafeSearchUrlInput): Promise<SafeSear
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Safe search failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -314,11 +351,11 @@ export async function transcribeAudioFlow(input: TranscribeAudioInput): Promise<
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Audio transcription failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }
 
@@ -328,10 +365,10 @@ export async function explainMisleadingIndicators(input: ExplainMisleadingIndica
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  
+
   if (!response.ok) {
     throw new Error(`Explain indicators failed: ${response.statusText}`);
   }
-  
+
   return response.json();
 }

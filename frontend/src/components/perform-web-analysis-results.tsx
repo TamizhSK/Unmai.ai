@@ -1,11 +1,13 @@
 'use client';
 
-import { PerformWebAnalysisOutput } from '@/lib/api-client';
+import { PerformWebAnalysisOutput, VerifySourceOutput } from '@/lib/api-client';
+import { SourceInformation } from './source-information';
 import Link from 'next/link';
 import { Search, ExternalLink, AlertTriangle } from 'lucide-react';
 
 interface PerformWebAnalysisResultsProps {
   result: PerformWebAnalysisOutput;
+  sourceResult?: VerifySourceOutput;
 }
 
 export function PerformWebAnalysisResults({ result, sourceResult }: PerformWebAnalysisResultsProps) {

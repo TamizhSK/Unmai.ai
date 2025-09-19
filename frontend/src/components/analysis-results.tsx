@@ -12,7 +12,7 @@ import {
 import { IndicatorExplanation } from './indicator-explanation';
 import { getScoreColorClass, getScoreTextColorClass } from '@/lib/component-utils';
 
-import { VerifySourceOutput } from '@/ai/flows/verify-source';
+import { VerifySourceOutput } from '@/lib/api-client';
 import { SourceInformation } from './source-information';
 
 interface AnalysisResultsProps {

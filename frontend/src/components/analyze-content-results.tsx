@@ -1,12 +1,14 @@
 'use client';
 
-import { AnalyzeContentOutput } from '@/lib/api-client';
+import { AnalyzeContentOutput, VerifySourceOutput } from '@/lib/api-client';
+import { SourceInformation } from './source-information';
 import { AlertTriangle, Info } from 'lucide-react';
 import { getScoreColorClass, getScoreTextColorClass } from '@/lib/component-utils';
 import { Progress } from '@/components/ui/progress';
 
 interface AnalyzeContentResultsProps {
   result: AnalyzeContentOutput;
+  sourceResult?: VerifySourceOutput;
 }
 
 export function AnalyzeContentResults({ result, sourceResult }: AnalyzeContentResultsProps) {

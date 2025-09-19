@@ -5,7 +5,7 @@ import { SafeSearchUrlOutput, VerifySourceOutput } from '@/lib/api-client';
 import { SafeSearchResults } from './safe-search-results';
 import { VerifySourceResults } from './verify-source-results';
 
-import { PerformWebAnalysisOutput } from '@/ai/flows/perform-web-analysis';
+import { PerformWebAnalysisOutput } from '@/lib/api-client';
 import { PerformWebAnalysisResults } from './perform-web-analysis-results';
 
 interface UrlAnalysisResultsProps {

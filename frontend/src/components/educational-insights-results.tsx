@@ -4,7 +4,7 @@
 import { ProvideEducationalInsightsOutput } from "@/lib/api-client";
 import { Lightbulb } from "lucide-react";
 
-import { VerifySourceOutput } from '@/ai/flows/verify-source';
+import { VerifySourceOutput } from '@/lib/api-client';
 import { SourceInformation } from './source-information';
 
 interface EducationalInsightsResultsProps {

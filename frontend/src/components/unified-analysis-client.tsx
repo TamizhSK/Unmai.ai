@@ -20,8 +20,6 @@ import { InputBar } from '@/components/input-bar';
 import { useToast } from '@/hooks/use-toast';
 import { DynamicAnalysisResult } from './dynamic-analysis-result';
 import { ScrollArea } from './ui/scroll-area';
-import { Card } from './ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 
 export type AnalysisTask = 'credibility' | 'deepfake' | 'insights' | 'safety' | 'verify-source' | 'web-analysis' | 'synthetic-content' | 'misinformation' | 'safe-search' | 'fact-check' | 'url-analysis';
 
@@ -69,7 +67,7 @@ export function UnifiedAnalysisClient() {
         try {
           const base64Data = currentFile.dataUrl.split(',')[1];
           const transcribedText = await transcribeAudioFlow(base64Data);
-          currentInput = transcribedText;
+          currentInput = transcribedText as string;
           currentFile = null;
         } catch (transcriptionError) {
           console.error("Transcription failed:", transcriptionError);
@@ -86,7 +84,7 @@ export function UnifiedAnalysisClient() {
       let originalLanguage = language;
       if (language !== 'en-US' && currentInput) {
         try {
-          currentInput = await translateText(currentInput, 'en-US');
+          currentInput = await translateText(currentInput, 'en-US') as string;
         } catch (translationError) {
           console.error("Input translation failed:", translationError);
           toast({
@@ -179,109 +177,45 @@ export function UnifiedAnalysisClient() {
   };
 
   return (
-    <Tabs defaultValue="chat" className="flex flex-col h-full max-w-4xl mx-auto">
-      <TabsList className="grid w-full grid-cols-2 mb-4">
-        <TabsTrigger value="chat">Analysis Chat</TabsTrigger>
-        <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-      </TabsList>
-      <TabsContent value="chat" className="flex-1 overflow-y-hidden">
-        <div className="flex flex-col h-full">
-          <ScrollArea className="flex-1 pr-4" ref={scrollAreaRef}>
-            <div className="space-y-6 pb-4">
-              {messages.length === 0 && !isLoading && (
-                  <div className="text-center flex flex-col justify-center h-full pt-24">
-                      <div>
-                          <h1 className="font-headline text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl text-primary">
-                              Verity AI
-                          </h1>
-                          <p className="mx-auto mt-4 max-w-[700px] text-muted-foreground md:text-xl">
-                              How can I help you analyze content today?
-                          </p>
-                      </div>
+    <div className="flex flex-col h-full max-w-4xl mx-auto">
+      <ScrollArea className="flex-1 pr-4" ref={scrollAreaRef}>
+        <div className="space-y-6 pb-4">
+          {messages.length === 0 && !isLoading && (
+              <div className="text-center flex flex-col justify-center h-full pt-24">
+                  <div>
+                      <h1 className="font-headline text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl text-primary">
+                          Verity AI
+                      </h1>
+                      <p className="mx-auto mt-4 max-w-[700px] text-muted-foreground md:text-xl">
+                          How can I help you analyze content today?
+                      </p>
                   </div>
-              )}
-              {messages.map((msg, index) => (
-                  <Message key={index} isUser={msg.type === 'user'}>
-                      {msg.type === 'user' ? (
-                          <UserMessage content={msg.input} file={msg.file} />
-                      ) : (
-                          <DynamicAnalysisResult task={msg.task} result={msg.result} sourceResult={msg.sourceResult} />
-                      )}
-                  </Message>
-              ))}
-              {isLoading && (
-                  <Message>
-                      <GeminiLoader />
-                  </Message>
-              )}
-            </div>
-          </ScrollArea>
-          <div className="mt-auto pt-4 bg-background/80 backdrop-blur-md">
-              <InputBar 
-                onSubmit={handleNewMessage} 
-                disabled={isLoading}
-                selectedLanguage={selectedLanguage}
-                onLanguageChange={setSelectedLanguage}
-              />
-          </div>
-        </div>
-      </TabsContent>
-      <TabsContent value="dashboard" className="flex-1 overflow-y-auto">
-        <div className="space-y-6 py-6">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold tracking-tight">Analysis Dashboard</h2>
-            <p className="text-muted-foreground">
-              Overview of your content analysis results
-            </p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <Card className="p-6">
-              <h3 className="font-semibold text-lg mb-2">Total Analyses</h3>
-              <p className="text-3xl font-bold">{messages.filter(m => m.type === 'ai').length}</p>
-            </Card>
-            <Card className="p-6">
-              <h3 className="font-semibold text-lg mb-2">Text Analyses</h3>
-              <p className="text-3xl font-bold">
-                {messages.filter(m => m.type === 'ai' && ['fact-check', 'misinformation', 'insights'].includes(m.task)).length}
-              </p>
-            </Card>
-            <Card className="p-6">
-              <h3 className="font-semibold text-lg mb-2">Media Analyses</h3>
-              <p className="text-3xl font-bold">
-                {messages.filter(m => m.type === 'ai' && ['deepfake', 'synthetic-content'].includes(m.task)).length}
-              </p>
-            </Card>
-          </div>
-          <div className="grid gap-4">
-            <Card className="p-6">
-              <h3 className="font-semibold text-lg mb-4">Recent Analyses</h3>
-              <div className="space-y-4">
-                {messages
-                  .filter(m => m.type === 'ai')
-                  .slice(-5)
-                  .reverse()
-                  .map((msg, index) => (
-                    <div key={index} className="flex items-center justify-between border-b pb-2">
-                      <div>
-                        <p className="font-medium capitalize">{msg.task.replace('-', ' ')}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date().toLocaleTimeString()}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {msg.result && (
-                          <span className="text-xs bg-secondary px-2 py-1 rounded-full">
-                            Processed
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
               </div>
-            </Card>
-          </div>
+          )}
+          {messages.map((msg, index) => (
+              <Message key={index} isUser={msg.type === 'user'}>
+                  {msg.type === 'user' ? (
+                      <UserMessage content={msg.input} file={msg.file} />
+                  ) : (
+                      <DynamicAnalysisResult task={msg.task} result={msg.result} sourceResult={msg.sourceResult} />
+                  )}
+              </Message>
+          ))}
+          {isLoading && (
+              <Message>
+                  <GeminiLoader />
+              </Message>
+          )}
         </div>
-      </TabsContent>
-    </Tabs>
+      </ScrollArea>
+      <div className="mt-auto pt-4 bg-background/80 backdrop-blur-md">
+          <InputBar 
+            onSubmit={handleNewMessage} 
+            disabled={isLoading}
+            selectedLanguage={selectedLanguage}
+            onLanguageChange={setSelectedLanguage}
+          />
+      </div>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { DetectSyntheticContentOutput } from '@/lib/api-client';
+import { DetectSyntheticContentOutput, VerifySourceOutput } from '@/lib/api-client';
+import { SourceInformation } from './source-information';
 import { Bot, AlertTriangle } from 'lucide-react';
 import { getScoreColorClass } from '@/lib/component-utils';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,7 @@ import { Progress } from '@/components/ui/progress';
 
 interface DetectSyntheticContentResultsProps {
   result: DetectSyntheticContentOutput;
+  sourceResult?: VerifySourceOutput;
 }
 
 export function DetectSyntheticContentResults({ result, sourceResult }: DetectSyntheticContentResultsProps) {

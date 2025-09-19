@@ -27,75 +27,106 @@ const FactCheckClaimOutputSchema = z.object({
 });
 export type FactCheckClaimOutput = z.infer<typeof FactCheckClaimOutputSchema>;
 
-// Function to clean and parse potentially malformed JSON
-function cleanAndParseJson(jsonString: string): any {
-  // Remove markdown and trim
-  let cleanJson = jsonString.replace(/```json\s*/gi, '').replace(/```\s*$/gi, '').trim();
+// Function to clean and parse potentially malformed JSON or extract structured info from text
+function cleanAndParseJson(responseText: string): any {
+  // First, try to find JSON in the response
+  let cleanJson = responseText
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*$/gi, '')
+    .replace(/^```/gm, '')
+    .replace(/```$/gm, '')
+    .trim();
 
-  // Attempt to fix common JSON issues
-  // 1. Replace single quotes with double quotes (be careful not to replace within strings)
-  // This is a simplified approach. A more robust solution might use a proper parser,
-  // but for common model mistakes, this can be effective.
-  // It looks for : '...' and replaces the single quotes.
-  cleanJson = cleanJson.replace(/'([^']*)'/g, '"$1"');
+  // Look for JSON object boundaries
+  const jsonStart = cleanJson.indexOf('{');
+  const jsonEnd = cleanJson.lastIndexOf('}');
   
-  // 2. Add quotes to unquoted keys.
-  // This regex looks for unquoted keys (e.g., {key: "value"}) and adds quotes.
-  cleanJson = cleanJson.replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":');
+  if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+    cleanJson = cleanJson.substring(jsonStart, jsonEnd + 1);
+    
+    // Fix common JSON formatting issues
+    cleanJson = cleanJson
+      .replace(/,(\s*[}\]])/g, '$1')
+      .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+      .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"');
 
-  try {
-    return JSON.parse(cleanJson);
-  } catch (e) {
-    // If parsing still fails, try to extract a JSON object from the string
-    const jsonMatch = cleanJson.match(/\{.*\}/s);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch (nestedError) {
-        // Throw the original error if the extracted JSON is also invalid
-        throw new Error(`Failed to parse extracted JSON: ${nestedError}`);
-      }
+    try {
+      return JSON.parse(cleanJson);
+    } catch (e) {
+      console.log('JSON parsing failed, trying text extraction');
     }
-    // If no JSON object is found, throw the original error
-    throw new Error(`Failed to parse JSON: ${e}`);
   }
+
+  // If JSON parsing fails, extract information from the text
+  const text = responseText.toLowerCase();
+  let verdict = 'Uncertain';
+  
+  // Determine verdict from text content
+  if (text.includes('false') || text.includes('incorrect') || text.includes('not true')) {
+    verdict = 'False';
+  } else if (text.includes('true') || text.includes('correct') || text.includes('accurate')) {
+    verdict = 'True';
+  } else if (text.includes('misleading') || text.includes('partially') || text.includes('mixed')) {
+    verdict = 'Misleading';
+  }
+
+  // Create a clean, concise explanation
+  let explanation = responseText;
+  
+  // Remove reference numbers like [1], [2], etc.
+  explanation = explanation.replace(/\[\d+(?:,\s*\d+)*\]/g, '');
+  
+  // Split into sentences and take the first few that are substantial
+  const sentences = explanation.split(/[.!?]+/).filter(s => s.trim().length > 20);
+  explanation = sentences.slice(0, 3).join('. ').trim();
+  
+  // Ensure it ends with a period
+  if (explanation && !explanation.endsWith('.')) {
+    explanation += '.';
+  }
+
+  // Limit explanation length
+  if (explanation.length > 300) {
+    explanation = explanation.substring(0, 297) + '...';
+  }
+
+  return {
+    verdict,
+    evidence: [],
+    explanation: explanation || 'The claim has been analyzed but requires further verification.'
+  };
 }
 
 
 export async function factCheckClaim(
   input: FactCheckClaimInput
 ): Promise<FactCheckClaimOutput> {
-  const prompt = `You are a professional fact-checker. Your task is to verify the following claim with the highest level of accuracy and neutrality.
+  const prompt = `You are a professional fact-checker. Analyze this claim and provide a clear, concise verdict.
 
-  Claim: "${input.claim}"
+Claim: "${input.claim}"
 
-  1.  **Search the web** for reliable and diverse sources to assess the claim.
-  2.  **Analyze the evidence** you find, looking for corroboration and conflicts.
-  3.  **Formulate a verdict**: "True", "False", "Misleading", or "Uncertain".
-  4.  **Provide a clear explanation** for your verdict, summarizing the evidence.
-  5.  **Cite your sources** by providing a list of URLs, titles, and relevant snippets.
+Instructions:
+1. Search for reliable sources to verify this claim
+2. Determine if the claim is True, False, Misleading, or Uncertain
+3. Provide a brief, clear explanation (2-3 sentences maximum)
+4. Include relevant evidence sources
 
-  Your response must be a **valid JSON object** (not wrapped in markdown code blocks, no extra text) that strictly adheres to the following schema. The "source" field MUST be a full, valid URL.
+CRITICAL: Respond ONLY with valid JSON. No markdown, no extra text.
 
-  Example of a valid "evidence" item:
-  {
-    "source": "https://www.example.com/news/article-name",
-    "title": "Example Article Title",
-    "snippet": "A relevant quote or summary from the article..."
-  }
+Required format:
+{
+  "verdict": "True|False|Misleading|Uncertain",
+  "explanation": "Brief, clear explanation in 2-3 sentences",
+  "evidence": [
+    {
+      "source": "https://reliable-source.com",
+      "title": "Source Title",
+      "snippet": "Key quote supporting the verdict"
+    }
+  ]
+}
 
-  JSON Schema to follow (do not include markdown code block markers like \`\`\`json):
-  {
-    "verdict": "...",
-    "evidence": [
-      {
-        "source": "...",
-        "title": "...",
-        "snippet": "..."
-      }
-    ],
-    "explanation": "..."
-  }`;
+Keep explanations concise and factual. Focus on the most important evidence.`;
 
   let response;
   try {
@@ -126,7 +157,7 @@ export async function factCheckClaim(
     return {
       verdict: 'Uncertain',
       evidence: [],
-      explanation: `An error occurred during the fact-checking process: ${error instanceof Error ? error.message : 'Unknown error'}.`,
+      explanation: 'Unable to complete fact-check analysis at this time. Please try again or rephrase your claim.',
     };
   }
 }

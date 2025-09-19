@@ -3,10 +3,10 @@
 import { useState, useRef, ChangeEvent, FormEvent, DragEvent, ClipboardEvent } from 'react';
 import { Textarea } from './ui/textarea';
 import { Button } from './ui/button';
-import { Paperclip, Send, X, Mic, Square, UploadCloud, Info } from 'lucide-react';
+import { Paperclip, Send, X, Mic, Square, UploadCloud } from 'lucide-react';
 import Image from 'next/image';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { cn } from '@/lib/utils';
+
 import {
   Tooltip,
   TooltipContent,
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/tooltip";
 
 interface InputBarProps {
-  onSubmit: (input: string, file: {dataUrl: string, type: string} | null, language: string) => void;
+  onSubmit: (input: string, file: { dataUrl: string, type: string } | null, language: string) => void;
   disabled: boolean;
   selectedLanguage: string;
   onLanguageChange: (language: string) => void;
@@ -23,23 +23,23 @@ interface InputBarProps {
 
 export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChange }: InputBarProps) {
   const [input, setInput] = useState('');
-  const [file, setFile] = useState<{dataUrl: string, name: string, type: string} | null>(null);
+  const [file, setFile] = useState<{ dataUrl: string, name: string, type: string } | null>(null);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   const handleFileSelect = (selectedFile: File | null) => {
     if (selectedFile && (selectedFile.type.startsWith('image/') || selectedFile.type.startsWith('video/') || selectedFile.type.startsWith('audio/'))) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setFile({
-                dataUrl: reader.result as string,
-                name: selectedFile.name,
-                type: selectedFile.type,
-            });
-        };
-        reader.readAsDataURL(selectedFile);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFile({
+          dataUrl: reader.result as string,
+          name: selectedFile.name,
+          type: selectedFile.type,
+        });
+      };
+      reader.readAsDataURL(selectedFile);
     }
   };
 
@@ -49,15 +49,15 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
 
   const handleMicClick = () => {
     if (isRecognizing) {
-        recognitionRef.current?.stop();
-        setIsRecognizing(false);
-        return;
+      recognitionRef.current?.stop();
+      setIsRecognizing(false);
+      return;
     }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        console.error("Speech recognition not supported in this browser.");
-        return;
+      console.error("Speech recognition not supported in this browser.");
+      return;
     }
 
     const recognition = new SpeechRecognition();
@@ -65,18 +65,18 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
     recognition.interimResults = true;
     recognitionRef.current = recognition;
 
-    recognition.onresult = (event) => {
-        const transcript = Array.from(event.results)
-            .map(result => result[0])
-            .map(result => result.transcript)
-            .join('');
-        setInput(transcript);
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0])
+        .map((result: any) => result.transcript)
+        .join('');
+      setInput(transcript);
     };
 
     recognition.onend = () => setIsRecognizing(false);
-    recognition.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        setIsRecognizing(false);
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      setIsRecognizing(false);
     };
 
     recognition.start();
@@ -86,7 +86,7 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (disabled || (!input.trim() && !file)) return;
-    onSubmit(input, file ? {dataUrl: file.dataUrl, type: file.type} : null, selectedLanguage);
+    onSubmit(input, file ? { dataUrl: file.dataUrl, type: file.type } : null, selectedLanguage);
     setInput('');
     setFile(null);
   };
@@ -97,18 +97,18 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
     setIsDragging(true);
   };
 
-  const handleDragLeave = (e: DragEvent<HTMLFormElement>) => {
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
   };
 
-  const handleDragOver = (e: DragEvent<HTMLFormElement>) => {
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
   };
 
-  const handleDrop = (e: DragEvent<HTMLFormElement>) => {
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
@@ -118,16 +118,16 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
   const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     handleFileSelect(e.clipboardData.files?.[0] || null);
   };
-  
+
   return (
     <TooltipProvider>
-      <form 
-        onSubmit={handleSubmit} 
+      <form
+        onSubmit={handleSubmit}
         onDragEnter={handleDragEnter}
         className="relative rounded-xl bg-secondary/80 p-2 flex flex-col gap-2"
       >
         {isDragging && (
-          <div 
+          <div
             className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary rounded-xl flex flex-col items-center justify-center z-10"
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
@@ -141,57 +141,57 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
           </div>
         )}
         {file && (
-            <div className="relative group w-fit">
-                <div className="relative h-24 w-24 rounded-lg overflow-hidden border">
-                    {file.type.startsWith('image/') ? (
-                        <Image src={file.dataUrl} alt={file.name} fill objectFit="cover" />
-                    ) : (
-                        <div className="flex items-center justify-center h-full bg-muted text-muted-foreground text-xs p-2">
-                            <span>{file.name}</span>
-                        </div>
-                    )}
+          <div className="relative group w-fit">
+            <div className="relative h-24 w-24 rounded-lg overflow-hidden border">
+              {file.type.startsWith('image/') ? (
+                <Image src={file.dataUrl} alt={file.name} fill objectFit="cover" />
+              ) : (
+                <div className="flex items-center justify-center h-full bg-muted text-muted-foreground text-xs p-2">
+                  <span>{file.name}</span>
                 </div>
-                <Button 
-                    type="button"
-                    variant="destructive"
-                    size="icon"
-                    className="absolute -top-2 -right-2 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => setFile(null)}
-                >
-                    <X className="h-4 w-4" />
-                </Button>
+              )}
             </div>
+            <Button
+              type="button"
+              variant="destructive"
+              size="icon"
+              className="absolute -top-2 -right-2 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={() => setFile(null)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         )}
         <div className="flex items-end gap-2">
           <div className="flex-1 flex flex-col gap-2">
             <Textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onPaste={handlePaste}
-                placeholder="Analyze text, a URL, or paste/drop an image, video, or audio file..."
-                className="flex-1 resize-none bg-transparent border-0 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-0 self-center"
-                rows={1}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSubmit(e);
-                    }
-                }}
-                disabled={disabled || isRecognizing}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onPaste={handlePaste}
+              placeholder="Analyze text, a URL, or paste/drop an image, video, or audio file..."
+              className="flex-1 resize-none bg-transparent border-0 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-0 self-center"
+              rows={1}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit(e);
+                }
+              }}
+              disabled={disabled || isRecognizing}
             />
             <div className="flex items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={disabled || isRecognizing}
-                      className='flex-shrink-0'
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={disabled || isRecognizing}
+                    className='flex-shrink-0'
                   >
-                      <Paperclip />
-                      <span className="sr-only">Attach file</span>
+                    <Paperclip />
+                    <span className="sr-only">Attach file</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -199,24 +199,24 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
                 </TooltipContent>
               </Tooltip>
               <input
-                  type="file"
-                  ref={fileInputRef}
-                  className="hidden"
-                  onChange={handleFileChange}
-                  accept="image/*,video/*,audio/*"
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={handleFileChange}
+                accept="image/*,video/*,audio/*"
               />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                      type="button"
-                      variant={isRecognizing ? "destructive" : "ghost"}
-                      size="icon"
-                      onClick={handleMicClick}
-                      disabled={disabled}
-                      className='flex-shrink-0'
+                    type="button"
+                    variant={isRecognizing ? "destructive" : "ghost"}
+                    size="icon"
+                    onClick={handleMicClick}
+                    disabled={disabled}
+                    className='flex-shrink-0'
                   >
-                      {isRecognizing ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-                      <span className="sr-only">{isRecognizing ? 'Stop recognition' : 'Start recognition'}</span>
+                    {isRecognizing ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                    <span className="sr-only">{isRecognizing ? 'Stop recognition' : 'Start recognition'}</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -228,14 +228,14 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
           <div className="flex flex-col gap-2 items-end">
             <div className="flex items-center gap-2">
               <Select value={selectedLanguage} onValueChange={onLanguageChange}>
-                  <SelectTrigger className="w-fit flex-shrink-0">
-                      <SelectValue placeholder="Language" />
-                  </SelectTrigger>
-                  <SelectContent>
-                      <SelectItem value="en-US">English</SelectItem>
-                      <SelectItem value="es-ES">Español</SelectItem>
-                      <SelectItem value="fr-FR">Français</SelectItem>
-                  </SelectContent>
+                <SelectTrigger className="w-fit flex-shrink-0">
+                  <SelectValue placeholder="Language" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en-US">English</SelectItem>
+                  <SelectItem value="es-ES">Español</SelectItem>
+                  <SelectItem value="fr-FR">Français</SelectItem>
+                </SelectContent>
               </Select>
               <Tooltip>
                 <TooltipTrigger asChild>

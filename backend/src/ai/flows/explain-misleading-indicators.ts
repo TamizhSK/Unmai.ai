@@ -8,11 +8,7 @@
  */
 
 import { z } from 'zod';
-<<<<<<< HEAD:src/ai/flows/explain-misleading-indicators.ts
-import { generativeModel } from '@/ai/genkit';
-=======
 import { generativeModel } from '../genkit';
->>>>>>> 815d4365793cbc64e2826b45ffbe0e967a0fc05d:backend/src/ai/flows/explain-misleading-indicators.ts
 
 const ExplainMisleadingIndicatorsInputSchema = z.object({
   content: z.string().describe('The content to be analyzed for misleading indicators.'),
@@ -35,19 +31,10 @@ export async function explainMisleadingIndicators(input: ExplainMisleadingIndica
   });
 
   const response = result.response;
-<<<<<<< HEAD:src/ai/flows/explain-misleading-indicators.ts
-
-  if (!response.candidates || response.candidates.length === 0) {
-    throw new Error('No candidates received from the model');
-  }
-
-=======
   
   if (!response?.candidates?.[0]?.content?.parts?.[0]?.text) {
     throw new Error('Invalid or empty response received from the model');
   }
-  
->>>>>>> 815d4365793cbc64e2826b45ffbe0e967a0fc05d:backend/src/ai/flows/explain-misleading-indicators.ts
   const responseText = response.candidates[0].content.parts[0].text;
 
   if (!responseText) {
