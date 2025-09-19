@@ -150,3 +150,51 @@ Multi-layered approach:
 - **Vertex AI Search API** with live web grounding[13]
 - **Real-time fact-checking** against current information[20]
 - **Dynamic content verification** with Google Search integration[21]
+
+
+AI-Powered Tool for Combating Misinformation
+Build an AI‑powered tool that detects potential misinformation and educates users on identifying credible, trustworthy content.
+
+Challenge
+The rapid spread of fake news and misinformation across social media and messaging platforms poses a severe threat in India. This digital contagion can lead to social unrest, public health crises, and widespread financial scams. A major contributing factor is the lack of accessible tools that allow users to quickly verify the information they encounter or to understand the manipulative techniques used to create and spread misleading content.
+
+Objective
+Develop an innovative, Generative AI-powered solution using Google Cloud that empowers users to effectively combat misinformation. The solution should not only help users identify the potential for fake news and scams but also educate them on the underlying reasons a piece of content might be misleading. Participants are encouraged to design tools or applications that go beyond simple fact-checking, fostering a more critical and informed digital citizenry.
+
+Multi-input: Text, Audio (S2T), Video (keyframes + audio), URL/page.
+
+Automated evidence gathering: Google Fact Check Tools, web search, reverse image/video search.
+
+Media integrity checks: deepfake detection (audio/video), metadata/EXIF analysis, lip-sync checks.
+
+Trust Score (0–100) with a per-metric breakdown.
+
+Explainable verdicts: short + long explanations referencing sources (ClaimReview when available).
+
+Educational micro-cards: “How to verify”, “Manipulation technique used”.
+
+Reporting + save/case history + optional share to fact-checkers.
+
+Privacy hygiene: temporary storage with TTL, optional anonymous use.
+
+Compute per-metric scores 0–100, then weighted sum. Example weights for text:
+
+Source credibility: 30%
+
+Fact-check match: 35%
+
+Semantic similarity: 20%
+
+Language cues: 15%
+
+Thresholds:
+
+≥ 75 → Likely Authentic (green)
+
+40–74 → Suspicious (yellow)
+
+< 40 → Likely Fake (red)
+
+Always return contributing signals and evidence links to satisfy XAI requirements.
+
+please analyse the project and tell me in detail of what kind of features are implemented here and how it is executed according to the problem statement. also check if our current project supports the problem statement strongly and solves the problem mentioned. please think harder and ultra harder to solve this.
