@@ -11,6 +11,8 @@ interface UnifiedDeepfakeAnalysisProps {
     sourceResult?: VerifySourceOutput;
 }
 
+import { SourceInformation } from './source-information';
+
 export function UnifiedDeepfakeAnalysis({ deepfakeResult, sourceResult }: UnifiedDeepfakeAnalysisProps) {
     // Calculate adjusted manipulation likelihood based on source credibility
     const calculateAdjustedLikelihood = () => {
@@ -54,6 +56,7 @@ export function UnifiedDeepfakeAnalysis({ deepfakeResult, sourceResult }: Unifie
 
     return (
         <div className="space-y-6">
+            <SourceInformation sourceResult={sourceResult} />
             <div className="space-y-2">
                 <h3 className="font-semibold text-lg">Manipulation Likelihood</h3>
                 <Progress value={adjustedResult.score} indicatorClassName={getScoreColorClass(adjustedResult.score, 'confidence')} />

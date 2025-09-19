@@ -12,7 +12,7 @@ import {groundedModel} from '../genkit';
 
 const VerifySourceInputSchema = z.object({
   content: z.string().describe('The content to verify the source and origin for.'),
-  contentType: z.enum(['text', 'url']).describe('The type of the content.'),
+  contentType: z.enum(['text', 'url', 'media']).describe('The type of the content.'),
 });
 export type VerifySourceInput = z.infer<typeof VerifySourceInputSchema>;
 
@@ -26,6 +26,11 @@ const VerifySourceOutputSchema = z.object({
     title: z.string(),
     similarity: z.number().min(0).max(100),
   })).describe('Related sources found during verification.'),
+  originalSource: z.object({
+    url: z.string(),
+    title: z.string(),
+    snippet: z.string(),
+  }).optional().describe('The original source of the content.'),
 });
 export type VerifySourceOutput = z.infer<typeof VerifySourceOutputSchema>;
 
@@ -44,45 +49,97 @@ export async function verifySource(
     source = 'User Text';
   }
 
-  const prompt = `You are an expert in source verification and fact-checking.
+  let prompt;
+  if (input.contentType === 'url') {
+    prompt = `You are an expert in source verification and fact-checking.
 
-  Analyze the following ${input.contentType} content and verify its source and origin using your web grounding capabilities.
-  Content: ${input.content}
+Analyze the following URL and verify its source and origin using your web grounding capabilities.
+URL: ${input.content}
 
-  Perform the following tasks:
-  1. Verify the credibility of the source "${source}"
-  2. Trace the origin of the content if possible
-  3. Find related sources that discuss similar content
-  4. Provide a credibility score for the source (0-100)
-  
-  Your response must be in the following JSON format:
-  {
-    "sourceVerified": boolean,
-    "originTraced": boolean,
-    "sourceCredibility": number,
-    "verificationDetails": string,
-    "relatedSources": [{
-      "url": string,
-      "title": string,
-      "similarity": number
-    }]
+Perform the following tasks:
+1. Verify the credibility of the source "${source}"
+2. Trace the origin of the content if possible
+3. Find related sources that discuss similar content
+4. Provide a credibility score for the source (0-100)
+
+Your response must be in the following JSON format:
+{
+  "sourceVerified": boolean,
+  "originTraced": boolean,
+  "sourceCredibility": number,
+  "verificationDetails": string,
+  "relatedSources": [{
+    "url": string,
+    "title": string,
+    "similarity": number
+  }],
+  "originalSource": {
+    "url": string,
+    "title": string,
+    "snippet": string
   }
-  
-  Example response:
-  {
-    "sourceVerified": true,
-    "originTraced": true,
-    "sourceCredibility": 85,
-    "verificationDetails": "The content originated from a reputable news source...",
-    "relatedSources": [
-      {
-        "url": "https://example.com/article",
-        "title": "Related Article Title",
-        "similarity": 90
-      }
-    ]
-  }`;
+}`;
+  } else if (input.contentType === 'text') {
+    prompt = `You are an expert in source verification and fact-checking.
 
+Analyze the following text and find its original source using your web grounding capabilities.
+Text: "${input.content}"
+
+Perform the following tasks:
+1. Find the original source of the text.
+2. Verify the credibility of the source.
+3. Trace the origin of the content if possible.
+4. Find related sources that discuss similar content.
+5. Provide a credibility score for the source (0-100).
+
+Your response must be in the following JSON format:
+{
+  "sourceVerified": boolean,
+  "originTraced": boolean,
+  "sourceCredibility": number,
+  "verificationDetails": string,
+  "relatedSources": [{
+    "url": string,
+    "title": string,
+    "similarity": number
+  }],
+  "originalSource": {
+    "url": string,
+    "title": string,
+    "snippet": string
+  }
+}`;
+  } else { // media
+    prompt = `You are an expert in source verification and fact-checking.
+
+Analyze the following media content and find its original source using your web grounding capabilities.
+Content: ${input.content}
+
+Perform the following tasks:
+1. Perform a reverse image search or search for the file's metadata to find the original source of the media.
+2. Verify the credibility of the source.
+3. Trace the origin of the content if possible.
+4. Find related sources that discuss similar content.
+5. Provide a credibility score for the source (0-100).
+
+Your response must be in the following JSON format:
+{
+  "sourceVerified": boolean,
+  "originTraced": boolean,
+  "sourceCredibility": number,
+  "verificationDetails": string,
+  "relatedSources": [{
+    "url": string,
+    "title": string,
+    "similarity": number
+  }],
+  "originalSource": {
+    "url": string,
+    "title": string,
+    "snippet": string
+  }
+}`;
+  }
   try {
     const result = await groundedModel.generateContent({
       contents: [{role: 'user', parts: [{text: prompt}]}],

@@ -9,7 +9,7 @@ interface SafetyAssessmentResultsProps {
   result: AssessSafetyOutput;
 }
 
-export function SafetyAssessmentResults({ result }: SafetyAssessmentResultsProps) {
+export function SafetyAssessmentResults({ result, sourceResult }: SafetyAssessmentResultsProps) {
   const safetyRatingIcon = getSafetyRatingIcon(result.safetyRating);
 
   // Dynamically create the icon component based on the returned icon name
@@ -28,6 +28,7 @@ export function SafetyAssessmentResults({ result }: SafetyAssessmentResultsProps
 
   return (
     <div className="space-y-6">
+      <SourceInformation sourceResult={sourceResult} />
       <div className="space-y-2">
         <h3 className="font-semibold text-lg flex items-center gap-2">
           <Shield className="h-5 w-5 text-primary" /> Safety Rating
