@@ -113,7 +113,8 @@ export function UnifiedAnalysisClient() {
         ]);
         result = {
           safeSearch: safeSearchResult,
-          webAnalysis: webAnalysisResult
+          webAnalysis: webAnalysisResult,
+          verifySource: sourceResult as VerifySourceOutput,
         };
       } else if (task === 'deepfake' && file) {
         result = await detectDeepfake({ media: file.dataUrl, contentType: contentType as 'image' | 'video' | 'audio' }, sourceResult?.sourceCredibility);
