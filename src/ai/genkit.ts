@@ -18,13 +18,14 @@ export const generativeVisionModel = vertexAI.getGenerativeModel({
 
 // Instantiate grounded model for web grounding capabilities
 export const groundedModel = vertexAI.getGenerativeModel({
-  model: textModel,
-  generationConfig: {
-    responseMimeType: 'application/json',
-  },
-  tools: [{
-    googleSearchRetrieval: {
-      disableAttribution: false
-    }
-  }]
-});
+    model: textModel,
+    generationConfig: {
+      responseMimeType: 'application/json',
+    },
+    tool_config: {
+      retrieval: {
+        mode: 'search',
+        disable_attribution: false,
+      },
+    },
+  });

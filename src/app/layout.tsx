@@ -1,12 +1,20 @@
-import type {Metadata} from 'next';
-import './globals.css';
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
-import { Header } from '@/components/layout/header';
-import { ThemeProvider } from '@/components/theme-provider';
+import { Header } from '@/components';
+import { ThemeProvider } from '@/components';
+import { cn } from "@/lib/utils";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: 'Verity AI',
-  description: 'AI-Powered Tool for Combating Misinformation',
+  title: "Verity AI - Verify Information with AI",
+  description: "A tool that helps you verify the credibility of information using AI",
 };
 
 export default function RootLayout({
@@ -16,22 +24,22 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-      </head>
-      <body className="font-body antialiased">
+      <body
+        className={cn(
+          `${inter.variable} antialiased min-h-screen`
+        )}
+      >
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          <div className="flex h-screen flex-col">
+          <div className="flex flex-col min-h-screen">
             <Header />
-            <main className="flex-1 overflow-hidden">{children}</main>
+            <main className="flex-1 overflow-y-auto">
+              {children}
+            </main>
           </div>
           <Toaster />
         </ThemeProvider>

@@ -56,7 +56,8 @@ const DetectDeepfakeOutputSchema = z.object({
 export type DetectDeepfakeOutput = z.infer<typeof DetectDeepfakeOutputSchema>;
 
 export async function detectDeepfake(
-  input: DetectDeepfakeInput
+  input: DetectDeepfakeInput,
+  sourceCredibility?: number
 ): Promise<DetectDeepfakeOutput> {
   let visionApiResult;
   let visionApiAnalysis;
@@ -132,7 +133,15 @@ Incorporate these capabilities into your overall assessment.`
 Incorporate these capabilities into your overall assessment.`
     : '';
 
+  const sourceContext = sourceCredibility !== undefined 
+    ? `Note: The source of this content has a credibility score of ${sourceCredibility}/100. 
+       Consider this when evaluating the likelihood of manipulation, but remember that even 
+       credible sources can sometimes host manipulated content.`
+    : '';
+
   const prompt = `You are a digital forensics expert specializing in deepfake detection. Analyze the provided ${input.contentType} for any signs of digital manipulation, AI generation, or deepfaking.
+
+  ${sourceContext}
 
   ${visionApiText}
   ${videoIntelligenceText}
@@ -202,7 +211,7 @@ Incorporate these capabilities into your overall assessment.`
     // Clean up the response text by removing markdown code block markers and any surrounding whitespace
     const cleanJson = responseText
       .replace(/^```json\s*/, '')  // Remove opening ```json
-      .replace(/```\s*$/, '')      // Remove closing ```
+      .replace(/\s*```$/, '')      // Remove closing ```
       .trim();                     // Remove any extra whitespace
 
     const parsedJson = JSON.parse(cleanJson);
@@ -210,6 +219,7 @@ Incorporate these capabilities into your overall assessment.`
     validatedOutput.visionApiAnalysis = visionApiAnalysis;
     validatedOutput.videoIntelligenceAnalysis = videoIntelligenceAnalysis;
     validatedOutput.synthIdAnalysis = synthIdAnalysis;
+    
     return validatedOutput;
   } catch (error) {
     console.error('Error parsing or validating model output:', error);

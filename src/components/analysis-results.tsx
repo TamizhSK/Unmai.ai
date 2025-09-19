@@ -10,35 +10,23 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { IndicatorExplanation } from './indicator-explanation';
+import { getScoreColorClass, getScoreTextColorClass } from '@/lib/component-utils';
 
 interface AnalysisResultsProps {
   result: GetCredibilityScoreOutput;
 }
 
 export function AnalysisResults({ result }: AnalysisResultsProps) {
-
-  const getScoreColorClass = (score: number) => {
-    if (score < 40) return 'bg-destructive';
-    if (score < 70) return 'bg-yellow-500';
-    return 'bg-green-500';
-  };
-  
-  const getScoreTextColorClass = (score: number) => {
-    if (score < 40) return 'text-destructive';
-    if (score < 70) return 'text-yellow-500';
-    return 'text-green-500';
-  };
-
   return (
     <div className="space-y-6">
         <div className="space-y-2">
           <div className="flex justify-between items-baseline">
             <h3 className="font-semibold text-lg">Credibility Score</h3>
-            <span className={`font-bold text-2xl ${getScoreTextColorClass(result.credibilityScore)}`}>
+            <span className={`font-bold text-2xl ${getScoreTextColorClass(result.credibilityScore, 'credibility')}`}>
               {result.credibilityScore} / 100
             </span>
           </div>
-          <Progress value={result.credibilityScore} indicatorClassName={getScoreColorClass(result.credibilityScore)} />
+          <Progress value={result.credibilityScore} indicatorClassName={getScoreColorClass(result.credibilityScore, 'credibility')} />
           <p className="text-sm text-muted-foreground">
             {result.credibilityScore < 40 ? "Low credibility. Be very cautious with this information." : result.credibilityScore < 70 ? "Medium credibility. Exercise caution and verify facts." : "High credibility. Appears to be trustworthy."}
           </p>

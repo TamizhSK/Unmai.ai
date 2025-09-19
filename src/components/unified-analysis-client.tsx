@@ -4,16 +4,39 @@ import { useState } from 'react';
 import { getCredibilityScore, GetCredibilityScoreOutput } from '@/ai/flows/get-credibility-score';
 import { detectDeepfake, DetectDeepfakeOutput } from '@/ai/flows/detect-deepfake';
 import { provideEducationalInsights, ProvideEducationalInsightsOutput } from '@/ai/flows/provide-educational-insights';
+import { assessSafety } from '@/ai/flows/safety-assessment';
+import { verifySource, VerifySourceOutput } from '@/ai/flows/verify-source';
+import { performWebAnalysis } from '@/ai/flows/perform-web-analysis';
+import { detectSyntheticContent } from '@/ai/flows/detect-synthetic-content';
+import { analyzeContentForMisinformation } from '@/ai/flows/analyze-content-for-misinformation';
+import { safeSearchUrl } from '@/ai/flows/safe-search-url';
+import { factCheckClaim } from '@/ai/flows/fact-check-claim';
+import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { GeminiLoader } from '@/components/gemini-loader';
 import { Message, UserMessage } from '@/components/messages';
 import { AnalysisResults } from '@/components/analysis-results';
-import { DeepfakeResults } from '@/components/deepfake-results';
-import { EducationalInsightsResults } from './educational-insights-results';
-import { InputBar } from './input-bar';
+import { EducationalInsightsResults } from '@/components/educational-insights-results';
+import { SafetyAssessmentResults } from '@/components/safety-assessment-results';
+import { VerifySourceResults } from '@/components/verify-source-results';
+import { PerformWebAnalysisResults } from '@/components/perform-web-analysis-results';
+import { DetectSyntheticContentResults } from '@/components/detect-synthetic-content-results';
+import { AnalyzeContentResults } from '@/components/analyze-content-results';
+import { UnifiedDeepfakeAnalysis } from '@/components/unified-deepfake-analysis';
+import { InputBar } from '@/components/input-bar';
+import { SafeSearchResults } from './safe-search-results';
+import { FactCheckClaimResults } from './fact-check-claim-results';
+import { UrlAnalysisResults } from './url-analysis-results';
 
 
-export type AnalysisTask = 'credibility' | 'deepfake' | 'insights';
+export type AnalysisTask = 'credibility' | 'deepfake' | 'insights' | 'safety' | 'verify-source' | 'web-analysis' | 'synthetic-content' | 'misinformation' | 'safe-search' | 'fact-check' | 'url-analysis';
+
+type AiMessage = {
+  type: 'ai';
+  task: AnalysisTask;
+  result: any;
+  sourceResult?: VerifySourceOutput;
+};
 
 export function UnifiedAnalysisClient() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -33,11 +56,26 @@ export function UnifiedAnalysisClient() {
     }
 
     // Determine analysis task
-    let task: AnalysisTask = 'credibility';
-    if (contentType === 'image' || contentType === 'video' || contentType === 'audio') {
-        task = 'deepfake';
+    let task: AnalysisTask;
+    if (contentType === 'url') {
+      task = 'url-analysis';
+    } else if (contentType === 'image' || contentType === 'video' || contentType === 'audio') {
+        if (input.toLowerCase().includes('synthetic') || input.toLowerCase().includes('ai-generated')) {
+            task = 'synthetic-content';
+        } else {
+            task = 'deepfake';
+        }
     } else if (input.toLowerCase().includes('explain') || input.toLowerCase().includes('insight')) {
         task = 'insights';
+    } else if (input.toLowerCase().includes('safety') || input.toLowerCase().includes('harm')) {
+        task = 'safety';
+    } else if (input.toLowerCase().includes('web') || input.toLowerCase().includes('search') || input.toLowerCase().includes('current')) {
+        task = 'web-analysis';
+    } else if (input.toLowerCase().includes('misinformation') || input.toLowerCase().includes('disinformation')) {
+        task = 'misinformation';
+    } else {
+        // Default to fact-checking for text
+        task = 'fact-check';
     }
 
 
@@ -53,20 +91,48 @@ export function UnifiedAnalysisClient() {
 
     try {
       let result;
-      if (task === 'credibility') {
-        result = await getCredibilityScore({ content: input, contentType: contentType as 'text' | 'url' });
+      let sourceResult: VerifySourceOutput | undefined;
+      
+      if (task === 'url-analysis' && contentType === 'url') {
+        const [safeSearchResult, verifySourceResult] = await Promise.all([
+          safeSearchUrl({ url: input }),
+          verifySource({ content: input, contentType: 'url' })
+        ]);
+        result = {
+          safeSearch: safeSearchResult,
+          verifySource: verifySourceResult
+        };
       } else if (task === 'deepfake' && file) {
-        result = await detectDeepfake({ media: file.dataUrl, contentType: contentType as 'image' | 'video' | 'audio' });
+        if (input.match(/^https?:\/\//)) {
+          try {
+            sourceResult = await verifySource({ content: input, contentType: 'url' });
+          } catch (sourceError) {
+            console.error('Source verification failed:', sourceError);
+          }
+        }
+        result = await detectDeepfake({ media: file.dataUrl, contentType: contentType as 'image' | 'video' | 'audio' }, sourceResult?.sourceCredibility);
       } else if (task === 'insights') {
         result = await provideEducationalInsights({ text: input });
+      } else if (task === 'safety') {
+        result = await assessSafety({ content: input, contentType: contentType as 'text' | 'url' | 'image' });
+      } else if (task === 'web-analysis') {
+        result = await performWebAnalysis({ query: input, contentType: contentType as 'text' | 'url' });
+      } else if (task === 'synthetic-content' && file) {
+        result = await detectSyntheticContent({ media: file.dataUrl, contentType: contentType as 'image' | 'video' | 'audio' });
+      } else if (task === 'misinformation') {
+        result = await analyzeContentForMisinformation({ content: input });
+      } else if (task === 'fact-check' && contentType === 'text') {
+        result = await factCheckClaim({ claim: input });
       } else {
-        throw new Error("Could not determine an appropriate analysis for the given input.");
+        // Fallback for any unhandled cases, like text that slips through
+        result = await factCheckClaim({ claim: input });
       }
       
-      const aiMessage = {
+      const aiMessage: AiMessage = {
         type: 'ai',
         task,
-        result
+        result,
+        sourceResult
       };
       setMessages(prev => [...prev, aiMessage]);
 
@@ -114,8 +180,19 @@ export function UnifiedAnalysisClient() {
                     ) : (
                         <div className="w-full">
                           {msg.task === 'credibility' && <AnalysisResults result={msg.result} />}
-                          {msg.task === 'deepfake' && <DeepfakeResults result={msg.result} />}
+                          {msg.task === 'deepfake' && <UnifiedDeepfakeAnalysis 
+                            deepfakeResult={msg.result} 
+                            sourceResult={msg.sourceResult} 
+                          />}
                           {msg.task === 'insights' && <EducationalInsightsResults result={msg.result} />}
+                          {msg.task === 'safety' && <SafetyAssessmentResults result={msg.result} />}
+                          {msg.task === 'verify-source' && <VerifySourceResults result={msg.result} />}
+                          {msg.task === 'web-analysis' && <PerformWebAnalysisResults result={msg.result} />}
+                          {msg.task === 'synthetic-content' && <DetectSyntheticContentResults result={msg.result} />}
+                          {msg.task === 'misinformation' && <AnalyzeContentResults result={msg.result} />}
+                          {msg.task === 'safe-search' && <SafeSearchResults result={msg.result} />}
+                          {msg.task === 'fact-check' && <FactCheckClaimResults result={msg.result} />}
+                          {msg.task === 'url-analysis' && <UrlAnalysisResults result={msg.result} />}
                         </div>
                     )}
                 </Message>
