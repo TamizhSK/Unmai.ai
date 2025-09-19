@@ -5,13 +5,18 @@ import { PerformWebAnalysisOutputSchema } from '@/ai/flows/perform-web-analysis'
 import { Search, ExternalLink, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 
+import { VerifySourceOutput } from '@/ai/flows/verify-source';
+import { SourceInformation } from './source-information';
+
 interface PerformWebAnalysisResultsProps {
   result: z.infer<typeof PerformWebAnalysisOutputSchema>;
+  sourceResult?: VerifySourceOutput;
 }
 
-export function PerformWebAnalysisResults({ result }: PerformWebAnalysisResultsProps) {
+export function PerformWebAnalysisResults({ result, sourceResult }: PerformWebAnalysisResultsProps) {
   return (
     <div className="space-y-6">
+      <SourceInformation sourceResult={sourceResult} />
       <div className="space-y-2">
         <h3 className="font-semibold text-lg flex items-center gap-2">
           <Search className="h-5 w-5 text-primary" /> Real-time Web Analysis

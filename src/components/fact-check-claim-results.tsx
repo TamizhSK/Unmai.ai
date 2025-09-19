@@ -5,8 +5,12 @@ import { FactCheckClaimOutput } from '@/ai/flows/fact-check-claim';
 import { ResultCard } from '@/components/ui/result-card';
 import { BadgeCheck, BadgeX, AlertTriangle, HelpCircle } from 'lucide-react';
 
+import { VerifySourceOutput } from '@/ai/flows/verify-source';
+import { SourceInformation } from './source-information';
+
 interface FactCheckClaimResultsProps {
   result: FactCheckClaimOutput;
+  sourceResult?: VerifySourceOutput;
 }
 
 const verdictIcons = {
@@ -23,7 +27,7 @@ const verdictColors = {
     'Uncertain': 'text-gray-500',
 };
 
-export function FactCheckClaimResults({ result }: FactCheckClaimResultsProps) {
+export function FactCheckClaimResults({ result, sourceResult }: FactCheckClaimResultsProps) {
   return (
     <ResultCard
       title="Fact-Check Results"
@@ -31,6 +35,7 @@ export function FactCheckClaimResults({ result }: FactCheckClaimResultsProps) {
       status={result.verdict}
       statusColor={verdictColors[result.verdict]}
     >
+      <SourceInformation sourceResult={sourceResult} />
       <p className="text-sm text-muted-foreground mb-4">{result.explanation}</p>
       {result.evidence.length > 0 && (
         <div>

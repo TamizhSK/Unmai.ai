@@ -92,24 +92,30 @@ export function UnifiedAnalysisClient() {
     try {
       let result;
       let sourceResult: VerifySourceOutput | undefined;
+
+      // Always verify the source first
+      try {
+        let verifyContentType: 'text' | 'url' | 'media' = 'text';
+        if (contentType === 'url') {
+          verifyContentType = 'url';
+        } else if (contentType === 'image' || contentType === 'video' || contentType === 'audio') {
+          verifyContentType = 'media';
+        }
+        sourceResult = await verifySource({ content: input || file!.dataUrl, contentType: verifyContentType });
+      } catch (sourceError) {
+        console.error('Source verification failed:', sourceError);
+      }
       
       if (task === 'url-analysis' && contentType === 'url') {
-        const [safeSearchResult, verifySourceResult] = await Promise.all([
+        const [safeSearchResult, webAnalysisResult] = await Promise.all([
           safeSearchUrl({ url: input }),
-          verifySource({ content: input, contentType: 'url' })
+          performWebAnalysis({ query: input, contentType: 'url' })
         ]);
         result = {
           safeSearch: safeSearchResult,
-          verifySource: verifySourceResult
+          webAnalysis: webAnalysisResult
         };
       } else if (task === 'deepfake' && file) {
-        if (input.match(/^https?:\/\//)) {
-          try {
-            sourceResult = await verifySource({ content: input, contentType: 'url' });
-          } catch (sourceError) {
-            console.error('Source verification failed:', sourceError);
-          }
-        }
         result = await detectDeepfake({ media: file.dataUrl, contentType: contentType as 'image' | 'video' | 'audio' }, sourceResult?.sourceCredibility);
       } else if (task === 'insights') {
         result = await provideEducationalInsights({ text: input });
@@ -179,20 +185,20 @@ export function UnifiedAnalysisClient() {
                         <UserMessage content={msg.input} file={msg.file} />
                     ) : (
                         <div className="w-full">
-                          {msg.task === 'credibility' && <AnalysisResults result={msg.result} />}
+                          {msg.task === 'credibility' && <AnalysisResults result={msg.result} sourceResult={msg.sourceResult} />}
                           {msg.task === 'deepfake' && <UnifiedDeepfakeAnalysis 
                             deepfakeResult={msg.result} 
                             sourceResult={msg.sourceResult} 
                           />}
-                          {msg.task === 'insights' && <EducationalInsightsResults result={msg.result} />}
-                          {msg.task === 'safety' && <SafetyAssessmentResults result={msg.result} />}
-                          {msg.task === 'verify-source' && <VerifySourceResults result={msg.result} />}
-                          {msg.task === 'web-analysis' && <PerformWebAnalysisResults result={msg.result} />}
-                          {msg.task === 'synthetic-content' && <DetectSyntheticContentResults result={msg.result} />}
-                          {msg.task === 'misinformation' && <AnalyzeContentResults result={msg.result} />}
-                          {msg.task === 'safe-search' && <SafeSearchResults result={msg.result} />}
-                          {msg.task === 'fact-check' && <FactCheckClaimResults result={msg.result} />}
-                          {msg.task === 'url-analysis' && <UrlAnalysisResults result={msg.result} />}
+                          {msg.task === 'insights' && <EducationalInsightsResults result={msg.result} sourceResult={msg.sourceResult} />}
+                          {msg.task === 'safety' && <SafetyAssessmentResults result={msg.result} sourceResult={msg.sourceResult} />}
+                          {msg.task === 'verify-source' && <VerifySourceResults result={msg.result} sourceResult={msg.sourceResult} />}
+                          {msg.task === 'web-analysis' && <PerformWebAnalysisResults result={msg.result} sourceResult={msg.sourceResult} />}
+                          {msg.task === 'synthetic-content' && <DetectSyntheticContentResults result={msg.result} sourceResult={msg.sourceResult} />}
+                          {msg.task === 'misinformation' && <AnalyzeContentResults result={msg.result} sourceResult={msg.sourceResult} />}
+                          {msg.task === 'safe-search' && <SafeSearchResults result={msg.result} sourceResult={msg.sourceResult} />}
+                          {msg.task === 'fact-check' && <FactCheckClaimResults result={msg.result} sourceResult={msg.sourceResult} />}
+                          {msg.task === 'url-analysis' && <UrlAnalysisResults result={msg.result} sourceResult={msg.sourceResult} />}
                         </div>
                     )}
                 </Message>

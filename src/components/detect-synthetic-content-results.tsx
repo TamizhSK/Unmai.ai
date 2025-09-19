@@ -6,13 +6,18 @@ import { Progress } from '@/components/ui/progress';
 import { Bot, AlertTriangle } from 'lucide-react';
 import { getScoreColorClass } from '@/lib/component-utils';
 
+import { VerifySourceOutput } from '@/ai/flows/verify-source';
+import { SourceInformation } from './source-information';
+
 interface DetectSyntheticContentResultsProps {
   result: z.infer<typeof DetectSyntheticContentOutputSchema>;
+  sourceResult?: VerifySourceOutput;
 }
 
-export function DetectSyntheticContentResults({ result }: DetectSyntheticContentResultsProps) {
+export function DetectSyntheticContentResults({ result, sourceResult }: DetectSyntheticContentResultsProps) {
   return (
     <div className="space-y-6">
+      <SourceInformation sourceResult={sourceResult} />
       <div className="space-y-2">
         <h3 className="font-semibold text-lg flex items-center gap-2">
           <Bot className="h-5 w-5 text-primary" /> Synthetic Content Detection

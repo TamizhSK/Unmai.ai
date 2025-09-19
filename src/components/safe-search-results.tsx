@@ -5,11 +5,15 @@ import { safeSearchUrl, SafeSearchUrlOutput } from '@/ai/flows/safe-search-url';
 import { ResultCard } from '@/components/ui/result-card';
 import { Shield, ShieldAlert } from 'lucide-react';
 
+import { VerifySourceOutput } from '@/ai/flows/verify-source';
+import { SourceInformation } from './source-information';
+
 interface SafeSearchResultsProps {
   result: SafeSearchUrlOutput;
+  sourceResult?: VerifySourceOutput;
 }
 
-export function SafeSearchResults({ result }: SafeSearchResultsProps) {
+export function SafeSearchResults({ result, sourceResult }: SafeSearchResultsProps) {
   return (
     <ResultCard
       title="Safe Search Results"
@@ -17,6 +21,7 @@ export function SafeSearchResults({ result }: SafeSearchResultsProps) {
       status={result.isSafe ? 'Safe' : 'Unsafe'}
       statusColor={result.isSafe ? 'text-green-500' : 'text-red-500'}
     >
+      <SourceInformation sourceResult={sourceResult} />
       <p className="text-sm text-muted-foreground">{result.details}</p>
       {result.threatTypes.length > 0 && (
         <div className="mt-4">

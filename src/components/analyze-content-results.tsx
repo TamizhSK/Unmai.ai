@@ -6,11 +6,15 @@ import { Progress } from '@/components/ui/progress';
 import { AlertTriangle, Info } from 'lucide-react';
 import { getScoreColorClass, getScoreTextColorClass } from '@/lib/component-utils';
 
+import { VerifySourceOutput } from '@/ai/flows/verify-source';
+import { SourceInformation } from './source-information';
+
 interface AnalyzeContentResultsProps {
   result: z.infer<typeof AnalyzeContentOutputSchema>;
+  sourceResult?: VerifySourceOutput;
 }
 
-export function AnalyzeContentResults({ result }: AnalyzeContentResultsProps) {
+export function AnalyzeContentResults({ result, sourceResult }: AnalyzeContentResultsProps) {
   const getMisinformationLabel = (score: number) => {
     if (score > 0.7) return 'High Potential';
     if (score > 0.4) return 'Medium Potential';
@@ -19,6 +23,7 @@ export function AnalyzeContentResults({ result }: AnalyzeContentResultsProps) {
 
   return (
     <div className="space-y-6">
+      <SourceInformation sourceResult={sourceResult} />
       <div className="space-y-2">
         <h3 className="font-semibold text-lg flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-primary" /> Misinformation Analysis

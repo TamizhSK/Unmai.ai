@@ -12,13 +12,18 @@ import {
 import { IndicatorExplanation } from './indicator-explanation';
 import { getScoreColorClass, getScoreTextColorClass } from '@/lib/component-utils';
 
+import { VerifySourceOutput } from '@/ai/flows/verify-source';
+import { SourceInformation } from './source-information';
+
 interface AnalysisResultsProps {
   result: GetCredibilityScoreOutput;
+  sourceResult?: VerifySourceOutput;
 }
 
-export function AnalysisResults({ result }: AnalysisResultsProps) {
+export function AnalysisResults({ result, sourceResult }: AnalysisResultsProps) {
   return (
     <div className="space-y-6">
+        <SourceInformation sourceResult={sourceResult} />
         <div className="space-y-2">
           <div className="flex justify-between items-baseline">
             <h3 className="font-semibold text-lg">Credibility Score</h3>

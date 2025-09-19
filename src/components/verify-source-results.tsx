@@ -7,13 +7,18 @@ import { BadgeCheck, ExternalLink, Search, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { getScoreColorClass } from '@/lib/component-utils';
 
+import { VerifySourceOutput } from '@/ai/flows/verify-source';
+import { SourceInformation } from './source-information';
+
 interface VerifySourceResultsProps {
   result: z.infer<typeof VerifySourceOutputSchema>;
+  sourceResult?: VerifySourceOutput;
 }
 
-export function VerifySourceResults({ result }: VerifySourceResultsProps) {
+export function VerifySourceResults({ result, sourceResult }: VerifySourceResultsProps) {
   return (
     <div className="space-y-6">
+      <SourceInformation sourceResult={sourceResult} />
       <div className="space-y-4">
         <h3 className="font-semibold text-lg flex items-center gap-2">
           <BadgeCheck className="h-5 w-5 text-primary" /> Source Verification
