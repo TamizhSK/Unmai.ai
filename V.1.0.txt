@@ -208,3 +208,45 @@ please analyse the project and tell me in detail of what kind of features are im
 │   the existing UI layout and make the changes. also follow a theme like google colors. use these color codes to build the circularloader UI to consists         │
 │   of the colors and also implement a seamless UI feel in the web app page. please use the ShadCN component for this too with the color codes are : Blue is #4285F4, Red is #DB4437, Yellow is             │
 │   #F4B400, and Green is #0F9D58. please think ultra harder before fixing the UI and make the corrections(the landing page still has layout mismatch and overflows which has to be corrected).also, I need you to check the existing UI and list out which ShadCN UI components are unused in the project. I want every single code in the frontend UI to use ShadnCN UI component to reduce burden and increase professional look.    
+
+
+✦ You are right to point out the conflict and the need for a clear, logical component structure. I apologize for the previous confusion. I will now correct
+  the architecture to meet your requirements, ensuring the InputBar is a distinct component and the user flow is seamless.
+
+  Here is the plan:
+
+   1. Refactor `landing-page.tsx`: This will become the main view. It will display the introductory content and the InputBar. After the first query is
+      submitted, it will transition to a chat view, displaying the conversation using the messages component.
+   2. Integrate Logic: The core logic from unified-analysis-client.tsx (state management for messages, API calls) will be moved into input-bar.tsx because thats where all the inputs will be handled..
+   3. Fix `input-bar.tsx`: I will correct the icon irregularities to ensure all buttons are uniform and properly styled.
+   4. Deprecate `unified-analysis-client.tsx`: Since its logic will be merged into the landing page, this component will become redundant and will be
+      removed.
+
+  I will start by refactoring the landing-page.tsx to integrate the InputBar and the chat logic.
+
+  the message and the gemini loader in the input bar is confusing. on the first input message. the loader should be in the button where the submit button is and the whole page should be transistioned smoothly to the message area where the chats can be seen and scrolled. only the chat area should be scrollable. the input bar is untouched. please analyse, read the files, think ultra harder and make the changes  
+
+
+  	•	Handles all used AI flows (credibility scoring, deepfake detection, educational insights, explanation of missing indicators, safety assessment, source verification, and web analysis). please refer to the backend API flows for the context.
+	•	Provides a consistent JSON response.
+	•	That the frontend cards can beautify and display correctly.
+	•	And ensure URLs in the sources dialog window are presented properly.
+
+
+
+   he Verity AI project now 100% complies with the problem statement requirements:
+
+✅ Multi-input Support: Text, Audio, Video, Images, URLs
+✅ Trust Score System: Weighted 0-100 scoring with breakdown
+✅ Educational Components: Verification guidance micro-cards
+✅ Professional UI: Google Material Design with ShadCN
+✅ XAI Features: Explainable AI with per-metric analysis
+✅ Source Verification: Enhanced dialog with favicons & details
+✅ Backend Integration: 7 AI flows fully connected
+
+
+✅ USED COMPONENTS:
+Button, Card, Badge, Dialog, Tooltip, Select, Textarea, ScrollArea, Progress
+
+can be USED COMPONENTS (Can be removed):
+Avatar, Label, Popover, Separator, Skeleton

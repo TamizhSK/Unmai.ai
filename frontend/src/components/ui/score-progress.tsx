@@ -1,46 +1,42 @@
-"use client"
+'use client';
 
-import * as React from "react"
-import { Progress } from "./progress"
+import { cn } from "@/lib/utils";
+import { Progress } from "./progress";
 
-interface ScoreProgressProps extends React.ComponentPropsWithoutRef<typeof Progress> {
-  score: number
-  maxScore?: number
-  showLabel?: boolean
+interface ScoreProgressProps {
+  label: string;
+  value: number;
+  className?: string;
 }
 
-const getScoreColorClass = (score: number, maxScore: number = 100) => {
-  const percentage = (score / maxScore) * 100
-  if (percentage < 40) return 'bg-destructive'
-  if (percentage < 70) return 'bg-amber-500'
-  return 'bg-emerald-500'
-}
+export function ScoreProgress({ label, value, className }: ScoreProgressProps) {
+  const getProgressColor = (score: number) => {
+    if (score >= 75) return 'bg-[#0F9D58]'; // Google Green
+    if (score >= 40) return 'bg-[#F4B400]'; // Google Yellow
+    return 'bg-[#DB4437]'; // Google Red
+  };
 
-const ScoreProgress = React.forwardRef<
-  React.ElementRef<typeof Progress>,
-  ScoreProgressProps
->(({ score, maxScore = 100, showLabel = false, className, ...props }, ref) => {
-  const percentage = (score / maxScore) * 100
-  
+  const getTextColor = (score: number) => {
+    if (score >= 75) return 'text-[#0F9D58]'; // Google Green
+    if (score >= 40) return 'text-[#F4B400]'; // Google Yellow
+    return 'text-[#DB4437]'; // Google Red
+  };
+
   return (
-    <div className="space-y-2">
-      <Progress
-        ref={ref}
-        value={percentage}
-        indicatorClassName={getScoreColorClass(score, maxScore)}
-        className={className}
-        {...props}
-      />
-      {showLabel && (
-        <p className="text-sm text-muted-foreground">
-          {score}{maxScore !== 100 ? `/${maxScore}` : ''} 
-          {maxScore === 100 ? `%` : ''}
-        </p>
-      )}
+    <div className={cn("space-y-2", className)}>
+      <div className="flex justify-between items-center">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className={cn("text-sm font-bold", getTextColor(value))}>
+          {value}%
+        </span>
+      </div>
+      <div className="relative">
+        <Progress value={value} className="h-2" />
+        <div 
+          className={cn("absolute top-0 left-0 h-2 rounded-full transition-all duration-500", getProgressColor(value))}
+          style={{ width: `${value}%` }}
+        />
+      </div>
     </div>
-  )
-})
-
-ScoreProgress.displayName = "ScoreProgress"
-
-export { ScoreProgress, getScoreColorClass }
+  );
+}

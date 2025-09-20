@@ -30,6 +30,35 @@ const PerformWebAnalysisOutputSchema = z.object({
 });
 export type PerformWebAnalysisOutput = z.infer<typeof PerformWebAnalysisOutputSchema>;
 
+// Simple URL content scraper
+async function scrapeUrl(url: string): Promise<string> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; VerityAI/1.0; +https://verity.ai)'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const html = await response.text();
+    // Basic text extraction - remove HTML tags and get readable content
+    const textContent = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // Return first 2000 characters for analysis
+    return textContent.substring(0, 2000);
+  } catch (error) {
+    throw new Error(`Failed to scrape URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
 export async function performWebAnalysis(
   input: PerformWebAnalysisInput
 ): Promise<PerformWebAnalysisOutput> {

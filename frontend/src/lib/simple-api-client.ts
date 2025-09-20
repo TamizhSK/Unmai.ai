@@ -4,17 +4,25 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 // Generic API call function
 async function apiCall<T>(endpoint: string, data: any): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  
-  if (!response.ok) {
-    throw new Error(`API call failed: ${response.statusText}`);
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API call failed (${response.status}): ${errorText || response.statusText}`);
+    }
+    
+    const result = await response.json();
+    console.log(`API Response from ${endpoint}:`, result);
+    return result;
+  } catch (error) {
+    console.error(`API Error for ${endpoint}:`, error);
+    throw error;
   }
-  
-  return response.json();
 }
 
 // Simplified API functions
@@ -63,5 +71,13 @@ export async function transcribeAudioFlow(audioData: string) {
 }
 
 export async function translateText(text: string, targetLanguage: string) {
-  return apiCall('/api/translate-text', { text, targetLanguage });
+  // Validate input
+  if (!text || typeof text !== 'string') {
+    throw new Error('Invalid text input for translation');
+  }
+  if (!targetLanguage || typeof targetLanguage !== 'string') {
+    throw new Error('Invalid target language for translation');
+  }
+  
+  return apiCall('/api/translate-text', { text: text.trim(), targetLanguage });
 }
