@@ -211,8 +211,13 @@ export function InputBar({ onSubmit, disabled, selectedLanguage, onLanguageChang
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="en-US">English</SelectItem>
-              <SelectItem value="es-ES">Español</SelectItem>
-              <SelectItem value="fr-FR">Français</SelectItem>
+              <SelectItem value="hi-IN">Hindi</SelectItem>
+              <SelectItem value="bn-IN">Bengali</SelectItem>
+              <SelectItem value="ta-IN">Tamil</SelectItem>
+              <SelectItem value="te-IN">Telugu</SelectItem>
+              <SelectItem value="mr-IN">Marathi</SelectItem>
+              <SelectItem value="gu-IN">Gujarati</SelectItem>
+              <SelectItem value="kn-IN">Kannada</SelectItem>
             </SelectContent>
           </Select>
           <Button type="submit" size="icon" disabled={disabled || isRecognizing || (!input.trim() && !file)}>
