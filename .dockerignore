@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+Dockerfile*
+.dockerignore
+.git
+.gitignore
+.next
+dist
+frontend/.next
+backend/dist
+**/.env
+**/.env.*
+**/.DS_Store
+**/coverage
+**/build
+**/.turbo
+**/.cache

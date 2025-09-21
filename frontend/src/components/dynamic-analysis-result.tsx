@@ -1,4 +1,4 @@
-import { UnifiedResponseCard, UnifiedResponseData, EducationalCard, MultiModalTrustScores, MisleadingIndicator, DeepfakeDetection, SourceMetadata } from './unified-response-card';
+import { UnifiedResponseCard, UnifiedResponseData, EducationalCard, MultiModalTrustScores, MisleadingIndicator, DeepfakeDetection, SourceMetadata, AnalysisLoadingSkeleton } from './unified-response-card';
 
 interface DynamicAnalysisResultProps {
   task: string;
@@ -204,6 +204,11 @@ export function DynamicAnalysisResult({ task, result, sourceResult }: DynamicAna
         Analysis could not be completed.
       </div>
     );
+  }
+
+  // If backend signals a loading payload, passthrough to skeleton UI
+  if (result && typeof result === 'object' && (result as AnalysisLoadingSkeleton).kind === 'loading') {
+    return <UnifiedResponseCard response={result as AnalysisLoadingSkeleton} />;
   }
 
   const unifiedData = transformToUnifiedResponse(task, result, sourceResult);
