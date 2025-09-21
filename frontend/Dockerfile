@@ -7,14 +7,14 @@ WORKDIR /app/frontend
 RUN apt-get update && apt-get install -y --no-install-recommends libc6 libstdc++6 ca-certificates git && rm -rf /var/lib/apt/lists/*
 
 # Only copy frontend package files to leverage Docker cache
-COPY frontend/package*.json ./
+COPY package*.json ./
 RUN npm ci --omit=optional
 
 # --- Builder stage ---
 FROM node:20-slim AS builder
 WORKDIR /app/frontend
 COPY --from=deps /app/frontend/node_modules ./node_modules
-COPY frontend .
+COPY . .
 
 # Build Next.js
 ENV NEXT_TELEMETRY_DISABLED=1
