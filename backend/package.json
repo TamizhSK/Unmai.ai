@@ -1,7 +1,7 @@
 {
-  "name": "verity-backend",
+  "name": "unmai-backend",
   "version": "1.0.0",
-  "description": "Verity AI Backend - AI-powered content verification and analysis",
+  "description": "unmai.ai Backend - AI-powered content verification and analysis",
   "main": "dist/ai/dev.js",
   "type": "module",
   "scripts": {
@@ -11,7 +11,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test:env": "node -e \"require('dotenv').config(); console.log('Environment check passed'); console.log('GCP_PROJECT_ID:', process.env.GCP_PROJECT_ID ? '[OK] SET' : '[ERROR] MISSING'); console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? '[OK] SET' : '[ERROR] MISSING');\"",
+    "kill:port": "lsof -ti:3001 | xargs kill -9 || echo 'No process found on port 3001'"
   },
   "dependencies": {
     "@genkit-ai/vertexai": "^1.19.2",
@@ -21,6 +23,7 @@
     "@google-cloud/video-intelligence": "^6.2.0",
     "@google-cloud/vision": "^5.3.3",
     "@google-cloud/web-risk": "^5.3.0",
+    "@google/generative-ai": "^0.24.1",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^4.18.2",

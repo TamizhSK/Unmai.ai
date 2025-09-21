@@ -234,7 +234,7 @@ please analyse the project and tell me in detail of what kind of features are im
 
 
 
-   he Verity AI project now 100% complies with the problem statement requirements:
+   he unmai.ai project now 100% complies with the problem statement requirements:
 
 ✅ Multi-input Support: Text, Audio, Video, Images, URLs
 ✅ Trust Score System: Weighted 0-100 scoring with breakdown
@@ -250,3 +250,31 @@ Button, Card, Badge, Dialog, Tooltip, Select, Textarea, ScrollArea, Progress
 
 can be USED COMPONENTS (Can be removed):
 Avatar, Label, Popover, Separator, Skeleton
+
+
+now please use these components to fix the landing page UI feel. also make sure it suits the theme well. also make sure that the light theme is not so bright that it looks bad. please make sure it is soft for the eyes and the UI experience as well.
+
+npx shadcn@latest add @magicui/rainbow-button : use this component to remove the gemini loader and use this for the submit button.
+
+npx shadcn@latest add @magicui/aurora-text: use this for the landing page text heading/branding.
+
+npx shadcn@latest add @magicui/dot-pattern: use this for the background of the Landing page. 
+
+please make these changes and apply them correctly in the frontend
+
+
+
+
+
+
+now please use these components to fix the landing page UI feel. also make sure it suits the theme well. also make sure that the light theme is not so bright that it looks bad. please make sure it is soft for the eyes and the UI experience as well.
+
+npx shadcn@latest add @magicui/rainbow-button : use this component to remove the gemini loader and use this for the submit button.
+
+npx shadcn@latest add @magicui/aurora-text: use this for the landing page main heading only.
+
+npx shadcn@latest add @magicui/dot-pattern: use this for the background of the Landing page. 
+
+please make these changes and apply them correctly in the frontend. also the  scaling of the default website should be in very clean and neat. note this scaling which is in 80% zoom. please make the changes overall. work on the overall responsiveness. please make sure the scaling is done correctly. also remove the cards in the landing page and use this to make it more unique and cool:
+
+npx shadcn@latest add @magicui/typing-animation: to use "analyse" as default text and other words/sentences like sample questions.

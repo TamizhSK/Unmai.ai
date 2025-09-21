@@ -19,10 +19,10 @@ export type FactCheckClaimInput = z.infer<typeof FactCheckClaimInputSchema>;
 const FactCheckClaimOutputSchema = z.object({
   verdict: z.enum(['True', 'False', 'Misleading', 'Uncertain']).describe('The verdict of the fact-check.'),
   evidence: z.array(z.object({
-    source: z.string().url().describe('The URL of the evidence source.'),
-    title: z.string().describe('The title of the source page.'),
-    snippet: z.string().describe('A relevant snippet from the source.'),
-  })).describe('A list of sources that support the verdict.'),
+    source: z.string().describe('The source type or recommended verification method.'),
+    title: z.string().describe('The title or verification method description.'),
+    snippet: z.string().describe('Key points to look for when verifying this claim.'),
+  })).describe('A list of source recommendations and verification guidance.'),
   explanation: z.string().describe('A detailed explanation of the fact-check result.'),
 });
 export type FactCheckClaimOutput = z.infer<typeof FactCheckClaimOutputSchema>;
@@ -101,15 +101,15 @@ function cleanAndParseJson(responseText: string): any {
 export async function factCheckClaim(
   input: FactCheckClaimInput
 ): Promise<FactCheckClaimOutput> {
-  const prompt = `You are a professional fact-checker. Analyze this claim and provide a clear, concise verdict.
+  const prompt = `You are a professional fact-checker. Analyze this claim based on your knowledge and provide a clear, concise verdict.
 
 Claim: "${input.claim}"
 
 Instructions:
-1. Search for reliable sources to verify this claim
+1. Use your training knowledge to evaluate this claim
 2. Determine if the claim is True, False, Misleading, or Uncertain
 3. Provide a brief, clear explanation (2-3 sentences maximum)
-4. Include relevant evidence sources
+4. Suggest reliable source types for verification
 
 CRITICAL: Respond ONLY with valid JSON. No markdown, no extra text.
 
@@ -119,14 +119,14 @@ Required format:
   "explanation": "Brief, clear explanation in 2-3 sentences",
   "evidence": [
     {
-      "source": "https://reliable-source.com",
-      "title": "Source Title",
-      "snippet": "Key quote supporting the verdict"
+      "source": "Recommended source type (e.g., Scientific journals, Government health agencies)",
+      "title": "Suggested verification method",
+      "snippet": "Key points to look for when verifying this claim"
     }
   ]
 }
 
-Keep explanations concise and factual. Focus on the most important evidence.`;
+Keep explanations concise and factual. Base your analysis on well-established knowledge.`;
 
   let response;
   try {
@@ -148,16 +148,50 @@ Keep explanations concise and factual. Focus on the most important evidence.`;
     
     const parsedJson = cleanAndParseJson(responseText);
     
-    return FactCheckClaimOutputSchema.parse(parsedJson);
+    // Parse and validate the response using Zod schema
+    const validatedResult = FactCheckClaimOutputSchema.parse(parsedJson);
+    return validatedResult;
   } catch (error) {
-    console.error('Error in fact-checking claim:', error);
-    if (error instanceof Error && (error.message.includes('JSON') || error instanceof SyntaxError)) {
-      console.error('Response text that failed to parse:', response?.candidates?.[0]?.content?.parts?.[0]?.text);
+    console.error('[ERROR] Fact-check analysis failed:', error);
+    
+    // Handle Zod validation errors specifically
+    if (error?.constructor?.name === 'ZodError') {
+      console.error('[ERROR] Zod validation failed:', (error as any)?.issues);
+      console.error('Response that failed validation:', response?.candidates?.[0]?.content?.parts?.[0]?.text);
+      
+      // Try to use the cleanAndParseJson fallback for malformed responses
+      try {
+        const fallbackResult = cleanAndParseJson(response?.candidates?.[0]?.content?.parts?.[0]?.text || '');
+        
+        // Create a safe fallback with proper structure
+        return {
+          verdict: fallbackResult?.verdict || 'Uncertain',
+          evidence: Array.isArray(fallbackResult?.evidence) ? 
+            fallbackResult.evidence.map((item: any) => ({
+              source: String(item?.source || 'Knowledge base analysis'),
+              title: String(item?.title || 'AI assessment'),
+              snippet: String(item?.snippet || 'Based on training knowledge')
+            })) : [{
+              source: 'AI knowledge assessment',
+              title: 'Analysis based on training data',
+              snippet: 'Claim analyzed using available knowledge base'
+            }],
+          explanation: String(fallbackResult?.explanation || 'Analysis completed but requires further manual verification.')
+        };
+      } catch (fallbackError) {
+        console.error('[ERROR] Fallback parsing also failed:', fallbackError);
+      }
     }
+    
+    // Final fallback for any other errors
     return {
-      verdict: 'Uncertain',
-      evidence: [],
-      explanation: 'Unable to complete fact-check analysis at this time. Please try again or rephrase your claim.',
+      verdict: 'Uncertain' as const,
+      evidence: [{
+        source: 'System analysis',
+        title: 'Automated fact-check',
+        snippet: 'Unable to complete full analysis - manual verification recommended'
+      }],
+      explanation: 'Fact-check analysis encountered an issue. Please try rephrasing your claim or verify manually.',
     };
   }
 }

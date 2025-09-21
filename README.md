@@ -1,6 +1,6 @@
-# Verity AI
+# unmai.ai
 
-Verity AI is an AI-powered content verification and analysis platform that helps users identify misinformation, detect deepfakes, and assess content credibility.
+AI-powered content verification and analysis platform that helps users identify misinformation, detect deepfakes, and assess content credibility.
 
 ## Project Structure
 

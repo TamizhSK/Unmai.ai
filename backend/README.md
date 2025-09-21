@@ -1,6 +1,6 @@
-# Verity Backend
+# unmai.ai Backend
 
-This is the backend service for Verity AI, built with Google Genkit and TypeScript.
+This is the backend service for unmai.ai, built with Google Genkit and TypeScript.
 
 ## Getting Started
 
@@ -9,14 +9,36 @@ This is the backend service for Verity AI, built with Google Genkit and TypeScri
 npm install
 ```
 
-2. Set up environment variables:
-Create a `.env` file with:
-```
-GOOGLE_CLOUD_PROJECT_ID=your-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
+2. Set up Google Cloud authentication:
+```bash
+# Authenticate with Google Cloud (creates Application Default Credentials)
+gcloud auth application-default login
+
+# Set your default project (optional, can also be set in .env)
+gcloud config set project your-project-id
 ```
 
-3. Run the development server:
+3. Configure environment variables:
+The `.env` file contains complete configuration with setup instructions:
+```bash
+# Edit the .env file with your credentials
+nano .env
+
+# Required: Update these two values
+GCP_PROJECT_ID=your-google-cloud-project-id
+GEMINI_API_KEY=your-gemini-api-key
+
+# Optional: All other settings have sensible defaults
+```
+
+**Important Notes**:
+- The backend uses **Application Default Credentials** (no service account needed)
+- Both `GCP_PROJECT_ID` and `GEMINI_API_KEY` are required
+- Other Google Cloud services auto-detect the project
+- The `.env` file contains complete setup instructions
+- Never commit your `.env` file to version control
+
+4. Run the development server:
 ```bash
 npm run dev
 ```

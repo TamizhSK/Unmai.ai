@@ -1,6 +1,6 @@
 'use server';
 /**
- * @fileOverview Provides educational insights for content.
+ * @fileOverview Provides educational insights about content.
  *
  * - provideEducationalInsights - A function that provides educational insights for content.
  * - ProvideEducationalInsightsInput - The input type for the provideEducationalInsights function.

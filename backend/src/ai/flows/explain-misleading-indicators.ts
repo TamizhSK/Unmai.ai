@@ -1,6 +1,6 @@
 'use server';
 /**
- * @fileOverview Explains why content indicators might be misleading.
+ * @fileOverview Explains misleading indicators in content. be misleading.
  *
  * - explainMisleadingIndicators - A function that explains misleading indicators.
  * - ExplainMisleadingIndicatorsInput - The input type for the explainMisleadingIndicators function.

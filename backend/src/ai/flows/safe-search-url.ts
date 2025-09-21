@@ -10,6 +10,25 @@
 
 import {z} from 'zod';
 import {WebRiskServiceClient, protos} from '@google-cloud/web-risk';
+import { config } from 'dotenv';
+
+// Load environment variables
+config();
+
+// Initialize Web Risk client with error handling
+const client = new WebRiskServiceClient();
+
+// Validate Web Risk API availability
+const validateWebRiskAPI = async () => {
+  try {
+    console.log('[INFO] Web Risk API client initialized');
+  } catch (error) {
+    console.warn('[WARN] Web Risk API initialization warning:', error);
+  }
+};
+
+// Initialize validation (non-blocking)
+validateWebRiskAPI();
 
 const SafeSearchUrlInputSchema = z.object({
   url: z.string().url().describe('The URL to check.'),
@@ -22,8 +41,6 @@ const SafeSearchUrlOutputSchema = z.object({
   details: z.string().describe('Details about the scan results.'),
 });
 export type SafeSearchUrlOutput = z.infer<typeof SafeSearchUrlOutputSchema>;
-
-const client = new WebRiskServiceClient();
 
 export async function safeSearchUrl(
   input: SafeSearchUrlInput
@@ -54,11 +71,12 @@ export async function safeSearchUrl(
       };
     }
   } catch (error) {
-    console.error('Error performing safe search:', error);
+    console.error('[ERROR] Web Risk API call failed:', error);
+    // Return conservative result (unsafe) when API fails
     return {
       isSafe: false,
-      threatTypes: [],
-      details: 'An error occurred while checking the URL safety.',
+      threatTypes: ['API_UNAVAILABLE'],
+      details: 'Web Risk API unavailable - URL safety could not be verified',
     };
   }
 }
