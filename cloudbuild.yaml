@@ -91,7 +91,7 @@ steps:
         echo "Backend URL: $$BACKEND_URL"; \
         gcloud run services update "$_FRONTEND_SERVICE" \
           --region "$_REGION" \
-          --set-env-vars NEXT_PUBLIC_API_BASE_URL=$$BACKEND_URL
+          --set-env-vars NEXT_PUBLIC_API_URL=$$BACKEND_URL,NEXT_PUBLIC_API_BASE_URL=$$BACKEND_URL
 
 # Notes:
 # - Provide _GEMINI_API_KEY as a Cloud Build substitution or configure a Secret Manager reference.
