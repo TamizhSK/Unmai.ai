@@ -27,21 +27,24 @@ RUN npm run build
 
 # --- Runner stage ---
 FROM node:20-slim AS runner
-WORKDIR /app/frontend
+WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
-# Copy build artifacts for standalone mode
-COPY --from=builder /app/frontend/.next/standalone/frontend ./
-COPY --from=builder /app/frontend/.next/static ./.next/static
-COPY --from=builder /app/frontend/public ./public
+# Copy build artifacts for standalone mode (monorepo-friendly)
+# This contains root node_modules and the /frontend app with server.js
+COPY --from=builder /app/frontend/.next/standalone ./
+COPY --from=builder /app/frontend/.next/static ./frontend/.next/static
+COPY --from=builder /app/frontend/public ./frontend/public
 
-# Next starts on 3000 by default
+# Next starts on 3000 by default; ensure it binds to 0.0.0.0 in Cloud Run
 ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+WORKDIR /app
 EXPOSE 3000
 
 USER 1001
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "node server.js || node frontend/server.js"]
