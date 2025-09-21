@@ -1,11 +1,11 @@
+"use client";
 import React from 'react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { ShineBorder } from '@/components/ui/shine-border';
-import { Link, Globe, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield, Eye, Brain } from "lucide-react";
+import { Link as LinkIcon, Globe, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield, Eye, Brain } from "lucide-react";
 
 export interface MultiModalTrustScores {
   sourceContextScore: number;      // Source & Context Verification score
@@ -67,8 +67,18 @@ export interface UnifiedResponseData {
   educationalCards?: EducationalCard[];
 }
 
+// Loading skeleton type for backend-in-flight responses
+export interface AnalysisLoadingSkeleton {
+  kind: 'loading';
+  stage?: string; // e.g., "fetching_sources", "fact_checking", etc.
+  message?: string;
+  expectedChecks?: string[]; // list of checks that are running
+}
+
+type UnifiedResponse = UnifiedResponseData | AnalysisLoadingSkeleton;
+
 interface UnifiedResponseCardProps {
-  response: UnifiedResponseData;
+  response: UnifiedResponse;
 }
 
 const getLabelVariant = (verificationLevel: string) => {
@@ -275,8 +285,69 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
     );
   };
 
-  const compositeScore = getCompositeScore(response.trustScores);
+  const isLoading = (resp: UnifiedResponse): resp is AnalysisLoadingSkeleton => (resp as any)?.kind === 'loading';
+  const compositeScore = !isLoading(response) ? getCompositeScore((response as UnifiedResponseData).trustScores) : 0;
   
+  if (isLoading(response)) {
+    // Skeleton UI while backend analysis runs
+    return (
+      <div className="relative rounded-xl p-0.5">
+        <ShineBorder duration={10} borderWidth={1.5} className="rounded-xl" />
+        <Card className="relative bg-card text-card-foreground shadow-lg rounded-xl overflow-hidden border-0 z-10">
+          <CardContent className="p-6 space-y-4">
+            <div className="w-24 h-6 rounded-md bg-muted animate-pulse" />
+            <div className="space-y-3">
+              <div className="h-4 w-3/4 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-2/3 bg-muted rounded animate-pulse" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-4 w-40 bg-muted rounded animate-pulse" />
+              <div className="h-16 w-full bg-muted rounded animate-pulse" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-4 w-72 bg-muted rounded animate-pulse" />
+              <div className="h-20 w-full bg-muted rounded animate-pulse" />
+              {response.expectedChecks && response.expectedChecks.length > 0 && (
+                <div className="grid gap-2">
+                  {response.expectedChecks.map((c, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-muted animate-pulse" />
+                      <div className="text-xs text-muted-foreground">{c}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-end justify-between pt-2">
+              <div>
+                <div className="h-8 w-20 rounded-full bg-muted animate-pulse" />
+              </div>
+              <div className="flex items-end gap-3">
+                {[0,1,2].map((i) => (
+                  <div key={i} className="flex flex-col items-center gap-1">
+                    <div className="w-14 h-14 rounded-full bg-muted animate-pulse" />
+                    <div className="h-3 w-24 bg-muted rounded animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="pt-2 border-t border-border">
+              <div className="flex items-center justify-between">
+                <div className="h-4 w-28 bg-muted rounded animate-pulse" />
+                <div className="h-6 w-16 bg-muted rounded animate-pulse" />
+              </div>
+              {response.message && (
+                <div className="mt-3 text-xs text-muted-foreground">{response.message}</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const data = response as UnifiedResponseData;
+
   return (
     <div className="relative rounded-xl p-0.5">
       <ShineBorder 
@@ -287,20 +358,43 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
       <Card className="relative bg-card text-card-foreground shadow-lg rounded-xl transition-all duration-300 hover:shadow-xl overflow-hidden border-0 z-10">
         <CardContent className="p-6 space-y-4">
           {/* Header Label */}
-          <Badge className={`text-sm px-3 py-1 text-white w-fit ${getLabelVariant(response.verificationLevel)}`}>
-            {response.mainLabel}
+          <Badge className={`text-sm px-3 py-1 text-white w-fit ${getLabelVariant(data.verificationLevel)}`}>
+            {data.mainLabel}
           </Badge>
+          {/* Prominent Deepfake Banner (if applicable) */}
+          {data.deepfakeDetection && (
+            <div className={`flex items-start gap-3 p-3 rounded-lg border ${data.deepfakeDetection.isDeepfake ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+              <div className="flex-shrink-0">
+                {data.deepfakeDetection.isDeepfake ? (
+                  <XCircle className="h-5 w-5 text-red-600" />
+                ) : (
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">
+                    {data.deepfakeDetection.isDeepfake ? 'Deepfake Detected' : 'No Deepfake Detected'}
+                  </h3>
+                  <Badge variant={data.deepfakeDetection.isDeepfake ? ('destructive' as const) : ('default' as const)} className="text-xs">
+                    {data.deepfakeDetection.confidence}% confidence
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{data.deepfakeDetection.details}</p>
+              </div>
+            </div>
+          )}
           
           {/* One line description */}
           <div className="text-foreground text-sm leading-relaxed border-b border-border pb-3">
-            {response.oneLineDescription}
+            {data.oneLineDescription}
           </div>
 
           {/* Information Summary */}
           <div className="space-y-2 border-b border-border pb-3">
             <h3 className="text-sm font-medium text-foreground">Information summary</h3>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              {response.informationSummary}
+              {data.informationSummary}
             </p>
           </div>
 
@@ -320,13 +414,13 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             </Button>
             {isEducationalExpanded && (
               <div className="mt-2 p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground leading-relaxed">
-                {response.educationalInsight}
+                {data.educationalInsight}
                 
                 {/* Misleading Indicators */}
-                {response.misleadingIndicators && response.misleadingIndicators.length > 0 && (
+                {data.misleadingIndicators && data.misleadingIndicators.length > 0 && (
                   <div className="mt-4 space-y-2">
                     <h4 className="text-xs font-medium text-foreground">Misleading Indicators:</h4>
-                    {response.misleadingIndicators.map((indicator, index) => (
+                    {data.misleadingIndicators.map((indicator, index) => (
                       <div key={index} className="flex items-center justify-between p-2 bg-background rounded border">
                         <span className="text-xs">{indicator.indicator}</span>
                         <div className="flex items-center gap-2">
@@ -347,24 +441,24 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                 )}
 
                 {/* Deepfake Detection Results */}
-                {response.deepfakeDetection && (
+                {data.deepfakeDetection && (
                   <div className="mt-4 p-3 bg-background rounded border">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="text-xs font-medium text-foreground">Deepfake Detection:</h4>
-                      <Badge variant={response.deepfakeDetection.isDeepfake ? "destructive" : "default"} className="text-xs">
-                        {response.deepfakeDetection.isDeepfake ? "Detected" : "Not Detected"}
+                      <Badge variant={data.deepfakeDetection.isDeepfake ? ("destructive" as const) : ("default" as const)} className="text-xs">
+                        {data.deepfakeDetection.isDeepfake ? "Detected" : "Not Detected"}
                       </Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground mb-2">{response.deepfakeDetection.details}</p>
+                    <p className="text-xs text-muted-foreground mb-2">{data.deepfakeDetection.details}</p>
                     <div className="flex items-center gap-2">
                       <span className="text-xs">Confidence:</span>
                       <div className="w-20 bg-muted rounded-full h-1.5">
                         <div 
                           className="h-1.5 bg-blue-500 rounded-full"
-                          style={{ width: `${response.deepfakeDetection.confidence}%` }}
+                          style={{ width: `${data.deepfakeDetection.confidence}%` }}
                         />
                       </div>
-                      <span className="text-xs text-muted-foreground">{response.deepfakeDetection.confidence}%</span>
+                      <span className="text-xs text-muted-foreground">{data.deepfakeDetection.confidence}%</span>
                     </div>
                   </div>
                 )}
@@ -392,36 +486,36 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                 </DialogHeader>
                 <div className="flex-1 overflow-y-auto space-y-4 pr-2">
                   {/* Source Metadata */}
-                  {response.sourceMetadata && (
+                  {data.sourceMetadata && (
                     <div className="p-4 border rounded-lg bg-muted/50">
                       <h3 className="font-medium mb-3 flex items-center gap-2">
                         <Shield className="h-4 w-4" />
                         Source Information
                       </h3>
                       <div className="grid grid-cols-2 gap-3 text-sm">
-                        {response.sourceMetadata.domain && (
+                        {data.sourceMetadata.domain && (
                           <div>
                             <span className="text-muted-foreground">Domain:</span>
-                            <p className="font-medium">{response.sourceMetadata.domain}</p>
+                            <p className="font-medium">{data.sourceMetadata.domain}</p>
                           </div>
                         )}
-                        {response.sourceMetadata.author && (
+                        {data.sourceMetadata.author && (
                           <div>
                             <span className="text-muted-foreground">Author:</span>
-                            <p className="font-medium">{response.sourceMetadata.author}</p>
+                            <p className="font-medium">{data.sourceMetadata.author}</p>
                           </div>
                         )}
-                        {response.sourceMetadata.reputation && (
+                        {data.sourceMetadata.reputation && (
                           <div>
                             <span className="text-muted-foreground">Reputation:</span>
-                            <p className="font-medium capitalize">{response.sourceMetadata.reputation}</p>
+                            <p className="font-medium capitalize">{data.sourceMetadata.reputation}</p>
                           </div>
                         )}
-                        {response.sourceMetadata.verificationStatus && (
+                        {data.sourceMetadata.verificationStatus && (
                           <div>
                             <span className="text-muted-foreground">Status:</span>
-                            <Badge variant={response.sourceMetadata.verificationStatus === 'verified' ? 'default' : 'secondary'}>
-                              {response.sourceMetadata.verificationStatus}
+                            <Badge variant={(data.sourceMetadata.verificationStatus === 'verified' ? 'default' : 'secondary') as 'default' | 'secondary'}>
+                              {data.sourceMetadata.verificationStatus}
                             </Badge>
                           </div>
                         )}
@@ -431,7 +525,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                   
                   {/* Sources List */}
                   <div className="space-y-2">
-                    {response.sources.map((source, index) => {
+                    {data.sources.map((source, index) => {
                       const fav = getFavicon(source.url);
                       const hostname = getHostname(source.url);
                       return (
@@ -473,7 +567,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                           </div>
                           <div className="flex items-start gap-2 flex-shrink-0 mt-1">
                             <div className="w-2 h-2 rounded-full bg-[#0F9D58]" title="Verified Source" />
-                            <Link className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
+                            <LinkIcon className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
                           </div>
                         </a>
                       );
@@ -486,18 +580,18 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             {/* Three Trust Score Circles */}
             <div className="flex items-end gap-3">
               <CircularTrustScore 
-                score={response.trustScores.sourceContextScore} 
-                label="Trust score"
+                score={data.trustScores.sourceContextScore} 
+                label="Source & Context Verification"
                 icon={<Shield />}
               />
               <CircularTrustScore 
-                score={response.trustScores.contentAuthenticityScore} 
-                label="Trust score"
+                score={data.trustScores.contentAuthenticityScore} 
+                label="Authenticity & Consistency"
                 icon={<Eye />}
               />
               <CircularTrustScore 
-                score={response.trustScores.explainabilityScore} 
-                label="Trust score"
+                score={compositeScore} 
+                label="Explainability & Composite"
                 icon={<Brain />}
               />
             </div>
@@ -507,8 +601,8 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
           <div className="pt-2 border-t border-border">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Overall Verdict:</span>
-              <Badge className={`${getLabelVariant(response.verificationLevel)} text-white`}>
-                {response.verdict}
+              <Badge className={`${getLabelVariant(data.verificationLevel)} text-white`}>
+                {data.verdict}
               </Badge>
             </div>
           </div>
