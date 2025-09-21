@@ -58,7 +58,7 @@ steps:
           --set-env-vars NODE_ENV=production \
           --set-env-vars REQUEST_SIZE_LIMIT=50mb \
           --set-env-vars GCP_PROJECT_ID=$PROJECT_ID \
-          --set-secrets GEMINI_API_KEY=projects/$PROJECT_ID/secrets/GEMINI_API_KEY:latest \
+          --set-env-vars GEMINI_API_KEY=${_GEMINI_API_KEY} \
           --allow-unauthenticated
 
   # Deploy Frontend to Cloud Run (public)
@@ -89,11 +89,11 @@ steps:
     args:
       - -c
       - |
-        BACKEND_URL=$(gcloud run services describe "$_BACKEND_SERVICE" --region "$_REGION" --format='value(status.url)'); \
-        echo "Backend URL: $BACKEND_URL"; \
+        BACKEND_URL=$$(gcloud run services describe "$_BACKEND_SERVICE" --region "$_REGION" --format='value(status.url)'); \
+        echo "Backend URL: $$BACKEND_URL"; \
         gcloud run services update "$_FRONTEND_SERVICE" \
           --region "$_REGION" \
-          --set-env-vars NEXT_PUBLIC_API_BASE_URL=$BACKEND_URL
+          --set-env-vars NEXT_PUBLIC_API_BASE_URL=$$BACKEND_URL
 
 # Notes:
 # - Provide _GEMINI_API_KEY as a Cloud Build substitution or configure a Secret Manager reference.
