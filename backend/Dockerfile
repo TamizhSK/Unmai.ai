@@ -5,14 +5,14 @@ WORKDIR /app/backend
 
 RUN apt-get update && apt-get install -y --no-install-recommends libc6 libstdc++6 ca-certificates git && rm -rf /var/lib/apt/lists/*
 
-COPY backend/package*.json ./
+COPY package*.json ./
 RUN npm ci --omit=optional
 
 # --- Builder stage ---
 FROM node:20-slim AS builder
 WORKDIR /app/backend
 COPY --from=deps /app/backend/node_modules ./node_modules
-COPY backend .
+COPY . .
 
 ENV NODE_ENV=production
 RUN npm run build
