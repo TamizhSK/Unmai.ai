@@ -17,6 +17,16 @@ images:
   - gcr.io/$PROJECT_ID/unmai-backend:$BUILD_ID
 
 steps:
+  # Backend build & push (build backend first)
+  - id: build-backend
+    name: gcr.io/cloud-builders/docker
+    dir: backend
+    args: ["build", "-t", "gcr.io/$PROJECT_ID/unmai-backend:$BUILD_ID", "."]
+
+  - id: push-backend
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "gcr.io/$PROJECT_ID/unmai-backend:$BUILD_ID"]
+
   # Frontend build & push
   - id: build-frontend
     name: gcr.io/cloud-builders/docker
@@ -26,16 +36,6 @@ steps:
   - id: push-frontend
     name: gcr.io/cloud-builders/docker
     args: ["push", "gcr.io/$PROJECT_ID/unmai-frontend:$BUILD_ID"]
-
-  # Backend build & push
-  - id: build-backend
-    name: gcr.io/cloud-builders/docker
-    dir: backend
-    args: ["build", "-t", "gcr.io/$PROJECT_ID/unmai-backend:$BUILD_ID", "."]
-
-  - id: push-backend
-    name: gcr.io/cloud-builders/docker
-    args: ["push", "gcr.io/$PROJECT_ID/unmai-backend:$BUILD_ID"]
 
   # Deploy Backend to Cloud Run (can be private; remove --allow-unauthenticated if you want auth)
   - id: deploy-backend
