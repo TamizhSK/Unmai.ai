@@ -1,7 +1,7 @@
 {
-  "name": "verity-frontend",
+  "name": "unmai-frontend",
   "version": "1.0.0",
-  "description": "Verity AI Frontend - AI-powered content verification and analysis interface",
+  "description": "unmai.ai Frontend - AI-powered content verification and analysis interface",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -40,7 +40,9 @@
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
     "firebase": "^11.9.1",
+    "framer-motion": "^12.23.16",
     "lucide-react": "^0.475.0",
+    "motion": "^12.23.16",
     "next": "^15.5.3",
     "next-themes": "^0.3.0",
     "react": "^18.3.1",

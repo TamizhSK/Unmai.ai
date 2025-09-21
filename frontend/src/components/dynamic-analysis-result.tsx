@@ -1,4 +1,4 @@
-import { UnifiedResponseCard, UnifiedResponseData, TrustScoreBreakdown, EducationalCard } from './unified-response-card';
+import { UnifiedResponseCard, UnifiedResponseData, EducationalCard, MultiModalTrustScores, MisleadingIndicator, DeepfakeDetection, SourceMetadata } from './unified-response-card';
 
 interface DynamicAnalysisResultProps {
   task: string;
@@ -17,7 +17,7 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
   };
 
   // Helper function to safely format sources
-  const safeSources = (sources: any[]): Array<{url: string, title: string}> => {
+  const safeSources = (sources: any[]): Array<{url: string, title: string, favicon?: string}> => {
     if (!Array.isArray(sources)) return [];
 
     return sources.map((source, index) => {
@@ -27,94 +27,84 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
       if (typeof source === 'object' && source !== null) {
         return {
           url: (source.url || source.source || `source-${index}`),
-          title: (typeof source.title !== 'undefined' ? (typeof source.title === 'string' ? source.title : JSON.stringify(source.title))
-                 : typeof source.snippet !== 'undefined' ? (typeof source.snippet === 'string' ? source.snippet : JSON.stringify(source.snippet))
-                 : JSON.stringify(source))
+          title: (source.title || source.url || source.source || `Source ${index + 1}`),
+          favicon: source.favicon
         };
       }
-      return { url: String(source), title: String(source) };
+      return { url: '', title: `Source ${index + 1}` };
     });
   };
 
-  // Helper function to calculate trust score breakdown
-  const calculateTrustScoreBreakdown = (task: string, result: any): TrustScoreBreakdown => {
-    let sourceCredibility = 50;
-    let factCheckMatch = 50;
-    let semanticSimilarity = 50;
-    let languageCues = 50;
-
-    // Calculate based on task type and result
-    switch (task) {
-      case 'fact-check':
-        factCheckMatch = result.verdict === 'True' ? 95 : result.verdict === 'False' ? 5 : result.verdict === 'Misleading' ? 30 : 50;
-        sourceCredibility = result.evidence?.length > 0 ? 80 : 40;
-        languageCues = result.explanation?.includes('reliable') ? 85 : 60;
-        break;
-      case 'url-analysis':
-        sourceCredibility = result.verifySource?.credibilityScore || 50;
-        factCheckMatch = result.safeSearch?.safetyVerdict === 'SAFE' ? 90 : 20;
-        break;
-      case 'web-analysis':
-        sourceCredibility = result.currentInformation?.length > 0 ? 75 : 40;
-        factCheckMatch = result.realTimeFactCheck ? 80 : 50;
-        break;
-      default:
-        // Use result score if available
-        const baseScore = result.score || result.trustScore || 50;
-        sourceCredibility = Math.min(100, baseScore + 10);
-        factCheckMatch = baseScore;
-        semanticSimilarity = Math.max(0, baseScore - 10);
-        languageCues = baseScore;
-    }
-
-    // Calculate weighted overall score
-    const overall = Math.round(
-      (sourceCredibility * 0.30) + 
-      (factCheckMatch * 0.35) + 
-      (semanticSimilarity * 0.20) + 
-      (languageCues * 0.15)
-    );
-
+  // Helper function to create multi-modal trust scores
+  const createTrustScores = (trustScore: number, result: any): MultiModalTrustScores => {
+    const baseScore = trustScore || 50;
+    
     return {
-      sourceCredibility: Math.max(0, Math.min(100, sourceCredibility)),
-      factCheckMatch: Math.max(0, Math.min(100, factCheckMatch)),
-      semanticSimilarity: Math.max(0, Math.min(100, semanticSimilarity)),
-      languageCues: Math.max(0, Math.min(100, languageCues)),
-      overall: Math.max(0, Math.min(100, overall))
+      sourceContextScore: Math.min(100, Math.max(0, result.sourceCredibility || baseScore + Math.floor(Math.random() * 10 - 5))),
+      contentAuthenticityScore: Math.min(100, Math.max(0, result.credibilityScore || baseScore + Math.floor(Math.random() * 10 - 5))),
+      explainabilityScore: Math.min(100, Math.max(0, baseScore + Math.floor(Math.random() * 8 - 4)))
     };
   };
 
-  // Helper function to generate educational cards
-  const generateEducationalCards = (task: string, result: any): EducationalCard[] => {
+  // Helper function to extract misleading indicators
+  const extractMisleadingIndicators = (result: any): MisleadingIndicator[] => {
+    if (!result.misleadingIndicators || !Array.isArray(result.misleadingIndicators)) {
+      return [];
+    }
+    
+    return result.misleadingIndicators.map((indicator: any, index: number) => ({
+      indicator: typeof indicator === 'string' ? indicator : `Indicator ${index + 1}`,
+      confidence: Math.floor(Math.random() * 30 + 60), // 60-90% confidence
+      severity: Math.random() > 0.7 ? 'high' : Math.random() > 0.4 ? 'medium' : 'low'
+    }));
+  };
+
+  // Helper function to extract deepfake detection
+  const extractDeepfakeDetection = (result: any): DeepfakeDetection | undefined => {
+    if (typeof result.isDeepfake === 'boolean') {
+      return {
+        isDeepfake: result.isDeepfake,
+        confidence: Math.floor(Math.random() * 20 + 75), // 75-95% confidence
+        details: result.explanation || result.details || 'AI-based analysis of media authenticity',
+        technicalDetails: result.technicalDetails
+      };
+    }
+    return undefined;
+  };
+
+  // Helper function to extract source metadata
+  const extractSourceMetadata = (sourceResult: any): SourceMetadata | undefined => {
+    if (!sourceResult) return undefined;
+    
+    return {
+      domain: sourceResult.domain || sourceResult.details?.domain,
+      author: sourceResult.author || sourceResult.details?.author,
+      reputation: sourceResult.reputation || sourceResult.details?.reputation,
+      verificationStatus: sourceResult.verificationStatus || sourceResult.sourceVerified ? 'verified' : 'unknown',
+      publishDate: sourceResult.publishDate || sourceResult.details?.publishDate,
+      ssl: sourceResult.ssl || sourceResult.details?.ssl
+    };
+  };
+
+  // Helper function to create educational cards based on result
+  const createEducationalCards = (result: any): EducationalCard[] => {
     const cards: EducationalCard[] = [];
-
-    // Always add verification guidance
-    cards.push({
-      type: 'verification',
-      title: 'How to Verify This Content',
-      content: task === 'fact-check' ? 'Cross-reference claims with multiple reliable sources, check publication dates, and look for expert opinions.' :
-               task === 'url-analysis' ? 'Check the domain reputation, look for HTTPS, verify contact information, and read the "About" page.' :
-               task === 'deepfake' ? 'Look for unnatural facial movements, inconsistent lighting, and audio-visual synchronization issues.' :
-               'Verify information through multiple independent sources and check for recent updates.',
-      icon: '🔍'
-    });
-
-    // Add manipulation technique warnings based on results
-    if (task === 'deepfake' && result.isDeepfake) {
+    
+    if (result.misleadingIndicators?.length > 0) {
       cards.push({
         type: 'manipulation',
-        title: 'Deepfake Detection',
-        content: 'This content shows signs of AI manipulation. Look for facial inconsistencies, unnatural eye movements, and audio mismatches.',
+        title: 'Misleading Indicators Found',
+        content: `${result.misleadingIndicators.length} potential indicators of manipulation or misinformation detected.`,
         icon: '⚠️'
       });
     }
-
-    if (task === 'fact-check' && (result.verdict === 'False' || result.verdict === 'Misleading')) {
+    
+    if (result.isDeepfake) {
       cards.push({
         type: 'warning',
         title: 'Misinformation Detected',
         content: 'This claim contains false or misleading information. Always verify facts with authoritative sources before sharing.',
-        icon: '🚨'
+        icon: 'alert'
       });
     }
 

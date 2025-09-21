@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
-import { SimpleHeader } from '@/components/layout/simple-header';
-import { ThemeProvider } from '@/components';
+import { SimpleHeader } from "@/components/layout/simple-header";
+import { ThemeProvider } from "@/components";
 import { cn } from "@/lib/utils";
 import { LanguageProvider } from "@/context/language-context";
 
@@ -14,8 +14,14 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Verity AI - Verify Information with AI",
-  description: "A tool that helps you verify the credibility of information using AI",
+  title: "unmai.ai - Verify Information with AI",
+  description:
+    "A tool that helps you verify the credibility of information using AI",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
@@ -39,9 +45,7 @@ export default function RootLayout({
           <LanguageProvider>
             <div className="flex flex-col min-h-screen">
               <SimpleHeader />
-              <main className="flex-1 overflow-y-auto">
-                {children}
-              </main>
+              <main className="flex-1 overflow-y-auto">{children}</main>
             </div>
             <Toaster />
           </LanguageProvider>

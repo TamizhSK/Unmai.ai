@@ -3,6 +3,7 @@
 import { useState, useRef, ChangeEvent, FormEvent, DragEvent, ClipboardEvent, SyntheticEvent } from 'react';
 import { Textarea } from './ui/textarea';
 import { Button } from './ui/button';
+import { RainbowButton } from './ui/rainbow-button';
 import { Paperclip, Send, X, Mic, UploadCloud, Languages, ArrowUp, FileVideo, FileAudio } from 'lucide-react';
 import Image from 'next/image';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -12,7 +13,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { GeminiLoaderRing } from '@/components/gemini-loader';
 
 interface InputBarProps {
   addMessage: (message: any) => void;
@@ -51,14 +51,14 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
 
   // Dynamic placeholder based on current state
   const getPlaceholder = () => {
-    if (isRecording) return "🎤 Recording audio...";
-    if (isRecognizing) return "🎙️ Listening...";
+    if (isRecording) return "Recording audio...";
+    if (isRecognizing) return "Listening...";
     if (file) {
       if (file.type.startsWith('image/')) return "Add your question or analysis request";
       if (file.type.startsWith('video/')) return "Add your question or analysis request";
       if (file.type.startsWith('audio/')) return "Add your question or analysis request";
     }
-    if (input.trim()) return "✨ Ready to analyze your content";
+    if (input.trim()) return "Ready to analyze your content";
     return "Analyze text, URL, or paste/drop an image, video, or audio file...";
   };
 
@@ -252,11 +252,11 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
 
   return (
     <TooltipProvider>
-      <div className="relative p-0.5 rounded-xl mb-16 bg-[linear-gradient(to_right,#4285F4,#EA4335,#FBBC05,#34A853)] input-focus-glow">
+      <div className="relative p-0.5 rounded-xl mb-8 sm:mb-12 lg:mb-16 bg-[linear-gradient(to_right,#4285F4,#EA4335,#FBBC05,#34A853)] input-focus-glow">
         <form
           onSubmit={handleSubmit}
           onDragEnter={handleDragEnter}
-          className="relative rounded-xl bg-background p-3 flex flex-col gap-3"
+          className="relative rounded-xl bg-background p-2 sm:p-3 flex flex-col gap-2 sm:gap-3"
         >
         {isDragging && (
           <div
@@ -422,18 +422,17 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
             </div>
 
             {/* Send button - right corner */}
-            <Button 
-              type="submit" 
-              size="icon" 
-              className="h-8 w-8 rounded-full" 
+            <RainbowButton 
+              type="submit"
+              className="h-8 w-8 rounded-full p-0 min-w-8"
               disabled={isRecognizing || (!input.trim() && !file && !isLoading)}
             >
               {isLoading ? (
-                <GeminiLoaderRing className="h-4 w-4" />
+                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
               ) : (
                 <ArrowUp className="h-4 w-4" />
               )}
-            </Button>
+            </RainbowButton>
           </div>
         </div>
         </form>

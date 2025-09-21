@@ -1,18 +1,38 @@
+import React from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { TrustScoreRing } from '@/components/ui/trust-score-ring';
+import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { ShineBorder } from '@/components/ui/shine-border';
-import { GeminiLoaderRing } from '@/components/gemini-loader';
-import { Link, Globe, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
+import { Link, Globe, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield, Eye, Brain } from "lucide-react";
 
-export interface TrustScoreBreakdown {
-  sourceCredibility: number;
-  factCheckMatch: number;
-  semanticSimilarity: number;
-  languageCues: number;
-  overall: number;
+export interface MultiModalTrustScores {
+  sourceContextScore: number;      // Source & Context Verification score
+  contentAuthenticityScore: number; // Content Authenticity & Semantic Consistency score  
+  explainabilityScore: number;     // Explainability & Composite Trust Score
+}
+
+export interface MisleadingIndicator {
+  indicator: string;
+  confidence: number;
+  severity: 'low' | 'medium' | 'high';
+}
+
+export interface DeepfakeDetection {
+  isDeepfake: boolean;
+  confidence: number;
+  details: string;
+  technicalDetails?: string;
+}
+
+export interface SourceMetadata {
+  domain?: string;
+  author?: string;
+  reputation?: string;
+  verificationStatus?: 'verified' | 'suspicious' | 'unknown';
+  publishDate?: string;
+  ssl?: boolean;
 }
 
 export interface EducationalCard {
@@ -23,21 +43,28 @@ export interface EducationalCard {
 }
 
 export interface UnifiedResponseData {
-  mainLabel: string;
-  oneLineDescription: string;
-  informationSummary: {
-    what?: string;
-    when?: string;
-    why?: string;
-    how?: string;
-  };
-  educationalInsight: string;
-  trustScore: number;
-  trustScoreBreakdown?: TrustScoreBreakdown;
-  educationalCards?: EducationalCard[];
-  sources: Array<{url: string, title: string}>;
-  sourceDetails?: any;
+  mainLabel: string;                    // Content type analyzed (Text, Video, Image, URL)
+  oneLineDescription: string;           // Brief description of analyzed input
+  informationSummary: string;           // Key findings summary
+  educationalInsight: string;           // Educational insight on manipulation/credibility
+  
+  // Multi-modal trust scores
+  trustScores: MultiModalTrustScores;
+  
+  // Detection results
+  misleadingIndicators?: MisleadingIndicator[];
+  deepfakeDetection?: DeepfakeDetection;
+  
+  // Source information
+  sources: Array<{url: string, title: string, favicon?: string}>;
+  sourceMetadata?: SourceMetadata;
+  
+  // Overall verdict
   verificationLevel: 'authentic' | 'suspicious' | 'fake';
+  verdict: 'True' | 'Suspicious' | 'Fake';
+  
+  // Additional data
+  educationalCards?: EducationalCard[];
 }
 
 interface UnifiedResponseCardProps {
@@ -57,10 +84,62 @@ const getLabelVariant = (verificationLevel: string) => {
   }
 };
 
-const getVerificationLevel = (trustScore: number): 'authentic' | 'suspicious' | 'fake' => {
-  if (trustScore >= 75) return 'authentic';
-  if (trustScore >= 40) return 'suspicious';
+const getVerificationLevel = (score: number): 'authentic' | 'suspicious' | 'fake' => {
+  if (score >= 75) return 'authentic';
+  if (score >= 40) return 'suspicious';
   return 'fake';
+};
+
+const getScoreColor = (score: number): string => {
+  if (score >= 75) return '#0F9D58'; // Green
+  if (score >= 40) return '#F4B400'; // Yellow  
+  return '#DB4437'; // Red
+};
+
+// Circular trust score component
+const CircularTrustScore = ({ score, label, icon }: { score: number; label: string; icon: React.ReactNode }) => {
+  const radius = 20;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (score / 100) * circumference;
+  const color = getScoreColor(score);
+  
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative">
+        <svg className="w-14 h-14 transform -rotate-90" viewBox="0 0 50 50">
+          {/* Background circle */}
+          <circle
+            cx="25"
+            cy="25"
+            r={radius}
+            stroke="currentColor"
+            strokeWidth="3"
+            fill="transparent"
+            className="text-muted-foreground/20"
+          />
+          {/* Progress circle */}
+          <circle
+            cx="25"
+            cy="25"
+            r={radius}
+            stroke={color}
+            strokeWidth="3"
+            fill="transparent"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            className="transition-all duration-1000 ease-out"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center">
+            <div className={`text-xs font-bold`} style={{ color }}>{score}</div>
+          </div>
+        </div>
+      </div>
+      <div className="text-xs text-center text-muted-foreground font-medium">{label}</div>
+    </div>
+  );
 };
 
 export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
@@ -109,44 +188,11 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
     }
   };
 
-  const TrustScoreBreakdownSection = ({ breakdown }: { breakdown?: TrustScoreBreakdown }) => {
-    if (!breakdown) return null;
-    
-    const metrics = [
-      { label: 'Source Credibility', value: breakdown.sourceCredibility, weight: '30%' },
-      { label: 'Fact-check Match', value: breakdown.factCheckMatch, weight: '35%' },
-      { label: 'Semantic Similarity', value: breakdown.semanticSimilarity, weight: '20%' },
-      { label: 'Language Cues', value: breakdown.languageCues, weight: '15%' },
-    ];
-    
-    return (
-      <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
-        <div className="flex items-center gap-2">
-          <CheckCircle className="h-5 w-5 text-[#4285F4]" />
-          <h3 className="font-semibold">Trust Score Breakdown</h3>
-        </div>
-        
-        <div className="space-y-3">
-          {metrics.map((metric, index) => (
-            <div key={index} className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{metric.label} ({metric.weight})</span>
-                <span className="font-medium">{metric.value}/100</span>
-              </div>
-              <div className="w-full bg-muted rounded-full h-2">
-                <div 
-                  className={`h-2 rounded-full transition-all duration-500 ${
-                    metric.value >= 75 ? 'bg-[#0F9D58]' : 
-                    metric.value >= 40 ? 'bg-[#F4B400]' : 'bg-[#DB4437]'
-                  }`}
-                  style={{ width: `${metric.value}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+  const [isEducationalExpanded, setIsEducationalExpanded] = React.useState(false);
+
+  // Calculate composite trust score from individual scores
+  const getCompositeScore = (scores: MultiModalTrustScores) => {
+    return Math.round((scores.sourceContextScore + scores.contentAuthenticityScore + scores.explainabilityScore) / 3);
   };
 
   const EducationalCardsSection = ({ cards }: { cards?: EducationalCard[] }) => {
@@ -229,158 +275,245 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
     );
   };
 
+  const compositeScore = getCompositeScore(response.trustScores);
+  
   return (
-    <Card className="relative bg-card text-card-foreground shadow-lg rounded-xl transition-all duration-300 hover:shadow-xl overflow-hidden border-0">
+    <div className="relative rounded-xl p-0.5">
       <ShineBorder 
-        duration={6}
+        duration={10}
         borderWidth={1.5}
         className="rounded-xl"
       />
-      <CardHeader className="pb-3">
-        <div className="space-y-3">
-          <Badge className={`text-sm px-2.5 py-0.5 text-white w-fit ${getLabelVariant(response.verificationLevel || getVerificationLevel(response.trustScore))}`}>
-            {typeof response.mainLabel === 'string' ? response.mainLabel : JSON.stringify(response.mainLabel)}
+      <Card className="relative bg-card text-card-foreground shadow-lg rounded-xl transition-all duration-300 hover:shadow-xl overflow-hidden border-0 z-10">
+        <CardContent className="p-6 space-y-4">
+          {/* Header Label */}
+          <Badge className={`text-sm px-3 py-1 text-white w-fit ${getLabelVariant(response.verificationLevel)}`}>
+            {response.mainLabel}
           </Badge>
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            {typeof response.oneLineDescription === 'string' 
-              ? response.oneLineDescription 
-              : JSON.stringify(response.oneLineDescription)}
-          </p>
-        </div>
-      </CardHeader>
-      <CardContent className="p-6 pt-0 space-y-6">
-        {/* Information Summary Section */}
-        <div className="space-y-1.5">
-          <h3 className="text-sm font-medium text-foreground">Information Summary</h3>
-          <div className="text-muted-foreground text-sm leading-relaxed space-y-1">
-            {Object.entries(response.informationSummary).map(([key, value]) => {
-              const display = typeof value === 'string' ? value : JSON.stringify(value);
-              return value ? (
-                <p key={key}>
-                  <strong>{key.charAt(0).toUpperCase() + key.slice(1)}:</strong> {display}
-                </p>
-              ) : null;
-            })}
+          
+          {/* One line description */}
+          <div className="text-foreground text-sm leading-relaxed border-b border-border pb-3">
+            {response.oneLineDescription}
           </div>
-        </div>
 
-        {/* Trust Score Breakdown Section */}
-        {response.trustScoreBreakdown && (
-          <>
-            <Separator />
-            <TrustScoreBreakdownSection breakdown={response.trustScoreBreakdown} />
-          </>
-        )}
+          {/* Information Summary */}
+          <div className="space-y-2 border-b border-border pb-3">
+            <h3 className="text-sm font-medium text-foreground">Information summary</h3>
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              {response.informationSummary}
+            </p>
+          </div>
 
-        {/* Educational Cards Section */}
-        {response.educationalCards && (
-          <>
-            <Separator />
-            <EducationalCardsSection cards={response.educationalCards} />
-          </>
-        )}
+          {/* Educational Insight - Expandable */}
+          <div className="space-y-2 border-b border-border pb-3">
+            <Button
+              variant="ghost"
+              onClick={() => setIsEducationalExpanded(!isEducationalExpanded)}
+              className="h-auto p-0 text-sm font-medium text-foreground hover:bg-transparent justify-start"
+            >
+              Educational insight on how the manipulation is done/how well the information is given
+              {isEducationalExpanded ? (
+                <ChevronUp className="ml-1 h-4 w-4" />
+              ) : (
+                <ChevronDown className="ml-1 h-4 w-4" />
+              )}
+            </Button>
+            {isEducationalExpanded && (
+              <div className="mt-2 p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground leading-relaxed">
+                {response.educationalInsight}
+                
+                {/* Misleading Indicators */}
+                {response.misleadingIndicators && response.misleadingIndicators.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <h4 className="text-xs font-medium text-foreground">Misleading Indicators:</h4>
+                    {response.misleadingIndicators.map((indicator, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-background rounded border">
+                        <span className="text-xs">{indicator.indicator}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 bg-muted rounded-full h-1.5">
+                            <div 
+                              className={`h-1.5 rounded-full ${
+                                indicator.severity === 'high' ? 'bg-red-500' :
+                                indicator.severity === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
+                              }`}
+                              style={{ width: `${indicator.confidence}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{indicator.confidence}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-        {/* Educational Insight Section */}
-        <Separator />
-        <div className="space-y-1.5">
-          <h3 className="text-sm font-medium text-foreground">Educational Insight</h3>
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            {typeof response.educationalInsight === 'string' 
-              ? response.educationalInsight 
-              : JSON.stringify(response.educationalInsight)}
-          </p>
-        </div>
-
-        {/* Trust Score and Sources Section */}
-        <Separator />
-        <div className="flex items-center justify-between pt-1.5">
-          <Dialog>
-            <DialogTrigger asChild>
-              <button className="flex items-center gap-2 rounded-full bg-muted px-2.5 py-1 transition-colors hover:bg-muted/80">
-                <span className="text-sm font-medium text-foreground">Sources</span>
-                <div className="flex gap-1.5">
-                  {response.sources.slice(0, 4).map((src, index) => {
-                    const icon = getFavicon(src.url);
-                    if (icon) {
-                      return (
-                        <img
-                          key={index}
-                          src={icon}
-                          alt={typeof src.title === 'string' ? src.title : 'source'}
-                          className="w-5 h-5 rounded-full bg-muted border border-border/15"
-                          referrerPolicy="no-referrer"
+                {/* Deepfake Detection Results */}
+                {response.deepfakeDetection && (
+                  <div className="mt-4 p-3 bg-background rounded border">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-medium text-foreground">Deepfake Detection:</h4>
+                      <Badge variant={response.deepfakeDetection.isDeepfake ? "destructive" : "default"} className="text-xs">
+                        {response.deepfakeDetection.isDeepfake ? "Detected" : "Not Detected"}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">{response.deepfakeDetection.details}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs">Confidence:</span>
+                      <div className="w-20 bg-muted rounded-full h-1.5">
+                        <div 
+                          className="h-1.5 bg-blue-500 rounded-full"
+                          style={{ width: `${response.deepfakeDetection.confidence}%` }}
                         />
-                      );
-                    }
-                    return <div key={index} className="w-5 h-5 rounded-full bg-muted-foreground/20 border border-border/15" />;
-                  })}
-                </div>
-              </button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-              <DialogHeader className="flex-shrink-0">
-                <DialogTitle>Resources</DialogTitle>
-                <DialogDescription>Links and details to associated sources.</DialogDescription>
-              </DialogHeader>
-              <div className="flex-1 overflow-y-auto scrollbar-thin space-y-4 pr-2">
-                {response.sourceDetails && <SourceInformationSection sourceResult={response.sourceDetails} />}
-                <div className="space-y-2">
-                  {response.sources.map((source, index) => {
-                    const fav = getFavicon(source.url);
-                    const hostname = getHostname(source.url);
-                    return (
-                      <a
-                        key={index}
-                        href={source.url || '#'}
-                        target={source.url ? "_blank" : undefined}
-                        rel={source.url ? "noopener noreferrer" : undefined}
-                        className="flex items-start gap-3 rounded-lg px-3 py-3 hover:bg-accent hover:text-accent-foreground transition-all duration-200 text-sm border border-border/15 hover:border-[#4285F4]/20 group"
-                      >
-                        {fav ? (
-                          <img
-                            src={fav}
-                            alt={typeof source.title === 'string' ? source.title : 'source'}
-                            className="w-6 h-6 rounded-sm bg-muted border border-border/15 flex-shrink-0 mt-0.5"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div className="w-6 h-6 rounded-sm bg-gradient-to-br from-[#4285F4] to-[#0F9D58] border border-border/15 flex-shrink-0 flex items-center justify-center mt-0.5">
-                            <Globe className="w-3 h-3 text-white" />
+                      </div>
+                      <span className="text-xs text-muted-foreground">{response.deepfakeDetection.confidence}%</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Section: Sources and Trust Scores */}
+          <div className="flex items-end justify-between pt-2">
+            {/* Sources Button */}
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="rounded-full bg-muted hover:bg-muted/80 border-0 text-foreground"
+                >
+                  Sources
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+                <DialogHeader className="flex-shrink-0">
+                  <DialogTitle>Sources & Verification Details</DialogTitle>
+                  <DialogDescription>Source information and verification results</DialogDescription>
+                </DialogHeader>
+                <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                  {/* Source Metadata */}
+                  {response.sourceMetadata && (
+                    <div className="p-4 border rounded-lg bg-muted/50">
+                      <h3 className="font-medium mb-3 flex items-center gap-2">
+                        <Shield className="h-4 w-4" />
+                        Source Information
+                      </h3>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        {response.sourceMetadata.domain && (
+                          <div>
+                            <span className="text-muted-foreground">Domain:</span>
+                            <p className="font-medium">{response.sourceMetadata.domain}</p>
                           </div>
                         )}
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="font-medium text-foreground leading-5 line-clamp-2 group-hover:text-[#4285F4] transition-colors">
-                            {typeof source.title === 'string' ? source.title : JSON.stringify(source.title)}
+                        {response.sourceMetadata.author && (
+                          <div>
+                            <span className="text-muted-foreground">Author:</span>
+                            <p className="font-medium">{response.sourceMetadata.author}</p>
                           </div>
-                          {source.url && (
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <div className="text-xs text-muted-foreground break-all leading-4">
-                                {hostname || source.url}
-                              </div>
-                              {hostname && (
-                                <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
-                                  {new URL(source.url).protocol.replace(':', '')}
-                                </div>
-                              )}
+                        )}
+                        {response.sourceMetadata.reputation && (
+                          <div>
+                            <span className="text-muted-foreground">Reputation:</span>
+                            <p className="font-medium capitalize">{response.sourceMetadata.reputation}</p>
+                          </div>
+                        )}
+                        {response.sourceMetadata.verificationStatus && (
+                          <div>
+                            <span className="text-muted-foreground">Status:</span>
+                            <Badge variant={response.sourceMetadata.verificationStatus === 'verified' ? 'default' : 'secondary'}>
+                              {response.sourceMetadata.verificationStatus}
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Sources List */}
+                  <div className="space-y-2">
+                    {response.sources.map((source, index) => {
+                      const fav = getFavicon(source.url);
+                      const hostname = getHostname(source.url);
+                      return (
+                        <a
+                          key={index}
+                          href={source.url || '#'}
+                          target={source.url ? "_blank" : undefined}
+                          rel={source.url ? "noopener noreferrer" : undefined}
+                          className="flex items-start gap-3 rounded-lg px-3 py-3 hover:bg-accent hover:text-accent-foreground transition-all duration-200 text-sm border border-border/15 hover:border-[#4285F4]/20 group"
+                        >
+                          {fav ? (
+                            <img
+                              src={fav}
+                              alt={source.title}
+                              className="w-6 h-6 rounded-sm bg-muted border border-border/15 flex-shrink-0 mt-0.5"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-6 h-6 rounded-sm bg-gradient-to-br from-[#4285F4] to-[#0F9D58] border border-border/15 flex-shrink-0 flex items-center justify-center mt-0.5">
+                              <Globe className="w-3 h-3 text-white" />
                             </div>
                           )}
-                        </div>
-                        <div className="flex items-start gap-2 flex-shrink-0 mt-1">
-                          <div className="w-2 h-2 rounded-full bg-[#0F9D58]" title="Verified Source" />
-                          <Link className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
-                        </div>
-                      </a>
-                    );
-                  })}
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="font-medium text-foreground leading-5 line-clamp-2 group-hover:text-[#4285F4] transition-colors">
+                              {source.title}
+                            </div>
+                            {source.url && (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <div className="text-xs text-muted-foreground break-all leading-4">
+                                  {hostname || source.url}
+                                </div>
+                                {hostname && (
+                                  <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
+                                    {new URL(source.url).protocol.replace(':', '')}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-start gap-2 flex-shrink-0 mt-1">
+                            <div className="w-2 h-2 rounded-full bg-[#0F9D58]" title="Verified Source" />
+                            <Link className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
+                          </div>
+                        </a>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-          <div className="flex flex-col items-center">
-            <TrustScoreRing score={response.trustScore} size="sm" />
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
+              </DialogContent>
+            </Dialog>
+
+            {/* Three Trust Score Circles */}
+            <div className="flex items-end gap-3">
+              <CircularTrustScore 
+                score={response.trustScores.sourceContextScore} 
+                label="Trust score"
+                icon={<Shield />}
+              />
+              <CircularTrustScore 
+                score={response.trustScores.contentAuthenticityScore} 
+                label="Trust score"
+                icon={<Eye />}
+              />
+              <CircularTrustScore 
+                score={response.trustScores.explainabilityScore} 
+                label="Trust score"
+                icon={<Brain />}
+              />
+            </div>
+          </div>
+
+          {/* Overall Verdict */}
+          <div className="pt-2 border-t border-border">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Overall Verdict:</span>
+              <Badge className={`${getLabelVariant(response.verificationLevel)} text-white`}>
+                {response.verdict}
+              </Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }

@@ -1,6 +1,6 @@
-# Verity Frontend
+# unmai.ai Frontend
 
-This is the frontend application for Verity AI, built with Next.js 15 and React.
+This is the frontend application for unmai.ai, built with Next.js 15 and React.
 
 ## Getting Started
 

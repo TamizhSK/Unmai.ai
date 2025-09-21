@@ -20,16 +20,20 @@ export function Message({ children, isUser = false }: { children: ReactNode; isU
           </AvatarFallback>
         </Avatar>
       )}
-      <Card className={cn(
-        "w-auto max-w-[85%] sm:max-w-[70%] md:max-w-[60%] lg:max-w-lg rounded-lg shadow-sm border transition-all duration-300",
-        isUser 
-          ? "bg-primary text-primary-foreground border-primary/20" 
-          : "bg-card text-card-foreground border-border/10"
-      )}>
-        <div className="px-2.5 py-2">
+      {isUser ? (
+        <Card className={cn(
+          "w-auto max-w-[85%] sm:max-w-[70%] md:max-w-[60%] lg:max-w-lg rounded-lg shadow-sm border transition-all duration-300",
+          "bg-primary text-primary-foreground border-primary/20"
+        )}>
+          <div className="px-2.5 py-2">
+            {children}
+          </div>
+        </Card>
+      ) : (
+        <div className="w-auto max-w-[85%] sm:max-w-[70%] md:max-w-[60%] lg:max-w-lg">
           {children}
         </div>
-      </Card>
+      )}
       {isUser && (
         <Avatar className="h-8 w-8 flex-shrink-0">
           <AvatarFallback className="bg-muted text-muted-foreground">
