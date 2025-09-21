@@ -18,6 +18,7 @@ COPY . .
 
 # Build Next.js
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
 RUN npm run build
 
 # --- Runner stage ---
@@ -29,15 +30,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
-# Copy build artifacts
-COPY --from=builder /app/frontend/.next ./.next
+# Copy build artifacts for standalone mode
+COPY --from=builder /app/frontend/.next/standalone ./
+COPY --from=builder /app/frontend/.next/static ./.next/static
 COPY --from=builder /app/frontend/public ./public
-COPY --from=builder /app/frontend/package*.json ./
-COPY --from=builder /app/frontend/node_modules ./node_modules
 
 # Next starts on 3000 by default
 ENV PORT=3000
 EXPOSE 3000
 
 USER 1001
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
