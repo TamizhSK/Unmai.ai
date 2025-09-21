@@ -54,9 +54,9 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
     if (isRecording) return "🎤 Recording audio...";
     if (isRecognizing) return "🎙️ Listening...";
     if (file) {
-      if (file.type.startsWith('image/')) return "🖼️ Image attached - Add your question or analysis request";
-      if (file.type.startsWith('video/')) return "🎥 Video attached - Add your question or analysis request";
-      if (file.type.startsWith('audio/')) return "🎵 Audio attached - Add your question or analysis request";
+      if (file.type.startsWith('image/')) return "Add your question or analysis request";
+      if (file.type.startsWith('video/')) return "Add your question or analysis request";
+      if (file.type.startsWith('audio/')) return "Add your question or analysis request";
     }
     if (input.trim()) return "✨ Ready to analyze your content";
     return "Analyze text, URL, or paste/drop an image, video, or audio file...";
@@ -252,11 +252,11 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
 
   return (
     <TooltipProvider>
-      <div className="relative rounded-xl google-gradient-border mb-16">
+      <div className="relative p-0.5 rounded-xl mb-16 bg-[linear-gradient(to_right,#4285F4,#EA4335,#FBBC05,#34A853)] input-focus-glow">
         <form
           onSubmit={handleSubmit}
           onDragEnter={handleDragEnter}
-          className="relative rounded-xl bg-background p-2 flex flex-col gap-2"
+          className="relative rounded-xl bg-background p-3 flex flex-col gap-3"
         >
         {isDragging && (
           <div

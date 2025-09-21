@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from './ui/scroll-area';
 import { DynamicAnalysisResult } from './dynamic-analysis-result';
+import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
 export function Message({ children, isUser = false }: { children: ReactNode; isUser?: boolean }) {
@@ -19,8 +20,13 @@ export function Message({ children, isUser = false }: { children: ReactNode; isU
           </AvatarFallback>
         </Avatar>
       )}
-      <Card className={`w-auto max-w-[85%] sm:max-w-[70%] md:max-w-[60%] lg:max-w-lg rounded-lg shadow-sm border transition-all duration-300 ${isUser ? 'bg-primary text-primary-foreground border-white/20' : 'bg-card border-border/15'} `}>
-        <div className="px-3 py-2">
+      <Card className={cn(
+        "w-auto max-w-[85%] sm:max-w-[70%] md:max-w-[60%] lg:max-w-lg rounded-lg shadow-sm border transition-all duration-300",
+        isUser 
+          ? "bg-primary text-primary-foreground border-primary/20" 
+          : "bg-card text-card-foreground border-border/10"
+      )}>
+        <div className="px-2.5 py-2">
           {children}
         </div>
       </Card>
@@ -68,15 +74,9 @@ function AnalysisLoadingSkeleton() {
   return (
     <Message isUser={false}>
       <div className="text-card-foreground w-auto max-w-[85%] sm:max-w-[70%] md:max-w-[60%] lg:max-w-lg rounded-lg shadow-sm border transition-all duration-300 bg-card border-border/15">
-        <div className="px-3 py-2">
-          <div className="w-full space-y-3 animate-in fade-in-200 duration-300">
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-full rounded-lg bg-primary/10 dark:bg-primary/30" />
-              <Skeleton className="h-4 w-full rounded-lg bg-primary/10 dark:bg-primary/30" />
-              <Skeleton className="h-4 w-3/4 rounded-lg bg-primary/10 dark:bg-primary/30" />
-              <Skeleton className="h-4 w-1/2 rounded-lg bg-primary/10 dark:bg-primary/30" />
-            </div>
-          </div>
+        <div className="p-4 space-y-2">
+          <Skeleton className="h-4 w-[250px]" />
+          <Skeleton className="h-4 w-[200px]" />
         </div>
       </div>
     </Message>
@@ -149,42 +149,50 @@ export function MessagesContainer({
   }, [messages, isLoading, performAnalysis, addMessage, removeLastMessage]);
 
   return (
-    <ScrollArea className="flex-1 pr-1 scrollbar-thin scrollbar-thumb-border/20 scrollbar-track-transparent hover:scrollbar-thumb-border/40" ref={scrollAreaRef}>
-      <div className="mx-auto max-w-4xl space-y-3 pb-4 px-2 sm:px-3 pt-12">
-        {messages.map((msg, index) => (
-          <Message key={index} isUser={msg.type === 'user'}>
-            {msg.type === 'user' ? (
-              <UserMessage content={msg.input} file={msg.file} />
-            ) : (
-              <DynamicAnalysisResult task={msg.task} result={msg.result} sourceResult={msg.sourceResult} />
-            )}
-          </Message>
-        ))}
-        {/* Skeleton placeholder for AI response */}
-        {(() => {
-          const lastIndex = messages.length - 1;
-          const latestIsUser = lastIndex >= 0 && messages[lastIndex]?.type === 'user';
-          // If a new user message exists whose index is greater than what we've analyzed, show skeleton immediately
-          const pendingForLatest = latestIsUser && lastAnalyzedIndexRef.current < lastIndex;
-          const showSkeleton = pendingForLatest || isLoading;
-          
-          // Debug logging to see when skeleton should appear
-          // console.log('Skeleton visibility check:', { 
-          //   lastIndex, 
-          //   latestIsUser, 
-          //   lastAnalyzedIndex: lastAnalyzedIndexRef.current,
-          //   pendingForLatest, 
-          //   isLoading, 
-          //   showSkeleton 
-          // });
-          
-          return showSkeleton ? (
-            <AnalysisLoadingSkeleton />
-          ) : null;
-        })()}
-        {/* Invisible element to scroll to */}
-        <div ref={messagesEndRef} className="h-1" />
-      </div>
-    </ScrollArea>
+    <div className="flex-1 relative overflow-hidden">
+      <ScrollArea className="h-full" ref={scrollAreaRef}>
+        <div className="mx-auto max-w-4xl space-y-3 pb-4 px-2 sm:px-3 pt-16">
+          {messages.map((msg, index) => (
+            <Message key={index} isUser={msg.type === 'user'}>
+              {msg.type === 'user' ? (
+                <UserMessage content={msg.input} file={msg.file} />
+              ) : (
+                <DynamicAnalysisResult task={msg.task} result={msg.result} sourceResult={msg.sourceResult} />
+              )}
+            </Message>
+          ))}
+          {/* Skeleton placeholder for AI response */}
+          {(() => {
+            const lastIndex = messages.length - 1;
+            const latestIsUser = lastIndex >= 0 && messages[lastIndex]?.type === 'user';
+            // If a new user message exists whose index is greater than what we've analyzed, show skeleton immediately
+            const pendingForLatest = latestIsUser && lastAnalyzedIndexRef.current < lastIndex;
+            const showSkeleton = pendingForLatest || isLoading;
+            
+            // Debug logging to see when skeleton should appear
+            // console.log('Skeleton visibility check:', { 
+            //   lastIndex, 
+            //   latestIsUser, 
+            //   lastAnalyzedIndex: lastAnalyzedIndexRef.current,
+            //   pendingForLatest, 
+            //   isLoading, 
+            //   showSkeleton 
+            // });
+            
+            return showSkeleton ? (
+              <AnalysisLoadingSkeleton />
+            ) : null;
+          })()}
+          {/* Invisible element to scroll to */}
+          <div ref={messagesEndRef} className="h-1" />
+        </div>
+      </ScrollArea>
+      
+      {/* Top blur gradient overlay - positioned above content */}
+      <div className="absolute top-0 left-0 right-0 h-14 pointer-events-none z-20 bg-gradient-to-b from-background to-transparent" />
+      
+      {/* Bottom blur gradient overlay - positioned above content */}  
+      <div className="absolute bottom-0 left-0 right-0 h-14 pointer-events-none z-20 bg-gradient-to-t from-background to-transparent" />
+    </div>
   );
 }

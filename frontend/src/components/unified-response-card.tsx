@@ -1,9 +1,10 @@
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Badge } from "./ui/badge";
-import { TrustScoreRing } from "./ui/trust-score-ring";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
-import { Separator } from "./ui/separator";
-import { Skeleton } from "./ui/skeleton";
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { TrustScoreRing } from '@/components/ui/trust-score-ring';
+import { Separator } from '@/components/ui/separator';
+import { ShineBorder } from '@/components/ui/shine-border';
+import { GeminiLoaderRing } from '@/components/gemini-loader';
 import { Link, Globe, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
 
 export interface TrustScoreBreakdown {
@@ -229,8 +230,13 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
   };
 
   return (
-    <Card className="w-full bg-card rounded-lg shadow-sm border border-border/15 animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
-      <CardHeader className="p-4 pb-2">
+    <Card className="relative bg-card text-card-foreground shadow-lg rounded-xl transition-all duration-300 hover:shadow-xl overflow-hidden border-0">
+      <ShineBorder 
+        duration={6}
+        borderWidth={1.5}
+        className="rounded-xl"
+      />
+      <CardHeader className="pb-3">
         <div className="space-y-3">
           <Badge className={`text-sm px-2.5 py-0.5 text-white w-fit ${getLabelVariant(response.verificationLevel || getVerificationLevel(response.trustScore))}`}>
             {typeof response.mainLabel === 'string' ? response.mainLabel : JSON.stringify(response.mainLabel)}
@@ -242,7 +248,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
           </p>
         </div>
       </CardHeader>
-      <CardContent className="p-4 pt-0 space-y-3">
+      <CardContent className="p-6 pt-0 space-y-6">
         {/* Information Summary Section */}
         <div className="space-y-1.5">
           <h3 className="text-sm font-medium text-foreground">Information Summary</h3>
@@ -311,12 +317,12 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                 </div>
               </button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-xl">
-              <DialogHeader>
+            <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+              <DialogHeader className="flex-shrink-0">
                 <DialogTitle>Resources</DialogTitle>
                 <DialogDescription>Links and details to associated sources.</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
+              <div className="flex-1 overflow-y-auto scrollbar-thin space-y-4 pr-2">
                 {response.sourceDetails && <SourceInformationSection sourceResult={response.sourceDetails} />}
                 <div className="space-y-2">
                   {response.sources.map((source, index) => {
@@ -328,40 +334,40 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                         href={source.url || '#'}
                         target={source.url ? "_blank" : undefined}
                         rel={source.url ? "noopener noreferrer" : undefined}
-                        className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-accent hover:text-accent-foreground transition-all duration-200 text-sm border border-border/15 hover:border-[#4285F4]/20"
+                        className="flex items-start gap-3 rounded-lg px-3 py-3 hover:bg-accent hover:text-accent-foreground transition-all duration-200 text-sm border border-border/15 hover:border-[#4285F4]/20 group"
                       >
                         {fav ? (
                           <img
                             src={fav}
                             alt={typeof source.title === 'string' ? source.title : 'source'}
-                            className="w-6 h-6 rounded-sm bg-muted border border-border/15 flex-shrink-0"
+                            className="w-6 h-6 rounded-sm bg-muted border border-border/15 flex-shrink-0 mt-0.5"
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <div className="w-6 h-6 rounded-sm bg-gradient-to-br from-[#4285F4] to-[#0F9D58] border border-border/15 flex-shrink-0 flex items-center justify-center">
+                          <div className="w-6 h-6 rounded-sm bg-gradient-to-br from-[#4285F4] to-[#0F9D58] border border-border/15 flex-shrink-0 flex items-center justify-center mt-0.5">
                             <Globe className="w-3 h-3 text-white" />
                           </div>
                         )}
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium text-foreground mb-1">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="font-medium text-foreground leading-5 line-clamp-2 group-hover:text-[#4285F4] transition-colors">
                             {typeof source.title === 'string' ? source.title : JSON.stringify(source.title)}
                           </div>
                           {source.url && (
-                            <div className="flex items-center gap-2">
-                              <div className="truncate text-xs text-muted-foreground">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="text-xs text-muted-foreground break-all leading-4">
                                 {hostname || source.url}
                               </div>
                               {hostname && (
-                                <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10">
+                                <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
                                   {new URL(source.url).protocol.replace(':', '')}
                                 </div>
                               )}
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-start gap-2 flex-shrink-0 mt-1">
                           <div className="w-2 h-2 rounded-full bg-[#0F9D58]" title="Verified Source" />
-                          <Link className="h-4 w-4 text-muted-foreground" />
+                          <Link className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
                         </div>
                       </a>
                     );
