@@ -1,7 +1,7 @@
 {
-  "name": "verity",
+  "name": "unmai",
   "version": "1.0.0",
-  "description": "Verity AI - AI-powered content verification and analysis platform",
+  "description": "unmai.ai - AI-powered content verification and analysis platform",
   "private": true,
   "workspaces": [
     "frontend",

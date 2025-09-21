@@ -9,6 +9,12 @@
 
 import {z} from 'zod';
 import {groundedModel} from '../genkit';
+import { config } from 'dotenv';
+
+// Load environment variables
+config();
+
+const USER_AGENT = process.env.USER_AGENT || 'Mozilla/5.0 (compatible; unmai.ai/1.0; +https://unmai.ai)';
 
 const PerformWebAnalysisInputSchema = z.object({
   query: z.string().describe('The query or content to analyze in real-time.'),
@@ -35,7 +41,7 @@ async function scrapeUrl(url: string): Promise<string> {
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; VerityAI/1.0; +https://verity.ai)'
+        'User-Agent': USER_AGENT
       }
     });
     

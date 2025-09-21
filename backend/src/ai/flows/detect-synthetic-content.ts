@@ -1,7 +1,7 @@
 'use server';
 
 /**
- * @fileOverview AI agent to detect synthetic content using SynthID technology.
+ * @fileOverview Detects synthetic content using SynthID technology.
  *
  * - detectSyntheticContent - A function that detects synthetic content using SynthID.
  * - DetectSyntheticContentInput - The input type for the detectSyntheticContent function.

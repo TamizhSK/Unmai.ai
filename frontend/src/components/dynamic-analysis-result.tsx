@@ -118,94 +118,80 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
     return 'fake';
   };
 
+  // Create trust scores from result
+  const trustScore = Number(result.trustScore || result.credibilityScore || result.confidenceScore || 50);
+  const trustScores = createTrustScores(trustScore, result);
+  const misleadingIndicators = extractMisleadingIndicators(result);
+  const deepfakeDetection = extractDeepfakeDetection(result);
+  const sourceMetadata = extractSourceMetadata(sourceResult);
+  const educationalCards = createEducationalCards(result);
+
+  // Determine verdict based on trust score
+  const getVerdict = (score: number): 'True' | 'Suspicious' | 'Fake' => {
+    if (score >= 75) return 'True';
+    if (score >= 40) return 'Suspicious';
+    return 'Fake';
+  };
+
   // Default structure
   const unifiedResponse: UnifiedResponseData = {
     mainLabel: 'Analysis',
     oneLineDescription: 'Here is the result of the analysis.',
-    informationSummary: {},
+    informationSummary: 'Analysis completed',
     educationalInsight: 'No specific educational insight provided.',
-    trustScore: 50,
-    sources: [],
-    sourceDetails: sourceResult,
-    verificationLevel: 'suspicious',
+    trustScores,
+    misleadingIndicators,
+    deepfakeDetection,
+    sources: safeSources(result.sources || []),
+    sourceMetadata,
+    verificationLevel: getVerificationLevel(trustScore),
+    verdict: getVerdict(trustScore),
+    educationalCards
   };
 
   switch (task) {
     case 'url-analysis':
       unifiedResponse.mainLabel = safeString(result.verifySource?.credibilityScore > 70 ? 'Credible Source' : 'Use with Caution');
       unifiedResponse.oneLineDescription = safeString(`Analysis of the URL: ${result.verifySource?.url ?? ''}`);
-      unifiedResponse.informationSummary = {
-        what: safeString(result.safeSearch?.safetyVerdict) + '. ' + safeString(result.verifySource?.credibilityVerdict),
-      };
+      unifiedResponse.informationSummary = safeString(result.safeSearch?.safetyVerdict) + '. ' + safeString(result.verifySource?.credibilityVerdict);
       unifiedResponse.educationalInsight = safeString(result.verifySource?.explanation) || 'Review the source credibility and safety assessment for more details.';
-      unifiedResponse.trustScore = result.verifySource?.credibilityScore || 50;
-      unifiedResponse.sources = safeSources(result.verifySource?.sources || []);
       break;
 
     case 'deepfake':
       unifiedResponse.mainLabel = safeString(result.isDeepfake ? 'Deepfake Detected' : 'Likely Authentic');
       unifiedResponse.oneLineDescription = safeString(`Deepfake analysis result: ${result.confidenceScore}% confidence.`);
-      unifiedResponse.informationSummary = {
-        what: safeString(result.summary),
-      };
+      unifiedResponse.informationSummary = safeString(result.summary);
       unifiedResponse.educationalInsight = safeString(result.explanation);
-      unifiedResponse.trustScore = 100 - result.confidenceScore;
       break;
 
     case 'synthetic-content':
       unifiedResponse.mainLabel = safeString(result.isSynthetic ? 'Synthetic Content' : 'Likely Original');
       unifiedResponse.oneLineDescription = safeString(`Synthetic content analysis with ${result.confidenceScore}% confidence.`);
-      unifiedResponse.informationSummary = {
-        what: safeString(result.summary),
-      };
+      unifiedResponse.informationSummary = safeString(result.summary);
       unifiedResponse.educationalInsight = safeString(result.explanation);
-      unifiedResponse.trustScore = 100 - result.confidenceScore;
       break;
 
     case 'fact-check':
       unifiedResponse.mainLabel = safeString(result.verdict);
       unifiedResponse.oneLineDescription = safeString(`Fact check result for the claim: "${result.claim ?? ''}"`);
-      unifiedResponse.informationSummary = {
-        what: safeString(result.explanation || result.summary),
-      };
-      unifiedResponse.educationalInsight = safeString(result.explanation);
-      unifiedResponse.trustScore = result.score || (result.verdict === 'True' ? 90 : result.verdict === 'False' ? 10 : result.verdict === 'Misleading' ? 40 : 50);
-      // Handle evidence array properly - backend returns objects with source, title, snippet
-      unifiedResponse.sources = safeSources(result.evidence || []);
+      unifiedResponse.informationSummary = safeString(result.explanation || result.summary);
+      unifiedResponse.educationalInsight = safeString(result.explanation || result.educationalInsight || 'This fact-check analyzes the provided claim for accuracy.');
       break;
 
-    case 'web-analysis':
-      unifiedResponse.mainLabel = safeString("Web Analysis");
-      unifiedResponse.oneLineDescription = safeString("Summary of web search results.");
-      unifiedResponse.informationSummary = {
-        what: safeString(result.analysisSummary || result.summary),
-      };
-      unifiedResponse.educationalInsight = safeString(result.analysisSummary || "This is a summary of information found on the web and has not been fact-checked.");
-      unifiedResponse.trustScore = 75; // Default score for web analysis
-      // Handle currentInformation array from backend
-      unifiedResponse.sources = safeSources(result.currentInformation || result.sources || []);
+    case 'credibility-assessment':
+      unifiedResponse.mainLabel = safeString(result.assessmentSummary ?? 'Credibility Assessed');
+      unifiedResponse.oneLineDescription = safeString(`Credibility score: ${result.score ?? ''}. ${result.assessmentSummary ?? ''}`);
+      unifiedResponse.informationSummary = safeString(result.assessmentSummary || 'Assessment complete.');
+      unifiedResponse.educationalInsight = safeString(result.explanation || result.educationalInsight || 'This assessment evaluates the reliability of the provided information.');
       break;
 
     default:
       // Generic handler for other tasks
       unifiedResponse.mainLabel = safeString(task.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase()));
       unifiedResponse.oneLineDescription = safeString(result.summary) || 'Analysis complete.';
-      unifiedResponse.informationSummary = {
-        what: safeString(result.explanation || result.summary),
-      };
-      unifiedResponse.trustScore = result.score || 60;
+      unifiedResponse.informationSummary = safeString(result.explanation || result.summary);
       break;
   }
-
-  // Calculate enhanced features
-  const trustScoreBreakdown = calculateTrustScoreBreakdown(task, result);
-  const educationalCards = generateEducationalCards(task, result);
-  
-  // Update trust score with calculated breakdown
-  unifiedResponse.trustScore = trustScoreBreakdown.overall;
-  unifiedResponse.verificationLevel = getVerificationLevel(trustScoreBreakdown.overall);
-  unifiedResponse.trustScoreBreakdown = trustScoreBreakdown;
-  unifiedResponse.educationalCards = educationalCards;
 
   return unifiedResponse;
 }

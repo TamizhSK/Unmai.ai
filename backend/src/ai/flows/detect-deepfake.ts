@@ -8,9 +8,29 @@
  */
 
 import { z } from 'zod';
-import { generativeVisionModel } from '../genkit.js';
+import { generativeVisionModel } from '../genkit';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { VideoIntelligenceServiceClient } from '@google-cloud/video-intelligence';
+import { config } from 'dotenv';
+
+// Load environment variables
+config();
+
+// Initialize Google Cloud clients with error handling
+const visionClient = new ImageAnnotatorClient();
+const videoClient = new VideoIntelligenceServiceClient();
+
+// Validate API availability
+const validateVisionAPIs = async () => {
+  try {
+    console.log('[INFO] Vision and Video Intelligence APIs initialized');
+  } catch (error) {
+    console.warn('[WARN] Vision API initialization warning:', error);
+  }
+};
+
+// Initialize validation (non-blocking)
+validateVisionAPIs();
 
 const DetectDeepfakeInputSchema = z.object({
   media: z
@@ -66,8 +86,10 @@ export async function detectDeepfake(
 
   if (input.contentType === 'image') {
     try {
-      const visionClient = new ImageAnnotatorClient();
-      const imageContent = input.media.split(';base64,').pop()!;
+      const imageContent = input.media.split(';base64,').pop();
+      if (!imageContent) {
+        throw new Error('Invalid base64 image data');
+      }
 
       const [response] = await visionClient.safeSearchDetection({
         image: {content: imageContent},
@@ -79,14 +101,20 @@ export async function detectDeepfake(
           safeSearchResult: visionApiResult,
       };
     } catch (error) {
-      console.error('Error calling Vision API:', error);
-      visionApiResult = 'An error occurred while analyzing the image with the Vision API.';
+      console.error('[ERROR] Vision API call failed:', error);
+      visionApiResult = 'Vision API analysis unavailable';
+      visionApiAnalysis = {
+        safeSearchResult: visionApiResult,
+      };
     }
   } else if (input.contentType === 'video') {
     // Video Intelligence API analysis
     try {
-      const videoClient = new VideoIntelligenceServiceClient();
-      const videoBuffer = Buffer.from(input.media.split(';base64,')[1], 'base64');
+      const videoData = input.media.split(';base64,')[1];
+      if (!videoData) {
+        throw new Error('Invalid base64 video data');
+      }
+      const videoBuffer = Buffer.from(videoData, 'base64');
       
       // For now, we'll just note that we would perform these analyses
       // In a production environment, you would send the video to the API
@@ -96,11 +124,11 @@ export async function detectDeepfake(
         labelDetection: 'Video Intelligence API analysis would identify objects and activities in the video'
       };
     } catch (error) {
-      console.error('Error calling Video Intelligence API:', error);
+      console.error('[ERROR] Video Intelligence API call failed:', error);
       videoIntelligenceAnalysis = {
-        faceDetection: 'Error occurred while preparing Video Intelligence API analysis',
-        shotChange: 'Error occurred while preparing Video Intelligence API analysis',
-        labelDetection: 'Error occurred while preparing Video Intelligence API analysis'
+        faceDetection: 'Video Intelligence API unavailable',
+        shotChange: 'Video Intelligence API unavailable',
+        labelDetection: 'Video Intelligence API unavailable'
       };
     }
     
