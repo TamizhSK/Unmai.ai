@@ -9,7 +9,7 @@
  */
 
 import {z} from 'zod';
-import {groundedModel} from '../genkit';
+import {groundedModel} from '../genkit.js';
 
 const FactCheckClaimInputSchema = z.object({
   claim: z.string().describe('The claim to be fact-checked.'),
