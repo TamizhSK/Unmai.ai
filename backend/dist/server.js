@@ -1,19 +1,19 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
-import { factCheckClaim } from './ai/flows/fact-check-claim';
-import { getCredibilityScore } from './ai/flows/get-credibility-score';
-import { detectDeepfake } from './ai/flows/detect-deepfake';
-import { provideEducationalInsights } from './ai/flows/provide-educational-insights';
-import { assessSafety } from './ai/flows/safety-assessment';
-import { verifySource } from './ai/flows/verify-source';
-import { performWebAnalysis } from './ai/flows/perform-web-analysis';
-import { detectSyntheticContent } from './ai/flows/detect-synthetic-content';
-import { analyzeContentForMisinformation } from './ai/flows/analyze-content-for-misinformation';
-import { safeSearchUrl } from './ai/flows/safe-search-url';
-import { transcribeAudioFlow } from './ai/flows/transcribe-audio';
-import { explainMisleadingIndicators } from './ai/flows/explain-misleading-indicators';
-import { translateTextFlow } from './ai/flows/translate-text';
+import { factCheckClaim } from './ai/flows/fact-check-claim.js';
+import { getCredibilityScore } from './ai/flows/get-credibility-score.js';
+import { detectDeepfake } from './ai/flows/detect-deepfake.js';
+import { provideEducationalInsights } from './ai/flows/provide-educational-insights.js';
+import { assessSafety } from './ai/flows/safety-assessment.js';
+import { verifySource } from './ai/flows/verify-source.js';
+import { performWebAnalysis } from './ai/flows/perform-web-analysis.js';
+import { detectSyntheticContent } from './ai/flows/detect-synthetic-content.js';
+import { analyzeContentForMisinformation } from './ai/flows/analyze-content-for-misinformation.js';
+import { safeSearchUrl } from './ai/flows/safe-search-url.js';
+import { transcribeAudioFlow } from './ai/flows/transcribe-audio.js';
+import { explainMisleadingIndicators } from './ai/flows/explain-misleading-indicators.js';
+import { translateTextFlow } from './ai/flows/translate-text.js';
 // Load environment variables
 config();
 // Validate required environment variables

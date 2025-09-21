@@ -1,24 +1,28 @@
 # syntax=docker/dockerfile:1
 # --- Base deps stage ---
 FROM node:20-slim AS deps
-WORKDIR /app/frontend
+WORKDIR /app
 
 # Install OS deps for sharp/next if needed
 RUN apt-get update && apt-get install -y --no-install-recommends libc6 libstdc++6 ca-certificates git && rm -rf /var/lib/apt/lists/*
 
-# Only copy frontend package files to leverage Docker cache
+# Copy root package.json and lockfile for workspace
 COPY package*.json ./
-RUN npm ci --omit=optional
+# Copy frontend package.json
+COPY frontend/package*.json ./frontend/
+RUN npm ci --workspace=frontend --omit=optional
 
 # --- Builder stage ---
 FROM node:20-slim AS builder
-WORKDIR /app/frontend
-COPY --from=deps /app/frontend/node_modules ./node_modules
-COPY . .
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/package*.json ./
+COPY frontend/ ./frontend/
 
 # Build Next.js
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+WORKDIR /app/frontend
 RUN npm run build
 
 # --- Runner stage ---

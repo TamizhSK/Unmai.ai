@@ -8,7 +8,7 @@
  */
 
 import {z} from 'zod';
-import {generativeModel, generativeVisionModel} from '../genkit';
+import {generativeModel, generativeVisionModel} from '../genkit.js';
 import {Part} from '@google-cloud/vertexai';
 
 const GetCredibilityScoreInputSchema = z.object({

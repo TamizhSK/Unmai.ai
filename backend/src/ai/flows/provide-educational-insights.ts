@@ -8,7 +8,7 @@
  */
 
 import {z} from 'zod';
-import {generativeModel} from '../genkit';
+import {generativeModel} from '../genkit.js';
 
 const ProvideEducationalInsightsInputSchema = z.object({
   text: z.string().describe('The text content to analyze for educational insights.'),

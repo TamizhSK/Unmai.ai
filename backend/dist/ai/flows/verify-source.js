@@ -7,7 +7,7 @@
  * - VerifySourceOutput - The return type for the verifySource function.
  */
 import { z } from 'zod';
-import { groundedModel } from '../genkit';
+import { groundedModel } from '../genkit.js';
 const VerifySourceInputSchema = z.object({
     content: z.string().describe('The content to verify the source and origin for.'),
     contentType: z.enum(['text', 'url', 'media']).describe('The type of the content.'),

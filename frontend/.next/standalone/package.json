@@ -1,0 +1,35 @@
+{
+  "name": "unmai",
+  "version": "1.0.0",
+  "description": "unmai.ai - AI-powered content verification and analysis platform",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "npm run build:backend && npm run build:frontend",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:frontend": "cd frontend && npm run start",
+    "start:backend": "cd backend && npm run start",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
+    "clean": "npm run clean:frontend && npm run clean:backend",
+    "clean:frontend": "cd frontend && rm -rf .next node_modules",
+    "clean:backend": "cd backend && rm -rf dist node_modules",
+    "typecheck": "npm run typecheck:frontend && npm run typecheck:backend",
+    "typecheck:frontend": "cd frontend && npm run typecheck",
+    "typecheck:backend": "cd backend && npm run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}

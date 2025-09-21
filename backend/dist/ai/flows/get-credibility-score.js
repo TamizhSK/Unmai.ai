@@ -7,7 +7,7 @@
  * - GetCredibilityScoreOutput - The return type for the getCredibilityScore function.
  */
 import { z } from 'zod';
-import { generativeModel, generativeVisionModel } from '../genkit';
+import { generativeModel, generativeVisionModel } from '../genkit.js';
 const GetCredibilityScoreInputSchema = z.object({
     content: z
         .string()

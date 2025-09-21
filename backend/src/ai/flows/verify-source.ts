@@ -8,7 +8,7 @@
  */
 
 import {z} from 'zod';
-import {groundedModel} from '../genkit';
+import {groundedModel} from '../genkit.js';
 
 const VerifySourceInputSchema = z.object({
   content: z.string().describe('The content to verify the source and origin for.'),
