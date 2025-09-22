@@ -7,7 +7,7 @@
  * - ExplainMisleadingIndicatorsOutput - The return type for the explainMisleadingIndicators function.
  */
 import { z } from 'zod';
-import { generativeModel } from '../genkit';
+import { generativeModel } from '../genkit.js';
 const ExplainMisleadingIndicatorsInputSchema = z.object({
     content: z.string().describe('The content to be analyzed for misleading indicators.'),
 });

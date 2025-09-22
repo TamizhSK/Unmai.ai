@@ -8,7 +8,7 @@
  */
 
 import {z} from 'zod';
-import {generativeModel} from '../genkit';
+import {generativeModel} from '../genkit.js';
 
 const AnalyzeContentInputSchema = z.object({
   content: z.string().describe('The content to analyze (text, image data URI, or URL).'),

@@ -7,7 +7,7 @@
  * - PerformWebAnalysisOutput - The return type for the performWebAnalysis function.
  */
 import { z } from 'zod';
-import { groundedModel } from '../genkit';
+import { groundedModel } from '../genkit.js';
 import { config } from 'dotenv';
 // Load environment variables
 config();

@@ -1,43 +1,62 @@
 # syntax=docker/dockerfile:1
+
 # --- Base deps stage ---
-FROM node:20-slim AS deps
-WORKDIR /app/frontend
+FROM node:20-alpine AS deps
+WORKDIR /app
 
-# Install OS deps for sharp/next if needed
-RUN apt-get update && apt-get install -y --no-install-recommends libc6 libstdc++6 ca-certificates git && rm -rf /var/lib/apt/lists/*
+# Install dependencies needed for native modules
+RUN apk add --no-cache libc6-compat
 
-# Only copy frontend package files to leverage Docker cache
-COPY frontend/package*.json ./
-RUN npm ci --omit=optional
+# Copy package files
+COPY package*.json ./
+COPY .npmrc* ./
+
+# Install production dependencies with clean cache (no lockfile required)
+RUN npm install --omit=dev && npm cache clean --force
 
 # --- Builder stage ---
-FROM node:20-slim AS builder
-WORKDIR /app/frontend
-COPY --from=deps /app/frontend/node_modules ./node_modules
-COPY frontend .
+FROM node:20-alpine AS builder
+WORKDIR /app
 
-# Build Next.js
+# Copy dependencies
+COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json ./
+
+# Install all dependencies (including devDependencies)
+RUN npm install
+
+# Copy source code
+COPY . .
+COPY .env.production* ./
+
+# Build application
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
 RUN npm run build
 
 # --- Runner stage ---
-FROM node:20-slim AS runner
-WORKDIR /app/frontend
+FROM node:20-alpine AS runner
+WORKDIR /app
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Create non-root user
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 nextjs
 
-# Copy build artifacts
-COPY --from=builder /app/frontend/.next ./.next
-COPY --from=builder /app/frontend/public ./public
-COPY --from=builder /app/frontend/package*.json ./
-COPY --from=builder /app/frontend/node_modules ./node_modules
+# Copy runtime files
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package*.json ./
 
-# Next starts on 3000 by default
-ENV PORT=3000
-EXPOSE 3000
+# Copy built application
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER 1001
-CMD ["npm", "start"]
+
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+CMD ["node", "server.js"]

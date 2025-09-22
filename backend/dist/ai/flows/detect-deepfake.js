@@ -7,7 +7,7 @@
  * - DetectDeepfakeOutput - The return type for the detectDeepfake function.
  */
 import { z } from 'zod';
-import { generativeVisionModel } from '../genkit';
+import { generativeVisionModel } from '../genkit.js';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { VideoIntelligenceServiceClient } from '@google-cloud/video-intelligence';
 import { config } from 'dotenv';
