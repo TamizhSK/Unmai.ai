@@ -19,10 +19,8 @@ const nextConfig = {
     NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
   },
   
-  // Experimental features for better performance
-  experimental: {
-    serverComponentsExternalPackages: ['sharp']
-  },
+  // External packages for server components
+  serverExternalPackages: ['sharp'],
   
   // Security headers
   async headers() {

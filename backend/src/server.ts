@@ -2,9 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
 import { factCheckClaim } from './ai/flows/fact-check-claim.js';
+import { analyzeTextContent } from './ai/flows/analyze-text-content.js';
+import { analyzeUrlSafety } from './ai/flows/analyze-url-safety.js';
+import { analyzeImageContent } from './ai/flows/analyze-image-content.js';
+import { analyzeVideoContent } from './ai/flows/analyze-video-content.js';
+import { analyzeAudioContent } from './ai/flows/analyze-audio-content.js';
 import { getCredibilityScore } from './ai/flows/get-credibility-score.js';
 import { detectDeepfake } from './ai/flows/detect-deepfake.js';
 import { provideEducationalInsights } from './ai/flows/provide-educational-insights.js';
+import { analyzeUnified } from './ai/flows/unified-analysis.js';
 import { assessSafety } from './ai/flows/safety-assessment.js';
 import { verifySource } from './ai/flows/verify-source.js';
 import { performWebAnalysis } from './ai/flows/perform-web-analysis.js';
@@ -37,6 +43,25 @@ const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || '50mb';
 app.use(cors());
 app.use(express.json({ limit: REQUEST_SIZE_LIMIT }));
 
+// Unified multimodal endpoint (preferred)
+app.post('/api/analyze', async (req, res) => {
+  try {
+    const { type, payload } = req.body || {};
+    if (!type || !payload) {
+      return res.status(400).json({ error: 'type and payload are required' });
+    }
+    const result = await analyzeUnified({ type, payload } as any);
+    res.json(result);
+  } catch (error) {
+    console.error('[ERROR] Unified analyze API failed:', error);
+    res.status(500).json({ 
+      error: 'Unified analysis service unavailable',
+      message: 'Unable to analyze content at this time',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -60,6 +85,8 @@ app.post('/api/fact-check', async (req, res) => {
     });
   }
 });
+
+// Removed modality-specific analyze endpoints in favor of unified /api/analyze
 
 app.post('/api/credibility-score', async (req, res) => {
   try {
