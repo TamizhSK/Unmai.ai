@@ -7,7 +7,7 @@
  * - AssessSafetyOutput - The return type for the assessSafety function.
  */
 import { z } from 'zod';
-import { generativeModel, generativeVisionModel } from '../genkit';
+import { generativeModel, generativeVisionModel } from '../genkit.js';
 const SafetyAssessmentInputSchema = z.object({
     content: z.string().describe('The content to be analyzed (text, image data URI, or URL).'),
     contentType: z.enum(['text', 'image', 'url']).describe('The type of the content.'),
