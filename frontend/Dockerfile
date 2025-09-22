@@ -1,50 +1,62 @@
 # syntax=docker/dockerfile:1
+
 # --- Base deps stage ---
-FROM node:20-slim AS deps
+FROM node:20-alpine AS deps
 WORKDIR /app
 
-# Install OS deps for sharp/next if needed
-RUN apt-get update && apt-get install -y --no-install-recommends libc6 libstdc++6 ca-certificates git && rm -rf /var/lib/apt/lists/*
+# Install dependencies needed for native modules
+RUN apk add --no-cache libc6-compat
 
-# Copy root package.json and lockfile for workspace
+# Copy package files
 COPY package*.json ./
-# Copy frontend package.json
-COPY frontend/package*.json ./frontend/
-RUN npm ci --workspace=frontend --omit=optional
+COPY .npmrc* ./
+
+# Install production dependencies with clean cache (no lockfile required)
+RUN npm install --omit=dev && npm cache clean --force
 
 # --- Builder stage ---
-FROM node:20-slim AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package*.json ./
-COPY frontend/ ./frontend/
 
-# Build Next.js
+# Copy dependencies
+COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json ./
+
+# Install all dependencies (including devDependencies)
+RUN npm install
+
+# Copy source code
+COPY . .
+COPY .env.production* ./
+
+# Build application
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-WORKDIR /app/frontend
 RUN npm run build
 
 # --- Runner stage ---
-FROM node:20-slim AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Create non-root user
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 nextjs
 
-# Copy build artifacts for standalone mode (monorepo-friendly)
-# This contains root node_modules and the /frontend app with server.js
-COPY --from=builder /app/frontend/.next/standalone ./
-COPY --from=builder /app/frontend/.next/static ./frontend/.next/static
-COPY --from=builder /app/frontend/public ./frontend/public
+# Copy runtime files
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package*.json ./
 
-# Next starts on 3000 by default; ensure it binds to 0.0.0.0 in Cloud Run
-ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
-WORKDIR /app
-EXPOSE 3000
+# Copy built application
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER 1001
-CMD ["sh", "-c", "node server.js || node frontend/server.js"]
+
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+CMD ["node", "server.js"]

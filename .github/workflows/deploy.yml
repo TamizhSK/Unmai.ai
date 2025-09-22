@@ -1,0 +1,129 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  REGION: us-central1
+  FRONTEND_SERVICE: unmai-frontend
+  BACKEND_SERVICE: unmai-backend
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --workspace=frontend
+          npm ci --workspace=backend
+
+      - name: Run type checks
+        run: |
+          npm run typecheck:frontend
+          npm run typecheck:backend
+
+      - name: Build applications
+        run: |
+          npm run build:backend
+          npm run build:frontend
+
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Configure Docker to use gcloud as a credential helper
+        run: |
+          gcloud auth configure-docker
+          gcloud auth configure-docker gcr.io
+          gcloud auth configure-docker us-central1-docker.pkg.dev
+
+      - name: Submit to Cloud Build
+        run: |
+          gcloud builds submit \
+            --config cloudbuild.yaml \
+            --project ${{ secrets.GCP_PROJECT_ID }} \
+            --substitutions _REGION=${{ env.REGION }},_FRONTEND_SERVICE=${{ env.FRONTEND_SERVICE }},_BACKEND_SERVICE=${{ env.BACKEND_SERVICE }}
+
+      - name: Get deployment URLs
+        id: get-urls
+        run: |
+          FRONTEND_URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE }} --region ${{ env.REGION }} --project ${{ secrets.GCP_PROJECT_ID }} --format='value(status.url)')
+          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE }} --region ${{ env.REGION }} --project ${{ secrets.GCP_PROJECT_ID }} --format='value(status.url)')
+          echo "frontend-url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "backend-url=$BACKEND_URL" >> $GITHUB_OUTPUT
+
+      - name: Comment deployment URLs
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 **Deployment Complete!**
+              
+              **Frontend**: ${{ steps.get-urls.outputs.frontend-url }}
+              **Backend**: ${{ steps.get-urls.outputs.backend-url }}
+              
+              Deployed from commit: ${context.sha.substring(0, 7)}`
+            })
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
