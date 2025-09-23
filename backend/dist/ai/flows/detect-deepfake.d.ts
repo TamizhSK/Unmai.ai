@@ -46,12 +46,12 @@ declare const DetectDeepfakeOutputSchema: z.ZodObject<{
         confidence: z.ZodNumber;
         details: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        isSynthetic: boolean;
         confidence: number;
+        isSynthetic: boolean;
         details: string;
     }, {
-        isSynthetic: boolean;
         confidence: number;
+        isSynthetic: boolean;
         details: string;
     }>>;
 }, "strip", z.ZodTypeAny, {
@@ -67,8 +67,8 @@ declare const DetectDeepfakeOutputSchema: z.ZodObject<{
         labelDetection: string;
     } | undefined;
     synthIdAnalysis?: {
-        isSynthetic: boolean;
         confidence: number;
+        isSynthetic: boolean;
         details: string;
     } | undefined;
 }, {
@@ -84,8 +84,8 @@ declare const DetectDeepfakeOutputSchema: z.ZodObject<{
         labelDetection: string;
     } | undefined;
     synthIdAnalysis?: {
-        isSynthetic: boolean;
         confidence: number;
+        isSynthetic: boolean;
         details: string;
     } | undefined;
 }>;

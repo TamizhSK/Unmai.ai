@@ -35,43 +35,6 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
     });
   };
 
-  // Helper function to create multi-modal trust scores
-  const createTrustScores = (trustScore: number, result: any): MultiModalTrustScores => {
-    const baseScore = trustScore || 50;
-    
-    return {
-      sourceContextScore: Math.min(100, Math.max(0, result.sourceCredibility || baseScore + Math.floor(Math.random() * 10 - 5))),
-      contentAuthenticityScore: Math.min(100, Math.max(0, result.credibilityScore || baseScore + Math.floor(Math.random() * 10 - 5))),
-      explainabilityScore: Math.min(100, Math.max(0, baseScore + Math.floor(Math.random() * 8 - 4)))
-    };
-  };
-
-  // Helper function to extract misleading indicators
-  const extractMisleadingIndicators = (result: any): MisleadingIndicator[] => {
-    if (!result.misleadingIndicators || !Array.isArray(result.misleadingIndicators)) {
-      return [];
-    }
-    
-    return result.misleadingIndicators.map((indicator: any, index: number) => ({
-      indicator: typeof indicator === 'string' ? indicator : `Indicator ${index + 1}`,
-      confidence: Math.floor(Math.random() * 30 + 60), // 60-90% confidence
-      severity: Math.random() > 0.7 ? 'high' : Math.random() > 0.4 ? 'medium' : 'low'
-    }));
-  };
-
-  // Helper function to extract deepfake detection
-  const extractDeepfakeDetection = (result: any): DeepfakeDetection | undefined => {
-    if (typeof result.isDeepfake === 'boolean') {
-      return {
-        isDeepfake: result.isDeepfake,
-        confidence: Math.floor(Math.random() * 20 + 75), // 75-95% confidence
-        details: result.explanation || result.details || 'AI-based analysis of media authenticity',
-        technicalDetails: result.technicalDetails
-      };
-    }
-    return undefined;
-  };
-
   // Helper function to extract source metadata
   const extractSourceMetadata = (sourceResult: any): SourceMetadata | undefined => {
     if (!sourceResult) return undefined;
@@ -110,6 +73,93 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
 
     return cards;
   };
+
+  // Map unified backend label to verification level and verdict (to preserve original unified card semantics)
+  const mapLabelToVerification = (lbl: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN' | string): { level: 'authentic' | 'suspicious' | 'fake'; verdict: 'True' | 'Suspicious' | 'Fake' } => {
+    switch (lbl) {
+      case 'GREEN':
+        return { level: 'authentic', verdict: 'True' };
+      case 'RED':
+        return { level: 'fake', verdict: 'Fake' };
+      case 'ORANGE':
+      case 'YELLOW':
+      default:
+        return { level: 'suspicious', verdict: 'Suspicious' };
+    }
+  };
+
+  // If result already follows the unified backend format, map directly to UnifiedResponseData
+  if (result && typeof result === 'object' && 'analysisLabel' in result) {
+    const unifiedBackend = result as {
+      analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN';
+      oneLineDescription?: string;
+      summary?: string;
+      educationalInsight?: string;
+      sources?: Array<{ url: string; title?: string; credibility?: number }>;
+      sourceIntegrityScore?: number;
+      contentAuthenticityScore?: number;
+      trustExplainabilityScore?: number;
+    };
+
+    const { level, verdict } = mapLabelToVerification(unifiedBackend.analysisLabel);
+
+    const unifiedMapped: UnifiedResponseData = {
+      mainLabel: `${safeString(task).toUpperCase()} - ${unifiedBackend.analysisLabel}`,
+      oneLineDescription: unifiedBackend.oneLineDescription || `Analysis of ${safeString(task)} content`,
+      informationSummary: unifiedBackend.summary || 'Analysis summary unavailable.',
+      educationalInsight: unifiedBackend.educationalInsight || 'Educational content will appear here.',
+      trustScores: {
+        sourceContextScore: Number(unifiedBackend.sourceIntegrityScore ?? 0),
+        contentAuthenticityScore: Number(unifiedBackend.contentAuthenticityScore ?? 0),
+        explainabilityScore: Number(unifiedBackend.trustExplainabilityScore ?? 0)
+      },
+      sources: safeSources(unifiedBackend.sources || []),
+      sourceMetadata: extractSourceMetadata(sourceResult),
+      verificationLevel: level,
+      verdict,
+      educationalCards: createEducationalCards(result)
+    };
+
+    return unifiedMapped;
+  }
+
+  // Helper function to create multi-modal trust scores
+  const createTrustScores = (trustScore: number, result: any): MultiModalTrustScores => {
+    const baseScore = trustScore || 50;
+    
+    return {
+      sourceContextScore: Math.min(100, Math.max(0, result.sourceCredibility || baseScore + Math.floor(Math.random() * 10 - 5))),
+      contentAuthenticityScore: Math.min(100, Math.max(0, result.credibilityScore || baseScore + Math.floor(Math.random() * 10 - 5))),
+      explainabilityScore: Math.min(100, Math.max(0, baseScore + Math.floor(Math.random() * 8 - 4)))
+    };
+  };
+
+  // Helper function to extract misleading indicators
+  const extractMisleadingIndicators = (result: any): MisleadingIndicator[] => {
+    if (!result.misleadingIndicators || !Array.isArray(result.misleadingIndicators)) {
+      return [];
+    }
+    
+    return result.misleadingIndicators.map((indicator: any, index: number) => ({
+      indicator: typeof indicator === 'string' ? indicator : `Indicator ${index + 1}`,
+      confidence: Math.floor(Math.random() * 30 + 60), // 60-90% confidence
+      severity: Math.random() > 0.7 ? 'high' : Math.random() > 0.4 ? 'medium' : 'low'
+    }));
+  };
+
+  // Helper function to extract deepfake detection
+  const extractDeepfakeDetection = (result: any): DeepfakeDetection | undefined => {
+    if (typeof result.isDeepfake === 'boolean') {
+      return {
+        isDeepfake: result.isDeepfake,
+        confidence: Math.floor(Math.random() * 20 + 75), // 75-95% confidence
+        details: result.explanation || result.details || 'AI-based analysis of media authenticity',
+        technicalDetails: result.technicalDetails
+      };
+    }
+    return undefined;
+  };
+
 
   // Helper function to get verification level
   const getVerificationLevel = (trustScore: number): 'authentic' | 'suspicious' | 'fake' => {

@@ -10,11 +10,11 @@ declare const GetCredibilityScoreInputSchema: z.ZodObject<{
     content: z.ZodString;
     contentType: z.ZodEnum<["text", "image", "url"]>;
 }, "strip", z.ZodTypeAny, {
+    contentType: "text" | "url" | "image";
     content: string;
-    contentType: "text" | "image" | "url";
 }, {
+    contentType: "text" | "url" | "image";
     content: string;
-    contentType: "text" | "image" | "url";
 }>;
 export type GetCredibilityScoreInput = z.infer<typeof GetCredibilityScoreInputSchema>;
 declare const GetCredibilityScoreOutputSchema: z.ZodObject<{

@@ -101,32 +101,32 @@ function cleanAndParseJson(responseText: string): any {
 export async function factCheckClaim(
   input: FactCheckClaimInput
 ): Promise<FactCheckClaimOutput> {
-  const prompt = `You are a professional fact-checker. Analyze this claim based on your knowledge and provide a clear, concise verdict.
+  const prompt = `You are a professional fact-checker. Analyze this claim thoroughly and provide a comprehensive verdict.
 
 Claim: "${input.claim}"
 
 Instructions:
-1. Use your training knowledge to evaluate this claim
+1. Use your training knowledge to evaluate this claim comprehensively
 2. Determine if the claim is True, False, Misleading, or Uncertain
-3. Provide a brief, clear explanation (2-3 sentences maximum)
-4. Suggest reliable source types for verification
+3. Provide a detailed explanation with context and nuance
+4. Suggest multiple reliable sources for verification
 
 CRITICAL: Respond ONLY with valid JSON. No markdown, no extra text.
 
 Required format:
 {
   "verdict": "True|False|Misleading|Uncertain",
-  "explanation": "Brief, clear explanation in 2-3 sentences",
+  "explanation": "Detailed explanation with context, explaining WHY the claim is true/false/misleading, what the actual facts are, and any important nuances or caveats. Include relevant background information.",
   "evidence": [
     {
-      "source": "Recommended source type (e.g., Scientific journals, Government health agencies)",
-      "title": "Suggested verification method",
-      "snippet": "Key points to look for when verifying this claim"
+      "source": "Type of authoritative source (e.g., Scientific journals, Government agencies, Academic institutions)",
+      "title": "Specific verification approach or resource",
+      "snippet": "Detailed guidance on what to look for, including specific facts, data points, or context that would help verify or refute this claim"
     }
   ]
 }
 
-Keep explanations concise and factual. Base your analysis on well-established knowledge.`;
+Provide thorough, educational explanations that help users understand the full context. Include at least 3 evidence sources.`;
 
   let response;
   try {
@@ -186,12 +186,24 @@ Keep explanations concise and factual. Base your analysis on well-established kn
     // Final fallback for any other errors
     return {
       verdict: 'Uncertain' as const,
-      evidence: [{
-        source: 'System analysis',
-        title: 'Automated fact-check',
-        snippet: 'Unable to complete full analysis - manual verification recommended'
-      }],
-      explanation: 'Fact-check analysis encountered an issue. Please try rephrasing your claim or verify manually.',
+      evidence: [
+        {
+          source: 'Fact-checking websites',
+          title: 'Snopes, FactCheck.org, PolitiFact',
+          snippet: 'Visit established fact-checking websites to search for information about this claim. These sites provide detailed analysis and source citations.'
+        },
+        {
+          source: 'Academic databases',
+          title: 'Google Scholar, PubMed, JSTOR',
+          snippet: 'Search academic databases for peer-reviewed research related to this topic. Look for systematic reviews and meta-analyses for the most comprehensive evidence.'
+        },
+        {
+          source: 'Government sources',
+          title: 'Official government websites and statistics',
+          snippet: 'Check official government websites (.gov domains) for authoritative data and policy information related to this claim.'
+        }
+      ],
+      explanation: 'The fact-check analysis requires additional verification. The claim could not be definitively confirmed or denied based on available information. Please consult the suggested sources for more detailed verification.',
     };
   }
 }

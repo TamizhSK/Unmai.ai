@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { groundedModel } from '../genkit.js';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { performWebAnalysis } from './perform-web-analysis.js';
+import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
 
 const ImageAnalysisInputSchema = z.object({
@@ -90,65 +90,36 @@ async function performOcr(imageData: string) {
   }
 }
 
-// Helper to analyze image content with Gemini
-async function analyzeImageContentHelper(
+// Helper to analyze image content and extract claims from OCR (heuristic; no LLM)
+async function analyzeImageContentAndFactCheck(
   imageData: string,
   ocrText: string
-): Promise<z.infer<typeof ImageAnalysisOutputSchema>['contentAnalysis']> {
-  const prompt = ocrText 
-    ? `Analyze this image for factual content and claims. Also consider this extracted text: "${ocrText}". Describe the image and list any factual claims with verification status (VERIFIED, DISPUTED, UNVERIFIED) and confidence (0-1).` 
-    : `Analyze this image for factual content and claims. Describe the image and list any factual claims with verification status (VERIFIED, DISPUTED, UNVERIFIED) and confidence (0-1).`;
-  
-  const result = await groundedModel.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 },
-  });
-  
-  const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  // Simplified parsing
-  const description = responseText.split('Description:')[1]?.split('\n')[0] || 'No description available';
-  const factualClaims: Array<{ claim: string; verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED'; confidence: number; }> =
-    responseText.includes('Claims:')
-      ? [{ claim: 'Placeholder claim', verdict: 'UNVERIFIED', confidence: 0.5 }]
-      : [];
-
+): Promise<{ description: string; factualClaims: Array<{ claim: string; verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED'; confidence: number; }> }> {
+  const description = ocrText ? `Image with readable text (~${Math.min(ocrText.length, 500)} chars).` : 'Image content analyzed (no readable text detected).';
+  const sentences = (ocrText || '')
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[\.!\?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  const factualRegex = /(\bis\b|\bare\b|\bwas\b|\bwere\b|\bhas\b|\bhave\b|\bclaims?\b|\breports?\b|\baccording to\b|\bpercent|\b\d{4}\b)/i;
+  const candidateClaims = Array.from(new Set(sentences.filter(s => s.length > 20 && factualRegex.test(s)))).slice(0, 5);
+  const factualClaims: Array<{ claim: string; verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED'; confidence: number; }> = [];
+  // We defer fact-checking to text/video/audio analyzers; image analyzer will present claims context via presentation
+  // to avoid over-calling fact-check API on noisy OCR. Keep empty or minimal claims.
+  for (const c of candidateClaims) {
+    factualClaims.push({ claim: c, verdict: 'UNVERIFIED', confidence: 0.4 });
+  }
   return { description, factualClaims };
 }
 
-// Helper for deepfake detection
-async function detectImageDeepfake(imageData: string) {
-  const prompt = `Analyze this image for signs of manipulation or deepfake. Provide a boolean (true/false) if manipulated, a confidence score (0-1), and a detailed explanation.`;
-  
-  const result = await groundedModel.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1 },
-  });
-  
-  const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  return {
-    isManipulated: responseText.includes('Manipulated: true'),
-    confidence: 0.7, // Placeholder
-    explanation: responseText.split('Explanation:')[1] || 'Analysis not conclusive.',
-  };
+// Basic placeholder when dedicated deepfake API is unavailable (no LLM)
+async function detectImageDeepfake(_imageData: string) {
+  return { isManipulated: false, confidence: 0.3, explanation: 'No dedicated deepfake analysis available' };
 }
 
-// Helper for reverse image search (simulated with Gemini)
-async function reverseImageSearch(imageData: string) {
-  const prompt = `Perform a reverse image search for this image. Provide possible origins (URLs or descriptions) and first seen date if available.`;
-  
-  const result = await groundedModel.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.3 },
-  });
-  
-  const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  return {
-    origins: responseText.includes('Origins:') ? ['https://example.com/origin'] : [],
-    firstSeen: responseText.includes('First Seen:') ? '2023-01-01' : undefined,
-  };
+// Reverse image search placeholder (no LLM)
+async function reverseImageSearch(_imageData: string) {
+  return { origins: [], firstSeen: undefined as string | undefined };
 }
 
 // Helper to calculate scores
@@ -187,29 +158,32 @@ function calculateScores(contentAnalysis: any, manipulationAnalysis: { isManipul
 // Main analysis function
 export async function analyzeImageContent(input: ImageAnalysisInput): Promise<ImageAnalysisOutput> {
   try {
-    // Step 1: Extract metadata and perform OCR
-    const metadata = await extractImageMetadata(input.imageData);
-    const ocrText = await performOCR(input.imageData);
+    // Run metadata, OCR, deepfake detection, and reverse image search concurrently
+    const metadataPromise = extractImageMetadata(input.imageData);
+    const ocrPromise = performOcr(input.imageData);
+    const deepfakePromise = (async () => {
+      try {
+        const deepfakeResult = await detectDeepfake({ media: input.imageData, contentType: 'image' });
+        return { isManipulated: deepfakeResult.isDeepfake, manipulationConfidence: deepfakeResult.confidenceScore / 100 };
+      } catch (error) {
+        console.error('Deepfake detection failed:', error);
+        const basic = await detectImageDeepfake(input.imageData);
+        return { isManipulated: basic.isManipulated, manipulationConfidence: basic.confidence };
+      }
+    })();
+    const reversePromise = reverseImageSearch(input.imageData);
 
-    // Step 2: Analyze content and fact-check
+    const [metadata, ocrText, deepfakeInfo, reverseSearch] = await Promise.all([
+      metadataPromise,
+      ocrPromise,
+      deepfakePromise,
+      reversePromise
+    ]);
+
+    // Analyze content and fact-check (requires OCR text if any)
     const contentAnalysis = await analyzeImageContentAndFactCheck(input.imageData, ocrText);
-
-    // Step 3: Deepfake detection
-    let isManipulated = false;
-    let manipulationConfidence = 0.5;
-    try {
-      const deepfakeResult = await detectDeepfake({
-        media: input.imageData,
-        contentType: 'image'
-      });
-      isManipulated = deepfakeResult.isDeepfake;
-      manipulationConfidence = deepfakeResult.confidenceScore / 100;
-    } catch (error) {
-      console.error('Deepfake detection failed:', error);
-    }
-
-    // Step 4: Perform reverse image search
-    const reverseSearch = await performReverseImageSearch(input.imageData);
+    const isManipulated = deepfakeInfo.isManipulated;
+    const manipulationConfidence = deepfakeInfo.manipulationConfidence;
 
     // Step 5: Web analysis for context
     let webSources: any[] = [];
@@ -229,75 +203,41 @@ export async function analyzeImageContent(input: ImageAnalysisInput): Promise<Im
     let analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN' = 'YELLOW';
     if (isManipulated && manipulationConfidence > 0.7) {
       analysisLabel = 'RED';
-    } else if (!isManipulated && contentAnalysis.factualClaims.every(c => c.verdict === 'VERIFIED')) {
+    } else if (!isManipulated && contentAnalysis.factualClaims.every((c: any) => c.verdict === 'VERIFIED')) {
       analysisLabel = 'GREEN';
-    } else if (contentAnalysis.factualClaims.some(c => c.verdict === 'DISPUTED')) {
+    } else if (contentAnalysis.factualClaims.some((c: any) => c.verdict === 'DISPUTED')) {
       analysisLabel = 'ORANGE';
     }
 
-    // Step 7: Generate AI-polished one-line description
-    const oneLineDescription = `Image analysis: ${contentAnalysis.description.substring(0, 80)}${contentAnalysis.description.length > 80 ? '...' : ''} - ${analysisLabel === 'GREEN' ? 'Authentic image' : analysisLabel === 'RED' ? 'Manipulated or misleading' : 'Requires verification'}`;
-
-    // Step 8: Generate AI-polished summary
-    const summary = `Comprehensive image analysis completed. ${contentAnalysis.description} ` +
-      `${isManipulated ? `Image manipulation detected with ${(manipulationConfidence * 100).toFixed(0)}% confidence. ` : 'No obvious manipulation detected. '}` +
-      `${ocrText ? `Extracted text contains ${contentAnalysis.factualClaims.length} verifiable claims. ` : 'No text content found in image. '}` +
-      `${reverseSearch.origins.length > 0 ? `Found ${reverseSearch.origins.length} potential source(s). ` : ''}` +
-      `${metadata.creationDate ? `Image created on ${metadata.creationDate}. ` : ''}` +
-      `Overall assessment: ${analysisLabel === 'GREEN' ? 'The image appears authentic and unmodified.' : 
-        analysisLabel === 'RED' ? 'The image shows signs of manipulation or contains misleading information.' : 
-        'The image requires further verification before accepting as authentic.'}`;
-
-    // Step 9: Generate educational insight
-    const educationalInsight = `Understanding Image Manipulation: Modern technology enables sophisticated image manipulation through AI-generated content, deepfakes, and digital editing. ` +
-      `Key detection methods: (1) Check for visual inconsistencies like unnatural lighting, shadows, or proportions; ` +
-      `(2) Examine metadata for creation date and editing software; ` +
-      `(3) Use reverse image search to find original sources; ` +
-      `(4) Look for compression artifacts or blurred edges around edited areas. ` +
-      `Protection strategies: Verify images through multiple reverse search engines, ` +
-      `check fact-checking websites for known manipulated images, ` +
-      `be skeptical of images that provoke strong emotional responses, ` +
-      `and use forensic tools like FotoForensics or Image Edited for technical analysis.`;
-
-    // Step 10: Compile sources
-    const sources = [
-      { url: 'https://www.tineye.com', title: 'TinEye - Reverse Image Search Engine', credibility: 0.90 },
-      { url: 'https://fotoforensics.com', title: 'FotoForensics - Digital Image Forensics', credibility: 0.88 },
-      { url: 'https://lens.google.com', title: 'Google Lens - Visual Search', credibility: 0.92 },
-      { url: 'https://www.imageforensics.org', title: 'Image Forensics - Manipulation Detection', credibility: 0.85 },
-      { url: 'https://29a.ch/photo-forensics/', title: 'Photo Forensics - Online Analysis Tools', credibility: 0.83 },
-      { url: 'https://www.invid-project.eu/tools-and-services/invid-verification-plugin/', title: 'InVID Verification Plugin', credibility: 0.87 },
-    ];
-
-    // Add reverse search origins as sources
-    reverseSearch.origins.slice(0, 2).forEach(origin => {
-      sources.push({
-        url: origin,
-        title: 'Potential Original Source',
-        credibility: 0.7
-      });
-    });
-
-    // Add web sources if available
-    webSources.slice(0, 2).forEach(source => {
-      if (source.url && source.title) {
-        sources.push({
-          url: source.url,
-          title: source.title,
-          credibility: source.relevance ? source.relevance / 100 : 0.75
-        });
-      }
-    });
-
-    // Step 11: Calculate scores
+    // Step 7: Calculate scores
     const scores = calculateScores(contentAnalysis, { isManipulated, confidence: manipulationConfidence });
+
+    // Step 8: Gemini-driven formatting of presentation fields and sources
+    const candidateSources = [
+      ...reverseSearch.origins.map((u: any) => ({ url: u })),
+      ...(webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }))
+    ];
+    const presentation = await formatUnifiedPresentation({
+      contentType: 'image',
+      analysisLabel,
+      rawSignals: {
+        description: contentAnalysis.description,
+        factualClaims: contentAnalysis.factualClaims,
+        isManipulated,
+        manipulationConfidence,
+        ocrText,
+        reverseSearch,
+        metadata
+      },
+      candidateSources
+    });
 
     return {
       analysisLabel,
-      oneLineDescription,
-      summary,
-      educationalInsight,
-      sources: sources.slice(0, 8), // Limit to 8 sources
+      oneLineDescription: presentation.oneLineDescription,
+      summary: presentation.summary,
+      educationalInsight: presentation.educationalInsight,
+      sources: presentation.sources.slice(0, 8),
       sourceIntegrityScore: scores.sourceIntegrityScore,
       contentAuthenticityScore: scores.contentAuthenticityScore,
       trustExplainabilityScore: scores.trustExplainabilityScore,

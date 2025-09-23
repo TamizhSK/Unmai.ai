@@ -14,10 +14,7 @@ import { analyzeUnified } from './ai/flows/unified-analysis.js';
 import { assessSafety } from './ai/flows/safety-assessment.js';
 import { verifySource } from './ai/flows/verify-source.js';
 import { performWebAnalysis } from './ai/flows/perform-web-analysis.js';
-import { detectSyntheticContent } from './ai/flows/detect-synthetic-content.js';
-import { analyzeContentForMisinformation } from './ai/flows/analyze-content-for-misinformation.js';
 import { safeSearchUrl } from './ai/flows/safe-search-url.js';
-import { transcribeAudioFlow } from './ai/flows/transcribe-audio.js';
 import { explainMisleadingIndicators } from './ai/flows/explain-misleading-indicators.js';
 import { translateTextFlow } from './ai/flows/translate-text.js';
 
@@ -208,44 +205,6 @@ app.post('/api/web-analysis', async (req, res) => {
   }
 });
 
-app.post('/api/detect-synthetic', async (req, res) => {
-  try {
-    const { media, contentType } = req.body;
-    if (!media || !contentType) {
-      return res.status(400).json({ error: 'Media and contentType are required' });
-    }
-    const result = await detectSyntheticContent({ 
-      media, 
-      contentType: contentType as 'image' | 'video' 
-    });
-    res.json(result);
-  } catch (error) {
-    console.error('[ERROR] Synthetic detection API failed:', error);
-    res.status(500).json({ 
-      error: 'Synthetic content detection service unavailable',
-      message: 'Unable to detect synthetic content at this time',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-app.post('/api/analyze-misinformation', async (req, res) => {
-  try {
-    const { content } = req.body;
-    if (!content) {
-      return res.status(400).json({ error: 'Content is required' });
-    }
-    const result = await analyzeContentForMisinformation({ content });
-    res.json(result);
-  } catch (error) {
-    console.error('[ERROR] Misinformation analysis API failed:', error);
-    res.status(500).json({ 
-      error: 'Misinformation analysis service unavailable',
-      message: 'Unable to analyze content for misinformation at this time',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
 
 app.post('/api/safe-search', async (req, res) => {
   try {
@@ -264,25 +223,6 @@ app.post('/api/safe-search', async (req, res) => {
     });
   }
 });
-
-app.post('/api/transcribe-audio', async (req, res) => {
-  try {
-    const { audioData } = req.body;
-    if (!audioData) {
-      return res.status(400).json({ error: 'Audio data is required' });
-    }
-    const result = await transcribeAudioFlow({ audioData });
-    res.json(result);
-  } catch (error) {
-    console.error('[ERROR] Audio transcription API failed:', error);
-    res.status(500).json({ 
-      error: 'Audio transcription service unavailable',
-      message: 'Unable to transcribe audio at this time',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
 app.post('/api/translate-text', async (req, res) => {
   try {
     const { text, targetLanguage } = req.body;

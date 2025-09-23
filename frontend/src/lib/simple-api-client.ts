@@ -30,6 +30,10 @@ export async function factCheckClaim(claim: string) {
   return apiCall('/api/fact-check', { claim });
 }
 
+export async function analyzeUnified(type: 'text' | 'url' | 'image' | 'video' | 'audio', payload: any) {
+  return apiCall('/api/analyze', { type, payload });
+}
+
 export async function getCredibilityScore(text: string) {
   return apiCall('/api/credibility-score', { text });
 }
@@ -54,20 +58,8 @@ export async function performWebAnalysis(query: string, contentType: 'text' | 'u
   return apiCall('/api/web-analysis', { query, contentType });
 }
 
-export async function detectSyntheticContent(media: string, contentType: 'image' | 'video') {
-  return apiCall('/api/detect-synthetic', { media, contentType });
-}
-
-export async function analyzeContentForMisinformation(content: string) {
-  return apiCall('/api/analyze-misinformation', { content });
-}
-
 export async function safeSearchUrl(url: string) {
   return apiCall('/api/safe-search', { url });
-}
-
-export async function transcribeAudioFlow(audioData: string) {
-  return apiCall('/api/transcribe-audio', { audioData });
 }
 
 export async function translateText(text: string, targetLanguage: string) {

@@ -10,11 +10,11 @@ declare const SafetyAssessmentInputSchema: z.ZodObject<{
     content: z.ZodString;
     contentType: z.ZodEnum<["text", "image", "url"]>;
 }, "strip", z.ZodTypeAny, {
+    contentType: "text" | "url" | "image";
     content: string;
-    contentType: "text" | "image" | "url";
 }, {
+    contentType: "text" | "url" | "image";
     content: string;
-    contentType: "text" | "image" | "url";
 }>;
 declare const SafetyAssessmentOutputSchema: z.ZodObject<{
     safetyRating: z.ZodEnum<["SAFE", "HARMFUL", "MISLEADING", "UNKNOWN"]>;

@@ -176,6 +176,39 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
     return JSON.stringify(value);
   };
 
+  // Sanitize potential code-fenced or JSON-like strings into clean, readable text
+  const sanitizeText = (value: any): string => {
+    let text = safeRender(value);
+    if (!text) return '';
+    // Remove Markdown code fences ```lang ... ```
+    text = text.replace(/```[a-zA-Z]*\n([\s\S]*?)```/g, '$1');
+    // Trim stray backticks
+    text = text.replace(/```/g, '').trim();
+    // Remove standalone language labels like 'json' that might remain after cleaning
+    text = text
+      .split('\n')
+      .filter((line) => !/^\s*(json|javascript|js|typescript|ts|yaml|yml|xml|html)\s*$/i.test(line))
+      .join('\n');
+    // Collapse excessive whitespace
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+    // Attempt to extract meaningful fields if it looks like JSON
+    const maybeJson = text.trim();
+    if ((maybeJson.startsWith('{') && maybeJson.endsWith('}')) || (maybeJson.startsWith('[') && maybeJson.endsWith(']'))) {
+      try {
+        const obj = JSON.parse(maybeJson);
+        if (obj && typeof obj === 'object') {
+          // Prefer explanation/summary/message fields if present
+          if (typeof obj.explanation === 'string' && obj.explanation.trim()) return obj.explanation.trim();
+          if (typeof obj.summary === 'string' && obj.summary.trim()) return obj.summary.trim();
+          if (typeof obj.message === 'string' && obj.message.trim()) return obj.message.trim();
+        }
+      } catch {
+        // Not valid JSON, ignore
+      }
+    }
+    return text;
+  };
+
   const getSourceStatusIcon = (status: string) => {
     switch (status) {
       case 'verified':
@@ -286,7 +319,8 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
   };
 
   const isLoading = (resp: UnifiedResponse): resp is AnalysisLoadingSkeleton => (resp as any)?.kind === 'loading';
-  const compositeScore = !isLoading(response) ? getCompositeScore((response as UnifiedResponseData).trustScores) : 0;
+  const compositeScore = !isLoading(response) && (response as UnifiedResponseData).trustScores ? 
+    getCompositeScore((response as UnifiedResponseData).trustScores) : 0;
   
   if (isLoading(response)) {
     // Skeleton UI while backend analysis runs
@@ -357,10 +391,13 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
       />
       <Card className="relative bg-card text-card-foreground shadow-lg rounded-xl transition-all duration-300 hover:shadow-xl overflow-hidden border-0 z-10">
         <CardContent className="p-6 space-y-4">
-          {/* Header Label */}
-          <Badge className={`text-sm px-3 py-1 text-white w-fit ${getLabelVariant(data.verificationLevel)}`}>
-            {data.mainLabel}
-          </Badge>
+          {/* 1. Analysis Label - Shows risk level prominently */}
+          <div className="flex items-center gap-3">
+            <Badge className={`text-sm px-3 py-1 text-white w-fit ${getLabelVariant(data.verificationLevel)}`}>
+              {data.mainLabel}
+            </Badge>
+            <span className="text-xs text-muted-foreground">Risk Assessment</span>
+          </div>
           {/* Prominent Deepfake Banner (if applicable) */}
           {data.deepfakeDetection && (
             <div className={`flex items-start gap-3 p-3 rounded-lg border ${data.deepfakeDetection.isDeepfake ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
@@ -385,36 +422,43 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             </div>
           )}
           
-          {/* One line description */}
-          <div className="text-foreground text-sm leading-relaxed border-b border-border pb-3">
-            {data.oneLineDescription}
-          </div>
-
-          {/* Information Summary */}
-          <div className="space-y-2 border-b border-border pb-3">
-            <h3 className="text-sm font-medium text-foreground">Information summary</h3>
-            <p className="text-muted-foreground text-sm leading-relaxed">
-              {data.informationSummary}
+          {/* 2. One-line description of the input */}
+          <div className="space-y-1 border-b border-border pb-3">
+            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</h3>
+            <p className="text-foreground text-sm leading-relaxed">
+              {sanitizeText(data.oneLineDescription) || 'No description available'}
             </p>
           </div>
 
-          {/* Educational Insight - Expandable */}
+          {/* 3. Information Summary of the analysis */}
+          <div className="space-y-2 border-b border-border pb-3">
+            <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
+              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">3</span>
+              Information Summary
+            </h3>
+            <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">
+              {sanitizeText(data.informationSummary) || 'No summary available'}
+            </p>
+          </div>
+
+          {/* 4. Educational Insight - Expandable */}
           <div className="space-y-2 border-b border-border pb-3">
             <Button
               variant="ghost"
               onClick={() => setIsEducationalExpanded(!isEducationalExpanded)}
-              className="h-auto p-0 text-sm font-medium text-foreground hover:bg-transparent justify-start"
+              className="h-auto p-0 text-sm font-medium text-foreground hover:bg-transparent justify-start flex items-center gap-2"
             >
-              Educational insight on how the manipulation is done/how well the information is given
+              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">4</span>
+              Educational Insight: Manipulation Techniques & Protection Measures
               {isEducationalExpanded ? (
                 <ChevronUp className="ml-1 h-4 w-4" />
               ) : (
                 <ChevronDown className="ml-1 h-4 w-4" />
               )}
             </Button>
-            {isEducationalExpanded && (
+            {isEducationalExpanded && data.educationalInsight && (
               <div className="mt-2 p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground leading-relaxed">
-                {data.educationalInsight}
+                <p className="whitespace-pre-wrap">{sanitizeText(data.educationalInsight)}</p>
                 
                 {/* Misleading Indicators */}
                 {data.misleadingIndicators && data.misleadingIndicators.length > 0 && (
@@ -466,10 +510,15 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             )}
           </div>
 
-          {/* Bottom Section: Sources and Trust Scores */}
-          <div className="flex items-end justify-between pt-2">
-            {/* Sources Button */}
-            <Dialog>
+          {/* 5. Sources, Scores, and Overall Verdict */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
+              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">5</span>
+              Sources, Trust Scores & Verdict
+            </h3>
+            <div className="flex items-end justify-between">
+              {/* Sources Button */}
+              <Dialog>
               <DialogTrigger asChild>
                 <Button 
                   variant="outline" 
@@ -525,53 +574,59 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                   
                   {/* Sources List */}
                   <div className="space-y-2">
-                    {data.sources.map((source, index) => {
-                      const fav = getFavicon(source.url);
-                      const hostname = getHostname(source.url);
-                      return (
-                        <a
-                          key={index}
-                          href={source.url || '#'}
-                          target={source.url ? "_blank" : undefined}
-                          rel={source.url ? "noopener noreferrer" : undefined}
-                          className="flex items-start gap-3 rounded-lg px-3 py-3 hover:bg-accent hover:text-accent-foreground transition-all duration-200 text-sm border border-border/15 hover:border-[#4285F4]/20 group"
-                        >
-                          {fav ? (
-                            <img
-                              src={fav}
-                              alt={source.title}
-                              className="w-6 h-6 rounded-sm bg-muted border border-border/15 flex-shrink-0 mt-0.5"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className="w-6 h-6 rounded-sm bg-gradient-to-br from-[#4285F4] to-[#0F9D58] border border-border/15 flex-shrink-0 flex items-center justify-center mt-0.5">
-                              <Globe className="w-3 h-3 text-white" />
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <div className="font-medium text-foreground leading-5 line-clamp-2 group-hover:text-[#4285F4] transition-colors">
-                              {source.title}
-                            </div>
-                            {source.url && (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <div className="text-xs text-muted-foreground break-all leading-4">
-                                  {hostname || source.url}
-                                </div>
-                                {hostname && (
-                                  <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
-                                    {new URL(source.url).protocol.replace(':', '')}
-                                  </div>
-                                )}
+                    <h3 className="font-medium mb-2">Referenced Sources ({data.sources?.length || 0})</h3>
+                    {data.sources && data.sources.length > 0 ? (
+                      data.sources.map((source, index) => {
+                        const fav = getFavicon(source.url);
+                        const hostname = getHostname(source.url);
+                        return (
+                          <a
+                            key={index}
+                            href={source.url || '#'}
+                            target={source.url ? "_blank" : undefined}
+                            rel={source.url ? "noopener noreferrer" : undefined}
+                            className="flex items-start gap-3 rounded-lg px-3 py-3 hover:bg-accent hover:text-accent-foreground transition-all duration-200 text-sm border border-border/15 hover:border-[#4285F4]/20 group"
+                          >
+                            {fav ? (
+                              <img
+                                src={fav}
+                                alt={source.title}
+                                className="w-6 h-6 rounded-sm bg-muted border border-border/15 flex-shrink-0 mt-0.5"
+                              />
+                            ) : (
+                              <div className="w-6 h-6 rounded-sm bg-gradient-to-br from-[#4285F4] to-[#0F9D58] border border-border/15 flex-shrink-0 flex items-center justify-center mt-0.5">
+                                <Globe className="w-3 h-3 text-white" />
                               </div>
                             )}
-                          </div>
-                          <div className="flex items-start gap-2 flex-shrink-0 mt-1">
-                            <div className="w-2 h-2 rounded-full bg-[#0F9D58]" title="Verified Source" />
-                            <LinkIcon className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
-                          </div>
-                        </a>
-                      );
-                    })}
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="font-medium text-foreground leading-5 line-clamp-2 group-hover:text-[#4285F4] transition-colors">
+                                {source.title}
+                              </div>
+                              {source.url && (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="text-xs text-muted-foreground break-all leading-4">
+                                    {hostname || source.url}
+                                  </div>
+                                  {hostname && (
+                                    <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
+                                      {new URL(source.url).protocol.replace(':', '')}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-start gap-2 flex-shrink-0 mt-1">
+                              <div className="w-2 h-2 rounded-full bg-[#0F9D58]" title="Verified Source" />
+                              <LinkIcon className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
+                            </div>
+                          </a>
+                        );
+                      })
+                    ) : (
+                      <div className="text-sm text-muted-foreground p-4 bg-muted/50 rounded-lg text-center">
+                        No sources available for this analysis
+                      </div>
+                    )}
                   </div>
                 </div>
               </DialogContent>
@@ -580,30 +635,31 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             {/* Three Trust Score Circles */}
             <div className="flex items-end gap-3">
               <CircularTrustScore 
-                score={data.trustScores.sourceContextScore} 
+                score={data.trustScores?.sourceContextScore || 0} 
                 label="Source & Context Verification"
                 icon={<Shield />}
               />
               <CircularTrustScore 
-                score={data.trustScores.contentAuthenticityScore} 
+                score={data.trustScores?.contentAuthenticityScore || 0} 
                 label="Authenticity & Consistency"
                 icon={<Eye />}
               />
               <CircularTrustScore 
-                score={compositeScore} 
+                score={data.trustScores?.explainabilityScore || compositeScore || 0} 
                 label="Explainability & Composite"
                 icon={<Brain />}
               />
+              </div>
             </div>
-          </div>
-
-          {/* Overall Verdict */}
-          <div className="pt-2 border-t border-border">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Overall Verdict:</span>
-              <Badge className={`${getLabelVariant(data.verificationLevel)} text-white`}>
-                {data.verdict}
-              </Badge>
+            
+            {/* Overall Verdict */}
+            <div className="p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground">Overall Verdict:</span>
+                <Badge className={`${getLabelVariant(data.verificationLevel)} text-white px-4 py-1`}>
+                  {data.verdict}
+                </Badge>
+              </div>
             </div>
           </div>
         </CardContent>
