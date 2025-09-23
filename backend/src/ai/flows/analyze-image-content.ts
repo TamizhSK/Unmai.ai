@@ -3,6 +3,7 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
+import { groundedModel } from '../genkit.js';
 
 const ImageAnalysisInputSchema = z.object({
   imageData: z.string().min(1, 'Image data is required'), // Base64 or URL
@@ -36,8 +37,6 @@ const ImageAnalysisOutputSchema = z.object({
   
   // Internal data for processing
   metadata: z.object({
-    creationDate: z.string().optional(),
-    author: z.string().optional(),
     location: z.string().optional(),
     ocrText: z.string().optional(),
     description: z.string().optional(),
@@ -57,16 +56,12 @@ async function extractImageMetadata(imageData: string) {
   try {
     const [result] = await client.annotateImage(request);
     return {
-      creationDate: 'Unknown', // Placeholder, Vision API doesn't directly provide this
-      author: 'Unknown',
       location: result.landmarkAnnotations?.[0]?.description || 'Unknown',
       other: result.imagePropertiesAnnotation || {},
     };
   } catch (error) {
     console.error('Vision API error:', error);
     return {
-      creationDate: 'Unknown',
-      author: 'Unknown',
       location: 'Unknown',
       other: { error: 'Metadata extraction failed' },
     };
@@ -113,13 +108,26 @@ async function analyzeImageContentAndFactCheck(
 }
 
 // Basic placeholder when dedicated deepfake API is unavailable (no LLM)
-async function detectImageDeepfake(_imageData: string) {
-  return { isManipulated: false, confidence: 0.3, explanation: 'No dedicated deepfake analysis available' };
-}
-
-// Reverse image search placeholder (no LLM)
-async function reverseImageSearch(_imageData: string) {
-  return { origins: [], firstSeen: undefined as string | undefined };
+async function detectImageDeepfake(imageData: string) {
+    const prompt = `Analyze this image for signs of deepfake or manipulation. Provide a boolean (true/false) if manipulated, a confidence score (0-1), and a detailed explanation.`;
+  
+    const result = await groundedModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1 },
+      tools: [{googleSearch: {}}],
+    });
+    
+    const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  
+    const confidenceRegex = /Confidence: (\d\.\d+)/;
+    const confidenceMatch = responseText.match(confidenceRegex);
+    const confidence = confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5;
+  
+    return {
+      isManipulated: responseText.includes('Manipulated: true'),
+      confidence: confidence,
+      explanation: responseText.split('Explanation:')[1] || 'Analysis not conclusive.',
+    };
 }
 
 // Helper to calculate scores
@@ -171,13 +179,11 @@ export async function analyzeImageContent(input: ImageAnalysisInput): Promise<Im
         return { isManipulated: basic.isManipulated, manipulationConfidence: basic.confidence };
       }
     })();
-    const reversePromise = reverseImageSearch(input.imageData);
 
-    const [metadata, ocrText, deepfakeInfo, reverseSearch] = await Promise.all([
+    const [metadata, ocrText, deepfakeInfo] = await Promise.all([
       metadataPromise,
       ocrPromise,
       deepfakePromise,
-      reversePromise
     ]);
 
     // Analyze content and fact-check (requires OCR text if any)
@@ -214,7 +220,6 @@ export async function analyzeImageContent(input: ImageAnalysisInput): Promise<Im
 
     // Step 8: Gemini-driven formatting of presentation fields and sources
     const candidateSources = [
-      ...reverseSearch.origins.map((u: any) => ({ url: u })),
       ...(webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }))
     ];
     const presentation = await formatUnifiedPresentation({
@@ -226,7 +231,6 @@ export async function analyzeImageContent(input: ImageAnalysisInput): Promise<Im
         isManipulated,
         manipulationConfidence,
         ocrText,
-        reverseSearch,
         metadata
       },
       candidateSources
@@ -242,8 +246,6 @@ export async function analyzeImageContent(input: ImageAnalysisInput): Promise<Im
       contentAuthenticityScore: scores.contentAuthenticityScore,
       trustExplainabilityScore: scores.trustExplainabilityScore,
       metadata: {
-        creationDate: metadata.creationDate,
-        author: metadata.author,
         location: metadata.location,
         ocrText,
         description: contentAnalysis.description,
