@@ -71,7 +71,6 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
         bitrate?: number | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -80,6 +79,7 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
@@ -95,7 +95,6 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
         bitrate?: number | undefined;
     } | undefined;
 }, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -104,6 +103,7 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
@@ -120,6 +120,8 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
     } | undefined;
 }>;
 export type AudioAnalysisOutput = z.infer<typeof AudioAnalysisOutputSchema>;
-export declare function analyzeAudioContent(input: AudioAnalysisInput): Promise<AudioAnalysisOutput>;
+export declare function analyzeAudioContent(input: AudioAnalysisInput, options?: {
+    searchEngineId?: string;
+}): Promise<AudioAnalysisOutput>;
 export {};
 //# sourceMappingURL=analyze-audio-content.d.ts.map

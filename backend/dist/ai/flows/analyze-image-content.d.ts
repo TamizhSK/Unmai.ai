@@ -32,29 +32,22 @@ declare const ImageAnalysisOutputSchema: z.ZodObject<{
     contentAuthenticityScore: z.ZodNumber;
     trustExplainabilityScore: z.ZodNumber;
     metadata: z.ZodOptional<z.ZodObject<{
-        creationDate: z.ZodOptional<z.ZodString>;
-        author: z.ZodOptional<z.ZodString>;
         location: z.ZodOptional<z.ZodString>;
         ocrText: z.ZodOptional<z.ZodString>;
         description: z.ZodOptional<z.ZodString>;
         isManipulated: z.ZodOptional<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
-        creationDate?: string | undefined;
-        author?: string | undefined;
         location?: string | undefined;
         ocrText?: string | undefined;
         description?: string | undefined;
         isManipulated?: boolean | undefined;
     }, {
-        creationDate?: string | undefined;
-        author?: string | undefined;
         location?: string | undefined;
         ocrText?: string | undefined;
         description?: string | undefined;
         isManipulated?: boolean | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -63,19 +56,17 @@ declare const ImageAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
     metadata?: {
-        creationDate?: string | undefined;
-        author?: string | undefined;
         location?: string | undefined;
         ocrText?: string | undefined;
         description?: string | undefined;
         isManipulated?: boolean | undefined;
     } | undefined;
 }, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -84,12 +75,11 @@ declare const ImageAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
     metadata?: {
-        creationDate?: string | undefined;
-        author?: string | undefined;
         location?: string | undefined;
         ocrText?: string | undefined;
         description?: string | undefined;
@@ -97,6 +87,8 @@ declare const ImageAnalysisOutputSchema: z.ZodObject<{
     } | undefined;
 }>;
 export type ImageAnalysisOutput = z.infer<typeof ImageAnalysisOutputSchema>;
-export declare function analyzeImageContent(input: ImageAnalysisInput): Promise<ImageAnalysisOutput>;
+export declare function analyzeImageContent(input: ImageAnalysisInput, options?: {
+    searchEngineId?: string;
+}): Promise<ImageAnalysisOutput>;
 export {};
 //# sourceMappingURL=analyze-image-content.d.ts.map

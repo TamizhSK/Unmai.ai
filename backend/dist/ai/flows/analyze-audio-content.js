@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { groundedModel } from '../genkit.js';
 import { SpeechClient } from '@google-cloud/speech';
 import { performWebAnalysis } from './perform-web-analysis.js';
+import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { factCheckClaim } from './fact-check-claim.js';
 const AudioAnalysisInputSchema = z.object({
     audioData: z.string().min(1, 'Audio data is required'),
@@ -39,16 +39,40 @@ const AudioAnalysisOutputSchema = z.object({
     }).optional(),
 });
 // Helper to transcribe audio using Google Speech-to-Text
-async function transcribeAudio(audioData) {
+async function transcribeAudio(audioData, mimeType) {
     const client = new SpeechClient();
     const audio = {
         content: audioData.includes('base64') ? Buffer.from(audioData.split(',')[1], 'base64') : audioData,
     };
-    const config = {
-        encoding: 'LINEAR16',
-        sampleRateHertz: 16000,
-        languageCode: 'en-US',
+    const encodingMap = {
+        'audio/mp3': 'MP3',
+        'audio/mpeg': 'MP3',
+        'audio/wav': 'LINEAR16',
+        'audio/x-wav': 'LINEAR16',
+        'audio/flac': 'FLAC',
+        'audio/ogg': 'OGG_OPUS',
+        'audio/ogg; codecs=opus': 'OGG_OPUS',
+        'audio/amr': 'AMR',
+        'audio/awb': 'AMR_WB',
     };
+    const sampleRateMap = {
+        OGG_OPUS: 48000,
+        AMR: 8000,
+        AMR_WB: 16000,
+        LINEAR16: 16000,
+    };
+    const encodingFromMime = (mimeType && (mimeType in encodingMap)
+        ? encodingMap[mimeType]
+        : 'LINEAR16');
+    const sampleRateHertz = sampleRateMap[encodingFromMime];
+    const config = {
+        encoding: encodingFromMime,
+        languageCode: 'en-US',
+        enableAutomaticPunctuation: true,
+    };
+    if (sampleRateHertz) {
+        config.sampleRateHertz = sampleRateHertz;
+    }
     const request = { audio, config };
     try {
         const [response] = await client.recognize(request);
@@ -61,99 +85,47 @@ async function transcribeAudio(audioData) {
         return '';
     }
 }
-// Helper to extract and fact-check claims from transcription
+// Helper to extract and fact-check claims from transcription (heuristic extraction)
 async function extractAndFactCheckClaims(transcription) {
     if (!transcription || transcription.length < 10) {
         return [];
     }
-    try {
-        // First, extract claims from the transcription
-        const extractPrompt = `Extract specific factual claims from this transcription. List each claim separately.
-    Transcription: "${transcription}"
-    
-    Return a JSON array of claims, each as a string. Example: ["claim 1", "claim 2"]`;
-        const extractResult = await groundedModel.generateContent({
-            contents: [{ role: 'user', parts: [{ text: extractPrompt }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 1000 },
-        });
-        const extractText = extractResult.response.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-        let claims = [];
+    const sentences = transcription
+        .replace(/\s+/g, ' ')
+        .split(/(?<=[\.!\?])\s+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    const factualRegex = /(\bis\b|\bare\b|\bwas\b|\bwere\b|\bhas\b|\bhave\b|\bclaims?\b|\breports?\b|\baccording to\b|\bpercent|\b\d{4}\b)/i;
+    const claims = Array.from(new Set(sentences.filter(s => s.length > 20 && factualRegex.test(s)))).slice(0, 5);
+    const factCheckedClaims = await Promise.all(claims.map(async (claim) => {
         try {
-            const parsed = JSON.parse(extractText.replace(/```json\n?|```/g, '').trim());
-            claims = Array.isArray(parsed) ? parsed : [];
+            const result = await factCheckClaim({ claim });
+            return {
+                claim,
+                verdict: result.verdict === 'True' ? 'VERIFIED' :
+                    result.verdict === 'False' ? 'DISPUTED' : 'UNVERIFIED',
+                confidence: result.verdict === 'Uncertain' ? 0.3 : 0.7,
+            };
         }
         catch {
-            // Fallback: treat the whole transcription as one claim
-            claims = [transcription.substring(0, 200)];
+            return { claim, verdict: 'UNVERIFIED', confidence: 0.3 };
         }
-        // Fact-check each claim
-        const factCheckedClaims = await Promise.all(claims.slice(0, 5).map(async (claim) => {
-            try {
-                const result = await factCheckClaim({ claim });
-                return {
-                    claim,
-                    verdict: result.verdict === 'True' ? 'VERIFIED' :
-                        result.verdict === 'False' ? 'DISPUTED' : 'UNVERIFIED',
-                    confidence: result.verdict === 'Uncertain' ? 0.3 : 0.7,
-                };
-            }
-            catch {
-                return { claim, verdict: 'UNVERIFIED', confidence: 0.3 };
-            }
-        }));
-        return factCheckedClaims;
-    }
-    catch (error) {
-        console.error('Error extracting/fact-checking claims:', error);
-        return [{ claim: 'Audio content analyzed', verdict: 'UNVERIFIED', confidence: 0.3 }];
-    }
+    }));
+    return factCheckedClaims;
 }
-// Helper for audio authenticity analysis
-async function analyzeAudioAuthenticity(audioData, transcription) {
-    try {
-        const prompt = `Analyze this audio transcription for signs of manipulation or synthetic generation:
-    
-    Transcription: "${transcription.substring(0, 500)}"
-    
-    Consider:
-    1. Speech pattern consistency
-    2. Contextual coherence
-    3. Signs of AI-generated content
-    4. Potential voice cloning indicators
-    
-    Return JSON: {"isAuthentic": boolean, "confidence": 0-1, "explanation": "detailed analysis", "indicators": ["list of specific indicators"]}`;
-        const result = await groundedModel.generateContent({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
-        });
-        const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        try {
-            const parsed = JSON.parse(responseText.replace(/```json\n?|```/g, '').trim());
-            return {
-                isAuthentic: Boolean(parsed.isAuthentic ?? true),
-                confidence: Number(parsed.confidence ?? 0.5),
-                explanation: String(parsed.explanation || 'Analysis completed'),
-                indicators: Array.isArray(parsed.indicators) ? parsed.indicators : [],
-            };
-        }
-        catch {
-            return {
-                isAuthentic: true,
-                confidence: 0.5,
-                explanation: 'Standard audio analysis completed',
-                indicators: [],
-            };
-        }
-    }
-    catch (error) {
-        console.error('Error in audio authenticity analysis:', error);
-        return {
-            isAuthentic: true,
-            confidence: 0.3,
-            explanation: 'Unable to perform detailed authenticity analysis',
-            indicators: [],
-        };
-    }
+// Authenticity derived from fact-check results (no LLM)
+function deriveAudioAuthenticity(factualClaims) {
+    const total = Math.max(1, factualClaims.length);
+    const verified = factualClaims.filter(c => c.verdict === 'VERIFIED').length;
+    const disputed = factualClaims.filter(c => c.verdict === 'DISPUTED').length;
+    const isAuthentic = disputed <= verified;
+    const confidence = Math.min(1, Math.max(0, (verified - disputed) / total * 0.5 + 0.5));
+    return {
+        isAuthentic,
+        confidence,
+        explanation: 'Derived from verification results of transcribed claims.',
+        indicators: [],
+    };
 }
 // Helper to calculate comprehensive scores
 function calculateScores(factualClaims, authenticityAnalysis, webSources) {
@@ -179,23 +151,24 @@ function calculateScores(factualClaims, authenticityAnalysis, webSources) {
     };
 }
 // Main analysis function
-export async function analyzeAudioContent(input) {
+export async function analyzeAudioContent(input, options) {
     try {
         // Step 1: Transcribe audio
-        const transcription = await transcribeAudio(input.audioData);
+        const transcription = await transcribeAudio(input.audioData, input.mimeType);
         if (!transcription) {
             throw new Error('Failed to transcribe audio');
         }
         // Step 2: Extract and fact-check claims
         const factualClaims = await extractAndFactCheckClaims(transcription);
-        // Step 3: Analyze authenticity
-        const authenticityAnalysis = await analyzeAudioAuthenticity(input.audioData, transcription);
+        // Step 3: Analyze authenticity (derived, non-LLM)
+        const authenticityAnalysis = deriveAudioAuthenticity(factualClaims);
         // Step 4: Perform web analysis for context
         let webSources = [];
         try {
             const webAnalysis = await performWebAnalysis({
                 query: transcription.substring(0, 500),
-                contentType: 'text'
+                contentType: 'text',
+                searchEngineId: options?.searchEngineId
             });
             webSources = webAnalysis.currentInformation || [];
         }
@@ -216,73 +189,27 @@ export async function analyzeAudioContent(input) {
         else if (disputedClaims > 0 || authenticityAnalysis.confidence < 0.5) {
             analysisLabel = 'ORANGE';
         }
-        // Step 6: Generate AI-polished one-line description
-        const oneLineDescription = transcription.length > 0
-            ? `Audio content: "${transcription.substring(0, 80)}${transcription.length > 80 ? '...' : ''}" - ${analysisLabel === 'GREEN' ? 'Verified' : analysisLabel === 'RED' ? 'Potentially misleading' : 'Requires verification'}`
-            : 'Audio content analysis completed';
-        // Step 7: Generate AI-polished summary
-        const summary = `This audio has been thoroughly analyzed for authenticity and factual accuracy. ` +
-            `Transcription reveals ${factualClaims.length} factual claim${factualClaims.length !== 1 ? 's' : ''}, ` +
-            `with ${verifiedClaims} verified, ${disputedClaims} disputed, and ${totalClaims - verifiedClaims - disputedClaims} unverified. ` +
-            `${authenticityAnalysis.explanation} ` +
-            `${authenticityAnalysis.indicators?.length > 0 ? 'Key indicators: ' + authenticityAnalysis.indicators.join(', ') + '. ' : ''}` +
-            `Overall assessment: ${analysisLabel === 'GREEN' ? 'The audio appears authentic with verified claims.' :
-                analysisLabel === 'RED' ? 'The audio shows signs of manipulation or contains disputed information.' :
-                    'The audio requires further verification before accepting as factual.'}`;
-        // Step 8: Generate educational insight
-        const educationalInsight = `Understanding Audio Manipulation: Modern technology enables sophisticated audio manipulation through voice cloning, deepfakes, and AI synthesis. ` +
-            `Key detection methods include: (1) Listening for unnatural pauses, pitch variations, or background inconsistencies; ` +
-            `(2) Verifying the source and context of the audio; (3) Cross-referencing claims with trusted sources; ` +
-            `(4) Using technical analysis tools for spectral anomalies. ` +
-            `Protection strategies: Always verify audio from unknown sources, be skeptical of emotionally charged content, ` +
-            `check multiple sources for confirmation, and use fact-checking services. ` +
-            `Remember that authentic-sounding audio can be completely synthetic, so critical evaluation is essential.`;
-        // Step 9: Compile sources
-        const sources = [
-            {
-                url: 'https://www.nist.gov/itl/iad/mig/media-forensics-challenge',
-                title: 'NIST Media Forensics Challenge - Audio Authentication Standards',
-                credibility: 0.95
+        // Step 6: Calculate scores
+        const scores = calculateScores(factualClaims, authenticityAnalysis, (webSources?.length || 0));
+        // Step 7: Gemini-driven formatting of presentation fields and sources
+        const candidateSources = (webSources || []).map((s) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }));
+        const presentation = await formatUnifiedPresentation({
+            contentType: 'audio',
+            analysisLabel,
+            rawSignals: {
+                transcription,
+                factualClaims,
+                authenticityAnalysis,
+                webSources
             },
-            {
-                url: 'https://detectfakes.media.mit.edu/',
-                title: 'MIT Media Lab - Detect Fakes Project',
-                credibility: 0.92
-            },
-            {
-                url: 'https://www.descript.com/blog/article/how-to-detect-fake-voices',
-                title: 'Descript - AI Voice Detection Guide',
-                credibility: 0.85
-            },
-            {
-                url: 'https://ai.googleblog.com/2022/04/lyra-v2-streaming-neural-audio-codec.html',
-                title: 'Google AI - Audio Codec and Synthesis Research',
-                credibility: 0.90
-            },
-            {
-                url: 'https://www.speechtechie.com/2023/01/detecting-ai-generated-audio.html',
-                title: 'Speech Technology Magazine - AI Audio Detection',
-                credibility: 0.80
-            }
-        ];
-        // Add web sources if available
-        webSources.slice(0, 3).forEach(source => {
-            if (source.url && source.title) {
-                sources.push({
-                    url: source.url,
-                    title: source.title,
-                    credibility: source.relevance ? source.relevance / 100 : 0.7
-                });
-            }
+            candidateSources
         });
-        // Step 10: Calculate scores
-        const scores = calculateScores(factualClaims, authenticityAnalysis, sources.length);
         return {
             analysisLabel,
-            oneLineDescription,
-            summary,
-            educationalInsight,
-            sources: sources.slice(0, 8), // Limit to 8 sources
+            oneLineDescription: presentation.oneLineDescription,
+            summary: presentation.summary,
+            educationalInsight: presentation.educationalInsight,
+            sources: presentation.sources.slice(0, 8),
             sourceIntegrityScore: scores.sourceIntegrityScore,
             contentAuthenticityScore: scores.contentAuthenticityScore,
             trustExplainabilityScore: scores.trustExplainabilityScore,

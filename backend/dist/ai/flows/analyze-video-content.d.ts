@@ -32,29 +32,22 @@ declare const VideoAnalysisOutputSchema: z.ZodObject<{
     contentAuthenticityScore: z.ZodNumber;
     trustExplainabilityScore: z.ZodNumber;
     metadata: z.ZodOptional<z.ZodObject<{
-        creationDate: z.ZodOptional<z.ZodString>;
-        device: z.ZodOptional<z.ZodString>;
         location: z.ZodOptional<z.ZodString>;
         transcription: z.ZodOptional<z.ZodString>;
         events: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         isManipulated: z.ZodOptional<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
-        creationDate?: string | undefined;
         location?: string | undefined;
         isManipulated?: boolean | undefined;
-        device?: string | undefined;
         transcription?: string | undefined;
         events?: string[] | undefined;
     }, {
-        creationDate?: string | undefined;
         location?: string | undefined;
         isManipulated?: boolean | undefined;
-        device?: string | undefined;
         transcription?: string | undefined;
         events?: string[] | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -63,19 +56,17 @@ declare const VideoAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
     metadata?: {
-        creationDate?: string | undefined;
         location?: string | undefined;
         isManipulated?: boolean | undefined;
-        device?: string | undefined;
         transcription?: string | undefined;
         events?: string[] | undefined;
     } | undefined;
 }, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -84,19 +75,20 @@ declare const VideoAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
     metadata?: {
-        creationDate?: string | undefined;
         location?: string | undefined;
         isManipulated?: boolean | undefined;
-        device?: string | undefined;
         transcription?: string | undefined;
         events?: string[] | undefined;
     } | undefined;
 }>;
 export type VideoAnalysisOutput = z.infer<typeof VideoAnalysisOutputSchema>;
-export declare function analyzeVideoContent(input: VideoAnalysisInput): Promise<VideoAnalysisOutput>;
+export declare function analyzeVideoContent(input: VideoAnalysisInput, options?: {
+    searchEngineId?: string;
+}): Promise<VideoAnalysisOutput>;
 export {};
 //# sourceMappingURL=analyze-video-content.d.ts.map

@@ -21,24 +21,7 @@ export declare const UnifiedResponseSchema: z.ZodObject<{
     sourceIntegrityScore: z.ZodNumber;
     contentAuthenticityScore: z.ZodNumber;
     trustExplainabilityScore: z.ZodNumber;
-    claims: z.ZodOptional<z.ZodArray<z.ZodObject<{
-        claim: z.ZodString;
-        verdict: z.ZodEnum<["VERIFIED", "DISPUTED", "UNVERIFIED"]>;
-        confidence: z.ZodNumber;
-        explanation: z.ZodString;
-    }, "strip", z.ZodTypeAny, {
-        claim: string;
-        verdict: "VERIFIED" | "DISPUTED" | "UNVERIFIED";
-        explanation: string;
-        confidence: number;
-    }, {
-        claim: string;
-        verdict: "VERIFIED" | "DISPUTED" | "UNVERIFIED";
-        explanation: string;
-        confidence: number;
-    }>, "many">>;
 }, "strip", z.ZodTypeAny, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -47,17 +30,11 @@ export declare const UnifiedResponseSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
-    claims?: {
-        claim: string;
-        verdict: "VERIFIED" | "DISPUTED" | "UNVERIFIED";
-        explanation: string;
-        confidence: number;
-    }[] | undefined;
 }, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -66,15 +43,10 @@ export declare const UnifiedResponseSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
-    claims?: {
-        claim: string;
-        verdict: "VERIFIED" | "DISPUTED" | "UNVERIFIED";
-        explanation: string;
-        confidence: number;
-    }[] | undefined;
 }>;
 export type UnifiedResponse = z.infer<typeof UnifiedResponseSchema>;
 export type UnifiedAnalyzeInput = {
@@ -106,5 +78,7 @@ export type UnifiedAnalyzeInput = {
         mimeType?: string;
     };
 };
-export declare function analyzeUnified(input: UnifiedAnalyzeInput): Promise<UnifiedResponse>;
+export declare function analyzeUnified(input: UnifiedAnalyzeInput, options?: {
+    searchEngineId?: string;
+}): Promise<UnifiedResponse>;
 //# sourceMappingURL=unified-analysis.d.ts.map

@@ -10,9 +10,7 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
   // Helper function to safely convert values to strings
   const safeString = (value: any): string => {
     if (typeof value === 'string') return value;
-    if (typeof value === 'object' && value !== null) {
-      return JSON.stringify(value, null, 2);
-    }
+    // Backend now returns properly formatted strings, so just convert to string
     return String(value || '');
   };
 
@@ -117,7 +115,8 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
       sourceMetadata: extractSourceMetadata(sourceResult),
       verificationLevel: level,
       verdict,
-      educationalCards: createEducationalCards(result)
+      educationalCards: createEducationalCards(result),
+      deepfakeDetection: extractDeepfakeDetection(result)
     };
 
     return unifiedMapped;
@@ -148,7 +147,8 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
   };
 
   // Helper function to extract deepfake detection
-  const extractDeepfakeDetection = (result: any): DeepfakeDetection | undefined => {
+  function extractDeepfakeDetection(result: any): DeepfakeDetection | undefined {
+    // Case 1: Direct deepfake API result
     if (typeof result.isDeepfake === 'boolean') {
       return {
         isDeepfake: result.isDeepfake,
@@ -157,8 +157,25 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
         technicalDetails: result.technicalDetails
       };
     }
+
+    // Case 2: Unified analyzer outputs (image/video) include metadata.isManipulated
+    const isManipulated = result?.metadata?.isManipulated;
+    if (typeof isManipulated === 'boolean') {
+      const contentAuth = Number(result?.contentAuthenticityScore ?? 60);
+      // Derive a consistent confidence bounded within 60-95
+      const conf = isManipulated ? Math.max(60, 100 - contentAuth) : Math.max(60, contentAuth);
+      const confidence = Math.min(95, Math.round(conf));
+      return {
+        isDeepfake: isManipulated,
+        confidence,
+        details: isManipulated
+          ? 'The analysis detected signs consistent with manipulation or deepfake techniques.'
+          : 'No clear signs of manipulation were detected in the analyzed media.',
+      };
+    }
+
     return undefined;
-  };
+  }
 
 
   // Helper function to get verification level

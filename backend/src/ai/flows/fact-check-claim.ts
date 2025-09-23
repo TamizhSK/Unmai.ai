@@ -33,34 +33,55 @@ function cleanAndParseJson(responseText: string): any {
   let cleanJson = responseText
     .replace(/```json\s*/gi, '')
     .replace(/```\s*$/gi, '')
-    .replace(/^```/gm, '')
     .replace(/```$/gm, '')
     .trim();
 
   // Look for JSON object boundaries
   const jsonStart = cleanJson.indexOf('{');
-  const jsonEnd = cleanJson.lastIndexOf('}');
-  
+  let jsonEnd = cleanJson.lastIndexOf('}');
+
+  // If no closing brace found, try to reconstruct the JSON
+  if (jsonStart !== -1 && jsonEnd === -1) {
+    console.warn('[WARN] Incomplete JSON detected in fact-check, attempting to reconstruct');
+    // Fallback: just add closing brace
+    cleanJson = cleanJson.substring(jsonStart) + '}';
+    jsonEnd = cleanJson.length - 1;
+  } else if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd < jsonStart) {
+    console.warn('[WARN] Malformed JSON detected in fact-check, attempting to reconstruct');
+    // Fallback: remove all characters after the opening brace
+    cleanJson = cleanJson.substring(0, jsonStart + 1) + '}';
+    jsonEnd = cleanJson.length - 1;
+  }
+
   if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
     cleanJson = cleanJson.substring(jsonStart, jsonEnd + 1);
-    
+
     // Fix common JSON formatting issues
     cleanJson = cleanJson
-      .replace(/,(\s*[}\]])/g, '$1')
-      .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
-      .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"');
+      .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
+      .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":') // Quote unquoted keys
+      .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"') // Convert single quotes to double
+      // Fix control characters and newlines
+      .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+      .replace(/\n/g, '\\n') // Escape newlines
+      .replace(/\r/g, '\\r') // Escape carriage returns
+      .replace(/\t/g, '\\t') // Escape tabs
+      // Fix unescaped quotes in string values (more robust approach)
+      .replace(/"([^"\\]*)\\?"([^"\\]*)"([^"\\]*)"(\s*[,}])/g, '"$1\\"$2\\"$3"$4')
+      // Fix incomplete strings at end of object
+      .replace(/"\s*$/, '"}');
 
     try {
       return JSON.parse(cleanJson);
     } catch (e) {
-      console.log('JSON parsing failed, trying text extraction');
+      console.log('JSON parsing failed, trying text extraction. Error:', e);
+      console.log('Failed JSON:', cleanJson.substring(0, 500));
     }
   }
 
   // If JSON parsing fails, extract information from the text
   const text = responseText.toLowerCase();
   let verdict = 'Uncertain';
-  
   // Determine verdict from text content
   if (text.includes('false') || text.includes('incorrect') || text.includes('not true')) {
     verdict = 'False';
@@ -77,7 +98,7 @@ function cleanAndParseJson(responseText: string): any {
   explanation = explanation.replace(/\[\d+(?:,\s*\d+)*\]/g, '');
   
   // Split into sentences and take the first few that are substantial
-  const sentences = explanation.split(/[.!?]+/).filter(s => s.trim().length > 20);
+  const sentences = explanation.split(/[.!?]+/).filter((s: string) => s.trim().length > 20);
   explanation = sentences.slice(0, 3).join('. ').trim();
   
   // Ensure it ends with a period
@@ -101,32 +122,47 @@ function cleanAndParseJson(responseText: string): any {
 export async function factCheckClaim(
   input: FactCheckClaimInput
 ): Promise<FactCheckClaimOutput> {
-  const prompt = `You are a professional fact-checker. Analyze this claim thoroughly and provide a comprehensive verdict.
+  const prompt = `You are a professional fact-checker with access to comprehensive knowledge. Analyze this claim and provide a definitive, factual assessment.
 
 Claim: "${input.claim}"
 
-Instructions:
-1. Use your training knowledge to evaluate this claim comprehensively
-2. Determine if the claim is True, False, Misleading, or Uncertain
-3. Provide a detailed explanation with context and nuance
-4. Suggest multiple reliable sources for verification
+ANALYSIS REQUIREMENTS:
+1. Use your extensive training knowledge to evaluate this claim factually
+2. Be decisive - avoid "Uncertain" unless the claim is genuinely ambiguous
+3. For well-established facts, mark as "True"
+4. For clearly false information, mark as "False" 
+5. For partially correct but misleading claims, mark as "Misleading"
+6. Provide specific, factual explanations with concrete details
 
-CRITICAL: Respond ONLY with valid JSON. No markdown, no extra text.
-
-Required format:
+RESPONSE FORMAT - ONLY VALID JSON:
 {
   "verdict": "True|False|Misleading|Uncertain",
-  "explanation": "Detailed explanation with context, explaining WHY the claim is true/false/misleading, what the actual facts are, and any important nuances or caveats. Include relevant background information.",
+  "explanation": "Factual explanation with specific details and context",
   "evidence": [
     {
-      "source": "Type of authoritative source (e.g., Scientific journals, Government agencies, Academic institutions)",
-      "title": "Specific verification approach or resource",
-      "snippet": "Detailed guidance on what to look for, including specific facts, data points, or context that would help verify or refute this claim"
+      "source": "Authoritative source type",
+      "title": "Specific resource name",
+      "snippet": "What evidence to look for"
+    },
+    {
+      "source": "Government or academic source",
+      "title": "Official documentation",
+      "snippet": "Key verification points"
+    },
+    {
+      "source": "Fact-checking organization",
+      "title": "Verification resource",
+      "snippet": "How to confirm the facts"
     }
   ]
 }
 
-Provide thorough, educational explanations that help users understand the full context. Include at least 3 evidence sources.`;
+CRITICAL RULES:
+- Use only double quotes, no single quotes
+- No line breaks in strings - use spaces
+- No markdown or code blocks
+- Be factual and decisive in your verdict
+- Provide concrete, specific explanations`;
 
   let response;
   try {

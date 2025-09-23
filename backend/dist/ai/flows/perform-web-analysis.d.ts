@@ -9,12 +9,15 @@ import { z } from 'zod';
 declare const PerformWebAnalysisInputSchema: z.ZodObject<{
     query: z.ZodString;
     contentType: z.ZodEnum<["text", "url"]>;
+    searchEngineId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     query: string;
     contentType: "text" | "url";
+    searchEngineId?: string | undefined;
 }, {
     query: string;
     contentType: "text" | "url";
+    searchEngineId?: string | undefined;
 }>;
 export type PerformWebAnalysisInput = z.infer<typeof PerformWebAnalysisInputSchema>;
 declare const PerformWebAnalysisOutputSchema: z.ZodObject<{

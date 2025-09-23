@@ -4,13 +4,11 @@ import { config } from 'dotenv';
 import { factCheckClaim } from './ai/flows/fact-check-claim.js';
 import { getCredibilityScore } from './ai/flows/get-credibility-score.js';
 import { detectDeepfake } from './ai/flows/detect-deepfake.js';
-import { provideEducationalInsights } from './ai/flows/provide-educational-insights.js';
 import { analyzeUnified } from './ai/flows/unified-analysis.js';
 import { assessSafety } from './ai/flows/safety-assessment.js';
 import { verifySource } from './ai/flows/verify-source.js';
 import { performWebAnalysis } from './ai/flows/perform-web-analysis.js';
 import { safeSearchUrl } from './ai/flows/safe-search-url.js';
-import { explainMisleadingIndicators } from './ai/flows/explain-misleading-indicators.js';
 import { translateTextFlow } from './ai/flows/translate-text.js';
 // Load environment variables
 config();
@@ -32,11 +30,11 @@ app.use(express.json({ limit: REQUEST_SIZE_LIMIT }));
 // Unified multimodal endpoint (preferred)
 app.post('/api/analyze', async (req, res) => {
     try {
-        const { type, payload } = req.body || {};
+        const { type, payload, searchEngineId } = req.body || {};
         if (!type || !payload) {
             return res.status(400).json({ error: 'type and payload are required' });
         }
-        const result = await analyzeUnified({ type, payload });
+        const result = await analyzeUnified({ type, payload }, { searchEngineId });
         res.json(result);
     }
     catch (error) {
@@ -111,24 +109,6 @@ app.post('/api/detect-deepfake', async (req, res) => {
         });
     }
 });
-app.post('/api/educational-insights', async (req, res) => {
-    try {
-        const { text } = req.body;
-        if (!text) {
-            return res.status(400).json({ error: 'Text is required' });
-        }
-        const result = await provideEducationalInsights({ text });
-        res.json(result);
-    }
-    catch (error) {
-        console.error('[ERROR] Educational insights API failed:', error);
-        res.status(500).json({
-            error: 'Educational insights service unavailable',
-            message: 'Unable to generate insights at this time',
-            timestamp: new Date().toISOString()
-        });
-    }
-});
 app.post('/api/safety-assessment', async (req, res) => {
     try {
         const { content, contentType } = req.body;
@@ -173,13 +153,14 @@ app.post('/api/verify-source', async (req, res) => {
 });
 app.post('/api/web-analysis', async (req, res) => {
     try {
-        const { query, contentType } = req.body;
+        const { query, contentType, searchEngineId } = req.body;
         if (!query || !contentType) {
             return res.status(400).json({ error: 'Query and contentType are required' });
         }
         const result = await performWebAnalysis({
             query,
-            contentType: contentType
+            contentType: contentType,
+            searchEngineId
         });
         res.json(result);
     }
@@ -224,24 +205,6 @@ app.post('/api/translate-text', async (req, res) => {
         res.status(500).json({
             error: 'Translation service unavailable',
             message: 'Unable to translate text at this time',
-            timestamp: new Date().toISOString()
-        });
-    }
-});
-app.post('/api/explain-indicators', async (req, res) => {
-    try {
-        const { content } = req.body;
-        if (!content) {
-            return res.status(400).json({ error: 'Content is required' });
-        }
-        const result = await explainMisleadingIndicators({ content });
-        res.json(result);
-    }
-    catch (error) {
-        console.error('[ERROR] Explain indicators API failed:', error);
-        res.status(500).json({
-            error: 'Misleading indicators service unavailable',
-            message: 'Unable to explain misleading indicators at this time',
             timestamp: new Date().toISOString()
         });
     }

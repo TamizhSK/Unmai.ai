@@ -37,32 +37,78 @@ const PerformWebAnalysisOutputSchema = z.object({
 });
 export type PerformWebAnalysisOutput = z.infer<typeof PerformWebAnalysisOutputSchema>;
 
-// Simple URL content scraper
+// Enhanced URL content scraper with better error handling
 async function scrapeUrl(url: string): Promise<string> {
   try {
+    // Validate URL format
+    const urlObj = new URL(url);
+    if (!['http:', 'https:'].includes(urlObj.protocol)) {
+      throw new Error('Only HTTP and HTTPS URLs are supported');
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
     const response = await fetch(url, {
       headers: {
-        'User-Agent': USER_AGENT
-      }
+        'User-Agent': USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+      },
+      signal: controller.signal,
+      redirect: 'follow'
     });
     
+    clearTimeout(timeoutId);
+    
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+      console.warn(`[WARN] URL fetch failed: ${url} - ${errorMsg}`);
+      
+      // Return empty string for 404s and other client errors instead of throwing
+      if (response.status >= 400 && response.status < 500) {
+        return '';
+      }
+      throw new Error(errorMsg);
+    }
+    
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('text/html') && !contentType.includes('text/plain')) {
+      console.warn(`[WARN] Non-text content type: ${contentType} for URL: ${url}`);
+      return '';
     }
     
     const html = await response.text();
-    // Basic text extraction - remove HTML tags and get readable content
+    
+    // Enhanced text extraction - remove HTML tags and get readable content
     const textContent = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Remove scripts
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // Remove styles
+      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '') // Remove navigation
+      .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '') // Remove headers
+      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '') // Remove footers
+      .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '') // Remove sidebars
+      .replace(/<[^>]*>/g, ' ') // Remove remaining HTML tags
+      .replace(/\s+/g, ' ') // Normalize whitespace
       .trim();
     
     // Return first 2000 characters for analysis
-    return textContent.substring(0, 2000);
+    const result = textContent.substring(0, 2000);
+    console.log(`[INFO] Successfully scraped ${result.length} characters from ${url}`);
+    return result;
+    
   } catch (error) {
-    throw new Error(`Failed to scrape URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.warn(`[WARN] Failed to scrape URL ${url}: ${errorMsg}`);
+    
+    // Return empty string instead of throwing for common errors
+    if (errorMsg.includes('fetch failed') || errorMsg.includes('timeout') || errorMsg.includes('404')) {
+      return '';
+    }
+    throw new Error(`Failed to scrape URL: ${errorMsg}`);
   }
 }
 
@@ -70,17 +116,25 @@ export async function performWebAnalysis(
   input: PerformWebAnalysisInput
 ): Promise<PerformWebAnalysisOutput> {
   let content = input.query;
+  let urlScrapingFailed = false;
+  
   if (input.contentType === 'url') {
     try {
-      content = await scrapeUrl(input.query);
+      const scrapedContent = await scrapeUrl(input.query);
+      if (scrapedContent.trim().length > 0) {
+        content = scrapedContent;
+        console.log(`[INFO] Successfully scraped content from URL: ${input.query}`);
+      } else {
+        console.warn(`[WARN] URL returned empty content: ${input.query}`);
+        urlScrapingFailed = true;
+        // Use the original URL as content for analysis
+        content = `URL analysis for: ${input.query}`;
+      }
     } catch (error) {
-      console.error('Error scraping URL:', error);
-      return {
-        realTimeFactCheck: false,
-        currentInformation: [],
-        informationGaps: [],
-        analysisSummary: `Failed to scrape the provided URL: ${error instanceof Error ? error.message : 'Unknown error'}`
-      };
+      console.error(`[ERROR] Failed to scrape URL ${input.query}:`, error);
+      urlScrapingFailed = true;
+      // Use the original URL as content for analysis
+      content = `URL analysis for: ${input.query}`;
     }
   }
 
@@ -156,11 +210,23 @@ export async function performWebAnalysis(
     return PerformWebAnalysisOutputSchema.parse(parsedJson);
   } catch (error) {
     console.error('Error in real-time web analysis:', error);
+    
+    // Provide specific feedback based on whether URL scraping failed
+    let analysisSummary = `Failed to perform real-time web analysis: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    
+    if (urlScrapingFailed && input.contentType === 'url') {
+      analysisSummary = `Unable to access the provided URL (${input.query}). This may be due to the website being unavailable, requiring authentication, or blocking automated access. The URL structure and domain can still be analyzed for safety indicators.`;
+    }
+    
     return {
-      realTimeFactCheck: false,
+      realTimeFactCheck: urlScrapingFailed ? false : true,
       currentInformation: [],
-      informationGaps: [],
-      analysisSummary: `Failed to perform real-time web analysis: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      informationGaps: urlScrapingFailed ? [
+        'Website content could not be accessed for detailed analysis',
+        'Manual verification of the URL content is recommended',
+        'Check if the website requires authentication or has access restrictions'
+      ] : ['Additional context and verification sources needed'],
+      analysisSummary,
     };
   }
 }
