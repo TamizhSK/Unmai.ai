@@ -9,8 +9,8 @@ config();
 // Validate required environment variables
 const project = process.env.GCP_PROJECT_ID;
 const location = process.env.GCP_LOCATION || 'us-central1';
-const textModel = process.env.VERTEX_AI_TEXT_MODEL || 'gemini-1.5-pro-preview-0409';
-const visionModel = process.env.VERTEX_AI_VISION_MODEL || 'gemini-1.5-pro-preview-0409';
+const textModel = process.env.VERTEX_AI_TEXT_MODEL || 'gemini-2.5-pro';
+const visionModel = process.env.VERTEX_AI_VISION_MODEL || 'gemini-2.5-pro';
 const geminiApiKey = process.env.GEMINI_API_KEY;
 
 if (!project) {

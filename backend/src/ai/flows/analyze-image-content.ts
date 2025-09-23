@@ -163,7 +163,7 @@ function calculateScores(contentAnalysis: any, manipulationAnalysis: { isManipul
 }
 
 // Main analysis function
-export async function analyzeImageContent(input: ImageAnalysisInput): Promise<ImageAnalysisOutput> {
+export async function analyzeImageContent(input: ImageAnalysisInput, options?: { searchEngineId?: string }): Promise<ImageAnalysisOutput> {
   try {
     // Run metadata, OCR, deepfake detection, and reverse image search concurrently
     const metadataPromise = extractImageMetadata(input.imageData);
@@ -196,7 +196,8 @@ export async function analyzeImageContent(input: ImageAnalysisInput): Promise<Im
       try {
         const webAnalysis = await performWebAnalysis({
           query: ocrText.substring(0, 500),
-          contentType: 'text'
+          contentType: 'text',
+          searchEngineId: options?.searchEngineId
         });
         webSources = webAnalysis.currentInformation || [];
       } catch (error) {

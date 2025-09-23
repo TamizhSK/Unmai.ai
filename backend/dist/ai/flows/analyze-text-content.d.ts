@@ -33,19 +33,41 @@ declare const TextAnalysisOutputSchema: z.ZodObject<{
         verdict: z.ZodEnum<["VERIFIED", "DISPUTED", "UNVERIFIED"]>;
         confidence: z.ZodNumber;
         explanation: z.ZodString;
+        evidence: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            source: z.ZodString;
+            title: z.ZodString;
+            snippet: z.ZodString;
+        }, "strip", z.ZodTypeAny, {
+            source: string;
+            title: string;
+            snippet: string;
+        }, {
+            source: string;
+            title: string;
+            snippet: string;
+        }>, "many">>;
     }, "strip", z.ZodTypeAny, {
         claim: string;
         verdict: "VERIFIED" | "DISPUTED" | "UNVERIFIED";
         explanation: string;
         confidence: number;
+        evidence?: {
+            source: string;
+            title: string;
+            snippet: string;
+        }[] | undefined;
     }, {
         claim: string;
         verdict: "VERIFIED" | "DISPUTED" | "UNVERIFIED";
         explanation: string;
         confidence: number;
+        evidence?: {
+            source: string;
+            title: string;
+            snippet: string;
+        }[] | undefined;
     }>, "many">>;
 }, "strip", z.ZodTypeAny, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -54,6 +76,7 @@ declare const TextAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
@@ -62,9 +85,13 @@ declare const TextAnalysisOutputSchema: z.ZodObject<{
         verdict: "VERIFIED" | "DISPUTED" | "UNVERIFIED";
         explanation: string;
         confidence: number;
+        evidence?: {
+            source: string;
+            title: string;
+            snippet: string;
+        }[] | undefined;
     }[] | undefined;
 }, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -73,6 +100,7 @@ declare const TextAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
@@ -81,9 +109,16 @@ declare const TextAnalysisOutputSchema: z.ZodObject<{
         verdict: "VERIFIED" | "DISPUTED" | "UNVERIFIED";
         explanation: string;
         confidence: number;
+        evidence?: {
+            source: string;
+            title: string;
+            snippet: string;
+        }[] | undefined;
     }[] | undefined;
 }>;
 export type TextAnalysisOutput = z.infer<typeof TextAnalysisOutputSchema>;
-export declare function analyzeTextContent(input: TextAnalysisInput): Promise<TextAnalysisOutput>;
+export declare function analyzeTextContent(input: TextAnalysisInput, options?: {
+    searchEngineId?: string;
+}): Promise<TextAnalysisOutput>;
 export {};
 //# sourceMappingURL=analyze-text-content.d.ts.map

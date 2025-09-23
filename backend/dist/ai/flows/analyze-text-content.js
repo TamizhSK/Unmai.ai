@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { groundedModel } from '../genkit.js';
 import { performWebAnalysis } from './perform-web-analysis.js';
+import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { factCheckClaim } from './fact-check-claim.js';
 const TextAnalysisInputSchema = z.object({
     text: z.string().min(1, 'Text content is required'),
@@ -29,17 +29,33 @@ const TextAnalysisOutputSchema = z.object({
         verdict: z.enum(['VERIFIED', 'DISPUTED', 'UNVERIFIED']),
         confidence: z.number().min(0).max(1),
         explanation: z.string(),
+        evidence: z.array(z.object({
+            source: z.string(),
+            title: z.string(),
+            snippet: z.string(),
+        })).optional(),
     })).optional(),
 });
-// Helper to break text into claims using Gemini
-async function extractClaims(text) {
-    const prompt = `Break down the following text into individual factual claims. Return each claim as a separate line. Text: "${text}"`;
-    const result = await groundedModel.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.2 },
-    });
-    const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    return responseText.split('\\n').filter((claim) => claim.trim().length > 0);
+// Helper to break text into claims using simple heuristics (no LLM)
+function extractClaims(text) {
+    const sentences = text
+        .replace(/\s+/g, ' ')
+        .split(/(?<=[\.\!\?])\s+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    // Enhanced factual claim detection
+    const factualRegex = /(\bis\b|\bare\b|\bwas\b|\bwere\b|\bhas\b|\bhave\b|\bclaims?\b|\breports?\b|\baccording to\b|\bpercent|\b\d{4}\b|\bround\b|\bflat\b|\balive\b|\bdead\b|\btrue\b|\bfalse\b|\breal\b|\bfake\b)/i;
+    // For very short texts, treat the entire text as a claim if it contains factual indicators
+    if (text.length < 100 && factualRegex.test(text)) {
+        return [text.trim()];
+    }
+    const claims = sentences.filter(s => s.length > 10 && factualRegex.test(s));
+    // If no claims found but text is short and seems factual, use the whole text
+    if (claims.length === 0 && text.length < 200 && text.trim().length > 5) {
+        return [text.trim()];
+    }
+    // Limit to 5 for efficiency
+    return claims.slice(0, 5);
 }
 // Helper to fact-check claims using the dedicated fact-check function
 async function factCheckClaimWithSources(claim) {
@@ -51,6 +67,7 @@ async function factCheckClaimWithSources(claim) {
                 result.verdict === 'False' ? 'DISPUTED' : 'UNVERIFIED',
             confidence: result.verdict === 'Uncertain' ? 0.3 : 0.7,
             explanation: result.explanation || 'Analysis completed',
+            evidence: result.evidence,
         };
     }
     catch (error) {
@@ -60,6 +77,7 @@ async function factCheckClaimWithSources(claim) {
             verdict: 'UNVERIFIED',
             confidence: 0.3,
             explanation: 'Unable to verify claim',
+            evidence: [],
         };
     }
 }
@@ -77,133 +95,96 @@ const determineOverallVerdict = (claims) => {
         return { verdict: 'VERIFIED', label: 'YELLOW' };
     return { verdict: 'MIXED', label: 'ORANGE' };
 };
-// Helper to calculate scores
-function calculateScores(claims) {
+// Helper to calculate scores with improved logic
+function calculateScores(claims, webSourcesCount) {
+    const totalClaims = Math.max(1, claims.length);
     const verifiedClaims = claims.filter(c => c.verdict === 'VERIFIED').length;
-    const totalClaims = claims.length || 1;
-    const avgConfidence = claims.reduce((sum, c) => sum + c.confidence, 0) / totalClaims;
-    const avgSourceCredibility = claims.reduce((sum, c) => sum + (c.sources?.reduce((s, src) => s + src.credibility, 0) / (c.sources?.length || 1) || 0), 0) / totalClaims;
-    return {
-        sourceIntegrityScore: Math.round(avgSourceCredibility * 100),
-        contentAuthenticityScore: Math.round((verifiedClaims / totalClaims) * 100),
-        trustExplainabilityScore: Math.round(avgConfidence * 100),
+    const disputedClaims = claims.filter(c => c.verdict === 'DISPUTED').length;
+    const unverifiedClaims = claims.filter(c => c.verdict === 'UNVERIFIED').length;
+    // Calculate average confidence, handling edge cases
+    const avgConfidence = claims.length > 0
+        ? claims.reduce((sum, c) => sum + (c.confidence || 0.5), 0) / totalClaims
+        : 0.5;
+    // Source Integrity Score (0-100)
+    // Based on: verification rate (60%), web sources availability (25%), confidence (15%)
+    const verificationRate = verifiedClaims / totalClaims;
+    const sourceAvailability = Math.min(1, webSourcesCount / 5); // Optimal: 5+ sources
+    const sourceIntegrityScore = Math.round(verificationRate * 60 +
+        sourceAvailability * 25 +
+        avgConfidence * 15);
+    // Content Authenticity Score (0-100)
+    // Heavily penalize disputed claims, moderately penalize unverified
+    const authenticityBase = verifiedClaims / totalClaims * 100;
+    const disputePenalty = (disputedClaims / totalClaims) * 60; // Heavy penalty for false info
+    const unverifiedPenalty = (unverifiedClaims / totalClaims) * 20; // Moderate penalty for uncertainty
+    const contentAuthenticityScore = Math.round(authenticityBase - disputePenalty - unverifiedPenalty);
+    // Trust Explainability Score (0-100)
+    // Weighted average with emphasis on content authenticity
+    const trustExplainabilityScore = Math.round(contentAuthenticityScore * 0.5 +
+        sourceIntegrityScore * 0.3 +
+        avgConfidence * 100 * 0.2);
+    // Ensure all scores are within valid range and log calculation details
+    const finalScores = {
+        sourceIntegrityScore: Math.min(100, Math.max(0, sourceIntegrityScore)),
+        contentAuthenticityScore: Math.min(100, Math.max(0, contentAuthenticityScore)),
+        trustExplainabilityScore: Math.min(100, Math.max(0, trustExplainabilityScore)),
     };
+    console.log(`[INFO] Trust scores calculated: verified=${verifiedClaims}/${totalClaims}, disputed=${disputedClaims}, sources=${webSourcesCount}, confidence=${avgConfidence.toFixed(2)}`);
+    console.log(`[INFO] Final scores: source=${finalScores.sourceIntegrityScore}, authenticity=${finalScores.contentAuthenticityScore}, explainability=${finalScores.trustExplainabilityScore}`);
+    return finalScores;
 }
 // Main analysis function
-export async function analyzeTextContent(input) {
+export async function analyzeTextContent(input, options) {
     try {
-        console.log('[INFO] Starting text analysis for:', input.text.substring(0, 100));
+        // Start web analysis early in parallel (independent of claim extraction)
+        const webAnalysisPromise = (async () => {
+            try {
+                const webAnalysis = await performWebAnalysis({
+                    query: input.text.substring(0, 500),
+                    contentType: 'text',
+                    searchEngineId: options?.searchEngineId,
+                });
+                return webAnalysis.currentInformation || [];
+            }
+            catch (error) {
+                console.error('Web analysis failed:', error);
+                return [];
+            }
+        })();
         // Step 1: Break down text into claims
         const claims = await extractClaims(input.text);
         const claimsToAnalyze = claims.slice(0, 5); // Limit to 5 claims for efficiency
-        console.log('[INFO] Extracted claims:', claimsToAnalyze);
-        // Step 2: Fact-check each claim
+        // Step 2: Fact-check each claim (already parallelized across claims)
         const analyzedClaims = await Promise.all(claimsToAnalyze.map(claim => factCheckClaimWithSources(claim)));
-        console.log('[INFO] Analyzed claims:', analyzedClaims);
-        // Step 3: Perform web analysis for context
-        let webSources = [];
-        try {
-            const webAnalysis = await performWebAnalysis({
-                query: input.text.substring(0, 500),
-                contentType: 'text'
-            });
-            webSources = webAnalysis.currentInformation || [];
-            console.log('[INFO] Web sources found:', webSources.length);
-        }
-        catch (error) {
-            console.error('Web analysis failed:', error);
-        }
+        // Step 3: Retrieve web sources result
+        const webSources = await webAnalysisPromise;
         // Step 4: Determine analysis label
         const { verdict, label } = determineOverallVerdict(analyzedClaims);
-        // Step 5: Generate AI-polished one-line description
-        const truncatedText = input.text.substring(0, 100).replace(/\n/g, ' ').trim();
-        const oneLineDescription = `Analyzed text: "${truncatedText}${input.text.length > 100 ? '...' : ''}" - ${label === 'GREEN' ? 'Content verified as factually accurate' : label === 'RED' ? 'Contains misinformation or disputed claims' : label === 'ORANGE' ? 'Mixed accuracy, requires careful evaluation' : 'Content needs further verification'}`;
-        console.log('[INFO] Generated oneLineDescription:', oneLineDescription);
-        // Step 6: Generate AI-polished summary
-        const verifiedCount = analyzedClaims.filter(c => c.verdict === 'VERIFIED').length;
-        const disputedCount = analyzedClaims.filter(c => c.verdict === 'DISPUTED').length;
-        const unverifiedCount = analyzedClaims.filter(c => c.verdict === 'UNVERIFIED').length;
-        const summary = `DETAILED ANALYSIS RESULTS\n\n` +
-            `Content Overview: The submitted text contains ${claims.length} distinct factual claim${claims.length !== 1 ? 's' : ''} that have been systematically analyzed.\n\n` +
-            `\nVerification Breakdown:\n` +
-            `• Verified Claims: ${verifiedCount} (${claims.length > 0 ? Math.round(verifiedCount / claims.length * 100) : 0}%)\n` +
-            `• Disputed Claims: ${disputedCount} (${claims.length > 0 ? Math.round(disputedCount / claims.length * 100) : 0}%)\n` +
-            `• Unverified Claims: ${unverifiedCount} (${claims.length > 0 ? Math.round(unverifiedCount / claims.length * 100) : 0}%)\n\n` +
-            `${disputedCount > 0 ? ' WARNING: This content contains disputed or false information that has been debunked by fact-checkers.\n\n' : ''}` +
-            `${verifiedCount === claims.length && claims.length > 0 ? '  VERIFIED: All claims in this text have been confirmed as factually accurate.\n\n' : ''}` +
-            `\nOverall Assessment: ${label === 'GREEN' ? 'This text appears to be factually accurate and reliable. The claims made are supported by credible sources and fact-checking organizations.' :
-                label === 'RED' ? 'This text contains significant misinformation or false claims. Multiple statements have been disputed or debunked by fact-checkers. Exercise extreme caution and do not share without correction.' :
-                    label === 'ORANGE' ? 'This text contains a mix of accurate and questionable information. Some claims are verified while others are disputed or unverifiable. Critical evaluation is required before accepting or sharing.' :
-                        'This text requires further verification. The claims made could not be fully confirmed or denied based on available information. Seek additional sources before drawing conclusions.'}\n\n` +
-            `\nRecommendation: ${label === 'GREEN' ? 'This content can be considered reliable for reference and sharing.' :
-                label === 'RED' ? 'Do not share this content without significant corrections. Seek accurate information from trusted sources.' :
-                    'Verify specific claims independently before using this information for important decisions.'}`;
-        // Step 7: Generate comprehensive educational insight
-        const educationalInsight = `UNDERSTANDING MISINFORMATION IN TEXT CONTENT\n\n` +
-            `Common Manipulation Techniques:\n` +
-            `• Selective Facts: Presenting only information that supports a specific narrative while omitting contradictory evidence\n` +
-            `• Emotional Manipulation: Using fear, anger, or outrage to bypass critical thinking\n` +
-            `• False Context: Taking real information out of its original context to mislead\n` +
-            `• Fabricated Claims: Creating entirely false statements presented as facts\n` +
-            `• Appeal to Authority: Citing fake experts or misrepresenting real expert opinions\n\n` +
-            `\nProtection Strategies:\n` +
-            `1. VERIFY SOURCES: Check if claims come from reputable, peer-reviewed, or official sources\n` +
-            `2. CROSS-REFERENCE: Compare information across multiple independent sources\n` +
-            `3. CHECK DATES: Ensure information is current and not outdated or taken out of temporal context\n` +
-            `4. EXAMINE LANGUAGE: Be wary of sensational, emotionally charged, or absolute statements\n` +
-            `5. USE FACT-CHECKERS: Consult established fact-checking organizations (Snopes, FactCheck.org, PolitiFact)\n\n` +
-            `\nRed Flags to Watch For:\n` +
-            `• Claims that seem too good/bad to be true\n` +
-            `• Lack of author information or credentials\n` +
-            `• Missing publication dates or sources\n` +
-            `• Grammatical errors or unprofessional presentation\n` +
-            `• Requests to share urgently without verification\n\n` +
-            `\nRemember: Critical thinking is your best defense. Question everything, verify important claims, and think before you share.`;
-        // Step 8: Compile comprehensive sources
-        const sources = [
-            { url: 'https://www.snopes.com', title: 'Snopes - The definitive fact-checking resource for urban legends, folklore, myths, rumors, and misinformation', credibility: 0.95 },
-            { url: 'https://www.factcheck.org', title: 'FactCheck.org - A project of the Annenberg Public Policy Center, providing nonpartisan analysis of U.S. politics', credibility: 0.93 },
-            { url: 'https://www.politifact.com', title: 'PolitiFact - Pulitzer Prize-winning fact-checking website that rates the accuracy of claims by elected officials', credibility: 0.91 },
-            { url: 'https://fullfact.org', title: 'Full Fact - UK\'s independent fact-checking charity, checking claims made by politicians and the media', credibility: 0.89 },
-            { url: 'https://www.reuters.com/fact-check', title: 'Reuters Fact Check - Global news organization\'s dedicated fact-checking team', credibility: 0.92 },
-            { url: 'https://apnews.com/APFactCheck', title: 'AP Fact Check - Associated Press fact-checking initiative covering politics and major news events', credibility: 0.94 },
-            { url: 'https://www.bbc.com/reality-check', title: 'BBC Reality Check - BBC\'s fact-checking service examining claims and statistics', credibility: 0.90 },
-            { url: 'https://www.washingtonpost.com/news/fact-checker/', title: 'Washington Post Fact Checker - Award-winning political fact-checking with Pinocchio ratings', credibility: 0.88 }
-        ];
-        // Add web sources if available
-        webSources.slice(0, 3).forEach(source => {
-            if (source.url && source.title) {
-                sources.push({
-                    url: source.url,
-                    title: source.title,
-                    credibility: source.relevance ? source.relevance / 100 : 0.75
-                });
-            }
-        });
-        // Step 9: Calculate scores
-        const scores = calculateScores(analyzedClaims);
-        const result = {
+        // Step 5: Calculate scores
+        const scores = calculateScores(analyzedClaims, webSources.length);
+        // Step 6: Gemini-driven formatting of presentation fields and sources
+        const candidateSources = (webSources || []).map((s) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }));
+        const presentation = await formatUnifiedPresentation({
+            contentType: 'text',
             analysisLabel: label,
-            oneLineDescription,
-            summary,
-            educationalInsight,
-            sources: sources.slice(0, 8), // Limit to 8 sources
-            sourceIntegrityScore: scores.sourceIntegrityScore || 50,
-            contentAuthenticityScore: scores.contentAuthenticityScore || 50,
-            trustExplainabilityScore: scores.trustExplainabilityScore || 50,
+            rawSignals: {
+                claims: analyzedClaims,
+                totalClaims: claims.length,
+                webSources
+            },
+            candidateSources
+        });
+        return {
+            analysisLabel: label,
+            oneLineDescription: presentation.oneLineDescription,
+            summary: presentation.summary,
+            educationalInsight: presentation.educationalInsight,
+            sources: presentation.sources.slice(0, 8),
+            sourceIntegrityScore: scores.sourceIntegrityScore,
+            contentAuthenticityScore: scores.contentAuthenticityScore,
+            trustExplainabilityScore: scores.trustExplainabilityScore,
             claims: analyzedClaims,
         };
-        console.log('[INFO] Returning analysis result:', {
-            analysisLabel: result.analysisLabel,
-            oneLineDescription: result.oneLineDescription.substring(0, 100),
-            sourcesCount: result.sources.length,
-            scores: {
-                sourceIntegrityScore: result.sourceIntegrityScore,
-                contentAuthenticityScore: result.contentAuthenticityScore,
-                trustExplainabilityScore: result.trustExplainabilityScore
-            }
-        });
-        return result;
     }
     catch (error) {
         console.error('Error in text analysis:', error);

@@ -95,7 +95,7 @@ function getOperatorInfo(url: string, verification?: any) {
   };
 }
 
-// Helper to calculate scores
+// Helper to calculate scores with proper bounds checking
 function calculateScores(securityStatus: any, domainInfo: any): {
   sourceIntegrityScore: number;
   contentAuthenticityScore: number;
@@ -105,15 +105,21 @@ function calculateScores(securityStatus: any, domainInfo: any): {
   const reputationScore = (domainInfo.reputationScore || 0.5) * 100;
   const confidenceScore = securityStatus.confidence * 100;
   
-  return {
-    sourceIntegrityScore: Math.round(reputationScore),
-    contentAuthenticityScore: Math.round(safetyScore),
-    trustExplainabilityScore: Math.round(confidenceScore),
+  // Ensure all scores are within valid range (0-100)
+  const finalScores = {
+    sourceIntegrityScore: Math.min(100, Math.max(0, Math.round(reputationScore))),
+    contentAuthenticityScore: Math.min(100, Math.max(0, Math.round(safetyScore))),
+    trustExplainabilityScore: Math.min(100, Math.max(0, Math.round(confidenceScore))),
   };
+
+  console.log(`[INFO] URL trust scores: safety=${securityStatus.isSafe}, reputation=${domainInfo.reputationScore || 0.5}, confidence=${securityStatus.confidence}`);
+  console.log(`[INFO] Final URL scores: source=${finalScores.sourceIntegrityScore}, authenticity=${finalScores.contentAuthenticityScore}, explainability=${finalScores.trustExplainabilityScore}`);
+
+  return finalScores;
 }
 
 // Main analysis function
-export async function analyzeUrlSafety(input: UrlAnalysisInput): Promise<UrlAnalysisOutput> {
+export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { searchEngineId?: string }): Promise<UrlAnalysisOutput> {
   try {
     // Run independent steps concurrently for speed
     const [
@@ -135,7 +141,7 @@ export async function analyzeUrlSafety(input: UrlAnalysisInput): Promise<UrlAnal
       // Web analysis (search)
       (async () => {
         try {
-          const webAnalysis = await performWebAnalysis({ query: input.url, contentType: 'url' });
+          const webAnalysis = await performWebAnalysis({ query: input.url, contentType: 'url', searchEngineId: options?.searchEngineId });
           return webAnalysis.currentInformation || [];
         } catch (error) {
           console.error('Web analysis failed:', error);

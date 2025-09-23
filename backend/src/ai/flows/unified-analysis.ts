@@ -70,26 +70,26 @@ function toUnified(
   });
 }
 
-export async function analyzeUnified(input: UnifiedAnalyzeInput): Promise<UnifiedResponse> {
+export async function analyzeUnified(input: UnifiedAnalyzeInput, options?: { searchEngineId?: string }): Promise<UnifiedResponse> {
   switch (input.type) {
     case 'text': {
-      const out = await analyzeTextContent({ text: input.payload.text });
+      const out = await analyzeTextContent({ text: input.payload.text }, options);
       return toUnified(out, `Analysis of text with ${out.claims?.length ?? 0} claims.`);
     }
     case 'url': {
-      const out = await analyzeUrlSafety({ url: input.payload.url });
+      const out = await analyzeUrlSafety({ url: input.payload.url }, options);
       return toUnified(out, `URL analysis for ${input.payload.url}.`);
     }
     case 'image': {
-      const out = await analyzeImageContent({ imageData: input.payload.imageData, mimeType: input.payload.mimeType });
+      const out = await analyzeImageContent({ imageData: input.payload.imageData, mimeType: input.payload.mimeType }, options);
       return toUnified(out, 'Image analysis completed.');
     }
     case 'video': {
-      const out = await analyzeVideoContent({ videoData: input.payload.videoData, mimeType: input.payload.mimeType });
+      const out = await analyzeVideoContent({ videoData: input.payload.videoData, mimeType: input.payload.mimeType }, options);
       return toUnified(out, 'Video analysis completed.');
     }
     case 'audio': {
-      const out = await analyzeAudioContent({ audioData: input.payload.audioData, mimeType: input.payload.mimeType });
+      const out = await analyzeAudioContent({ audioData: input.payload.audioData, mimeType: input.payload.mimeType }, options);
       return toUnified(out, 'Audio analysis completed.');
     }
     default: {

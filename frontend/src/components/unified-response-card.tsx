@@ -173,39 +173,23 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
     if (typeof value === 'number') return String(value);
     if (typeof value === 'boolean') return String(value);
     if (value === null || value === undefined) return '';
-    return JSON.stringify(value);
+    // Since backend now returns properly formatted strings, just convert to string
+    return String(value);
   };
 
-  // Sanitize potential code-fenced or JSON-like strings into clean, readable text
+  // Clean up any remaining markdown artifacts (backend should handle most of this)
   const sanitizeText = (value: any): string => {
     let text = safeRender(value);
     if (!text) return '';
-    // Remove Markdown code fences ```lang ... ```
+    
+    // Remove any remaining Markdown code fences (just in case)
     text = text.replace(/```[a-zA-Z]*\n([\s\S]*?)```/g, '$1');
-    // Trim stray backticks
     text = text.replace(/```/g, '').trim();
-    // Remove standalone language labels like 'json' that might remain after cleaning
-    text = text
-      .split('\n')
-      .filter((line) => !/^\s*(json|javascript|js|typescript|ts|yaml|yml|xml|html)\s*$/i.test(line))
-      .join('\n');
+    
     // Collapse excessive whitespace
     text = text.replace(/\n{3,}/g, '\n\n').trim();
-    // Attempt to extract meaningful fields if it looks like JSON
-    const maybeJson = text.trim();
-    if ((maybeJson.startsWith('{') && maybeJson.endsWith('}')) || (maybeJson.startsWith('[') && maybeJson.endsWith(']'))) {
-      try {
-        const obj = JSON.parse(maybeJson);
-        if (obj && typeof obj === 'object') {
-          // Prefer explanation/summary/message fields if present
-          if (typeof obj.explanation === 'string' && obj.explanation.trim()) return obj.explanation.trim();
-          if (typeof obj.summary === 'string' && obj.summary.trim()) return obj.summary.trim();
-          if (typeof obj.message === 'string' && obj.message.trim()) return obj.message.trim();
-        }
-      } catch {
-        // Not valid JSON, ignore
-      }
-    }
+    
+    // Backend now handles JSON parsing, so just return the cleaned text
     return text;
   };
 

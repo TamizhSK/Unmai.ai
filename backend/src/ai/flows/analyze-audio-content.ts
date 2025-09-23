@@ -193,7 +193,7 @@ function calculateScores(
 }
 
 // Main analysis function
-export async function analyzeAudioContent(input: AudioAnalysisInput): Promise<AudioAnalysisOutput> {
+export async function analyzeAudioContent(input: AudioAnalysisInput, options?: { searchEngineId?: string }): Promise<AudioAnalysisOutput> {
   try {
     // Step 1: Transcribe audio
     const transcription = await transcribeAudio(input.audioData, input.mimeType);
@@ -213,7 +213,8 @@ export async function analyzeAudioContent(input: AudioAnalysisInput): Promise<Au
     try {
       const webAnalysis = await performWebAnalysis({
         query: transcription.substring(0, 500),
-        contentType: 'text'
+        contentType: 'text',
+        searchEngineId: options?.searchEngineId
       });
       webSources = webAnalysis.currentInformation || [];
     } catch (error) {

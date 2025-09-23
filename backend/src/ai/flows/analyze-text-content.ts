@@ -54,8 +54,22 @@ function extractClaims(text: string): string[] {
     .split(/(?<=[\.\!\?])\s+/)
     .map(s => s.trim())
     .filter(Boolean);
-  const factualRegex = /(\bis\b|\bare\b|\bwas\b|\bwere\b|\bhas\b|\bhave\b|\bclaims?\b|\breports?\b|\baccording to\b|\bpercent|\b\d{4}\b)/i;
-  const claims = sentences.filter(s => s.length > 20 && factualRegex.test(s));
+  
+  // Enhanced factual claim detection
+  const factualRegex = /(\bis\b|\bare\b|\bwas\b|\bwere\b|\bhas\b|\bhave\b|\bclaims?\b|\breports?\b|\baccording to\b|\bpercent|\b\d{4}\b|\bround\b|\bflat\b|\balive\b|\bdead\b|\btrue\b|\bfalse\b|\breal\b|\bfake\b)/i;
+  
+  // For very short texts, treat the entire text as a claim if it contains factual indicators
+  if (text.length < 100 && factualRegex.test(text)) {
+    return [text.trim()];
+  }
+  
+  const claims = sentences.filter(s => s.length > 10 && factualRegex.test(s));
+  
+  // If no claims found but text is short and seems factual, use the whole text
+  if (claims.length === 0 && text.length < 200 && text.trim().length > 5) {
+    return [text.trim()];
+  }
+  
   // Limit to 5 for efficiency
   return claims.slice(0, 5);
 }
@@ -97,7 +111,7 @@ const determineOverallVerdict = (claims: any[]) => {
   return { verdict: 'MIXED', label: 'ORANGE' };
 };
 
-// Helper to calculate scores
+// Helper to calculate scores with improved logic
 function calculateScores(claims: any[], webSourcesCount: number): {
   sourceIntegrityScore: number;
   contentAuthenticityScore: number;
@@ -106,39 +120,61 @@ function calculateScores(claims: any[], webSourcesCount: number): {
   const totalClaims = Math.max(1, claims.length);
   const verifiedClaims = claims.filter(c => c.verdict === 'VERIFIED').length;
   const disputedClaims = claims.filter(c => c.verdict === 'DISPUTED').length;
-  const avgConfidence = claims.reduce((sum, c) => sum + c.confidence, 0) / totalClaims;
+  const unverifiedClaims = claims.filter(c => c.verdict === 'UNVERIFIED').length;
   
-  // Source Integrity Score (based on verification rate and web sources)
+  // Calculate average confidence, handling edge cases
+  const avgConfidence = claims.length > 0 
+    ? claims.reduce((sum, c) => sum + (c.confidence || 0.5), 0) / totalClaims 
+    : 0.5;
+  
+  // Source Integrity Score (0-100)
+  // Based on: verification rate (60%), web sources availability (25%), confidence (15%)
   const verificationRate = verifiedClaims / totalClaims;
-  const sourceBoost = Math.min(20, webSourcesCount * 4); // Up to 20 points for sources
-  const sourceIntegrityScore = Math.round(verificationRate * 80 + sourceBoost);
-
-  // Content Authenticity Score (based on claims)
-  const authenticityRate = verifiedClaims / totalClaims;
-  const disputePenalty = (disputedClaims / totalClaims) * 40;
-  const contentAuthenticityScore = Math.round(authenticityRate * 100 - disputePenalty);
-
-  // Trust Explainability Score (average of other scores with confidence factor)
-  const trustExplainabilityScore = Math.round(
-    (sourceIntegrityScore * 0.4 + contentAuthenticityScore * 0.4 + avgConfidence * 100 * 0.2)
+  const sourceAvailability = Math.min(1, webSourcesCount / 5); // Optimal: 5+ sources
+  const sourceIntegrityScore = Math.round(
+    verificationRate * 60 + 
+    sourceAvailability * 25 + 
+    avgConfidence * 15
   );
 
-  return {
+  // Content Authenticity Score (0-100)
+  // Heavily penalize disputed claims, moderately penalize unverified
+  const authenticityBase = verifiedClaims / totalClaims * 100;
+  const disputePenalty = (disputedClaims / totalClaims) * 60; // Heavy penalty for false info
+  const unverifiedPenalty = (unverifiedClaims / totalClaims) * 20; // Moderate penalty for uncertainty
+  const contentAuthenticityScore = Math.round(authenticityBase - disputePenalty - unverifiedPenalty);
+
+  // Trust Explainability Score (0-100)
+  // Weighted average with emphasis on content authenticity
+  const trustExplainabilityScore = Math.round(
+    contentAuthenticityScore * 0.5 + 
+    sourceIntegrityScore * 0.3 + 
+    avgConfidence * 100 * 0.2
+  );
+
+  // Ensure all scores are within valid range and log calculation details
+  const finalScores = {
     sourceIntegrityScore: Math.min(100, Math.max(0, sourceIntegrityScore)),
     contentAuthenticityScore: Math.min(100, Math.max(0, contentAuthenticityScore)),
     trustExplainabilityScore: Math.min(100, Math.max(0, trustExplainabilityScore)),
   };
+
+  console.log(`[INFO] Trust scores calculated: verified=${verifiedClaims}/${totalClaims}, disputed=${disputedClaims}, sources=${webSourcesCount}, confidence=${avgConfidence.toFixed(2)}`);
+  console.log(`[INFO] Final scores: source=${finalScores.sourceIntegrityScore}, authenticity=${finalScores.contentAuthenticityScore}, explainability=${finalScores.trustExplainabilityScore}`);
+
+  return finalScores;
 }
 
 // Main analysis function
-export async function analyzeTextContent(input: TextAnalysisInput): Promise<TextAnalysisOutput> {
+export async function analyzeTextContent(input: TextAnalysisInput, options?: { searchEngineId?: string }): Promise<TextAnalysisOutput> {
   try {
     // Start web analysis early in parallel (independent of claim extraction)
     const webAnalysisPromise = (async () => {
       try {
         const webAnalysis = await performWebAnalysis({
           query: input.text.substring(0, 500),
-          contentType: 'text'
+          contentType: 'text',
+          searchEngineId: options?.searchEngineId,
         });
         return webAnalysis.currentInformation || [];
       } catch (error) {

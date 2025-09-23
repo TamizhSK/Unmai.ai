@@ -48,7 +48,6 @@ declare const UrlAnalysisOutputSchema: z.ZodObject<{
         ageDays?: number | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -57,6 +56,7 @@ declare const UrlAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
@@ -68,7 +68,6 @@ declare const UrlAnalysisOutputSchema: z.ZodObject<{
         ageDays?: number | undefined;
     } | undefined;
 }, {
-    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
     summary: string;
     educationalInsight: string;
@@ -77,6 +76,7 @@ declare const UrlAnalysisOutputSchema: z.ZodObject<{
         url: string;
         credibility: number;
     }[];
+    analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     sourceIntegrityScore: number;
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
@@ -89,6 +89,8 @@ declare const UrlAnalysisOutputSchema: z.ZodObject<{
     } | undefined;
 }>;
 export type UrlAnalysisOutput = z.infer<typeof UrlAnalysisOutputSchema>;
-export declare function analyzeUrlSafety(input: UrlAnalysisInput): Promise<UrlAnalysisOutput>;
+export declare function analyzeUrlSafety(input: UrlAnalysisInput, options?: {
+    searchEngineId?: string;
+}): Promise<UrlAnalysisOutput>;
 export {};
 //# sourceMappingURL=analyze-url-safety.d.ts.map

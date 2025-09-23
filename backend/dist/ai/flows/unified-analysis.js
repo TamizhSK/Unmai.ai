@@ -18,12 +18,6 @@ export const UnifiedResponseSchema = z.object({
     sourceIntegrityScore: z.number().min(0).max(100),
     contentAuthenticityScore: z.number().min(0).max(100),
     trustExplainabilityScore: z.number().min(0).max(100),
-    claims: z.array(z.object({
-        claim: z.string(),
-        verdict: z.enum(['VERIFIED', 'DISPUTED', 'UNVERIFIED']),
-        confidence: z.number().min(0).max(1),
-        explanation: z.string(),
-    })).optional(),
 });
 function toOneLine(text) {
     const line = text.replace(/\s+/g, ' ').trim();
@@ -37,8 +31,7 @@ function toUnified(args, fallbackOneLiner) {
     const sourceIntegrityScore = Math.round(args.sourceIntegrityScore ?? 60);
     const contentAuthenticityScore = Math.round(args.contentAuthenticityScore ?? 60);
     const trustExplainabilityScore = Math.round(args.trustExplainabilityScore ?? 60);
-    const oneLineDescription = toOneLine(summary);
-    const claims = args.claims;
+    const oneLineDescription = args.oneLineDescription ? toOneLine(args.oneLineDescription) : toOneLine(summary);
     return UnifiedResponseSchema.parse({
         analysisLabel,
         oneLineDescription,
@@ -48,29 +41,28 @@ function toUnified(args, fallbackOneLiner) {
         sourceIntegrityScore,
         contentAuthenticityScore,
         trustExplainabilityScore,
-        claims,
     });
 }
-export async function analyzeUnified(input) {
+export async function analyzeUnified(input, options) {
     switch (input.type) {
         case 'text': {
-            const out = await analyzeTextContent({ text: input.payload.text });
+            const out = await analyzeTextContent({ text: input.payload.text }, options);
             return toUnified(out, `Analysis of text with ${out.claims?.length ?? 0} claims.`);
         }
         case 'url': {
-            const out = await analyzeUrlSafety({ url: input.payload.url });
+            const out = await analyzeUrlSafety({ url: input.payload.url }, options);
             return toUnified(out, `URL analysis for ${input.payload.url}.`);
         }
         case 'image': {
-            const out = await analyzeImageContent({ imageData: input.payload.imageData, mimeType: input.payload.mimeType });
+            const out = await analyzeImageContent({ imageData: input.payload.imageData, mimeType: input.payload.mimeType }, options);
             return toUnified(out, 'Image analysis completed.');
         }
         case 'video': {
-            const out = await analyzeVideoContent({ videoData: input.payload.videoData, mimeType: input.payload.mimeType });
+            const out = await analyzeVideoContent({ videoData: input.payload.videoData, mimeType: input.payload.mimeType }, options);
             return toUnified(out, 'Video analysis completed.');
         }
         case 'audio': {
-            const out = await analyzeAudioContent({ audioData: input.payload.audioData, mimeType: input.payload.mimeType });
+            const out = await analyzeAudioContent({ audioData: input.payload.audioData, mimeType: input.payload.mimeType }, options);
             return toUnified(out, 'Audio analysis completed.');
         }
         default: {

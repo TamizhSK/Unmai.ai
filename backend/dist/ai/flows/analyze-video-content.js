@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { groundedModel } from '../genkit.js';
 import { v1 as videoIntelligence, protos as viProtos } from '@google-cloud/video-intelligence';
 import { performWebAnalysis } from './perform-web-analysis.js';
+import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
 const VideoAnalysisInputSchema = z.object({
     videoData: z.string().min(1, 'Video data is required'), // Base64 or GCS URL
@@ -27,8 +28,6 @@ const VideoAnalysisOutputSchema = z.object({
     trustExplainabilityScore: z.number().min(0).max(100).describe('Trust explainability score'),
     // Internal data for processing
     metadata: z.object({
-        creationDate: z.string().optional(),
-        device: z.string().optional(),
         location: z.string().optional(),
         transcription: z.string().optional(),
         events: z.array(z.string()).optional(),
@@ -47,8 +46,6 @@ async function extractVideoMetadata(videoData) {
         const [operation] = await client.annotateVideo(request);
         const [result] = await operation.promise();
         return {
-            creationDate: 'Unknown', // Placeholder
-            device: 'Unknown',
             location: result.annotationResults?.[0]?.segmentLabelAnnotations?.[0]?.entity?.description || 'Unknown',
             technicalData: { duration: result.annotationResults?.[0]?.inputUri || 'Unknown' },
         };
@@ -56,8 +53,6 @@ async function extractVideoMetadata(videoData) {
     catch (error) {
         console.error('Video Intelligence metadata error:', error);
         return {
-            creationDate: 'Unknown',
-            device: 'Unknown',
             location: 'Unknown',
             technicalData: { error: 'Metadata extraction failed' },
         };
@@ -110,9 +105,16 @@ async function analyzeVideoContentAndFactCheck(videoData, transcription) {
         generationConfig: { temperature: 0.1 },
     });
     const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const factualClaims = responseText.includes('Claims:')
-        ? [{ claim: 'Placeholder video claim', verdict: 'UNVERIFIED', confidence: 0.5 }]
-        : [];
+    const claimsRegex = /Claim: "(.*?)"\s*Verdict: (VERIFIED|DISPUTED|UNVERIFIED)\s*Confidence: (\d\.\d+)/g;
+    const factualClaims = [];
+    let match;
+    while ((match = claimsRegex.exec(responseText)) !== null) {
+        factualClaims.push({
+            claim: match[1],
+            verdict: match[2],
+            confidence: parseFloat(match[3]),
+        });
+    }
     return { factualClaims };
 }
 // Helper for deepfake detection
@@ -123,9 +125,12 @@ async function detectVideoDeepfake(videoData) {
         generationConfig: { temperature: 0.1 },
     });
     const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const confidenceRegex = /Confidence: (\d\.\d+)/;
+    const confidenceMatch = responseText.match(confidenceRegex);
+    const confidence = confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5;
     return {
         isManipulated: responseText.includes('Manipulated: true'),
-        confidence: 0.7, // Placeholder
+        confidence: confidence,
         explanation: responseText.split('Explanation:')[1] || 'Analysis not conclusive.',
     };
 }
@@ -152,39 +157,43 @@ function calculateScores(contentAnalysis, manipulationAnalysis) {
     };
 }
 // Main analysis function
-export async function analyzeVideoContent(input) {
+export async function analyzeVideoContent(input, options) {
     try {
-        // Step 1: Extract metadata
-        const metadata = await extractVideoMetadata(input.videoData);
-        // Step 2: Video intelligence analysis
-        const intelligenceAnalysis = await analyzeVideoIntelligence(input.videoData);
-        // Step 3: Fact-check content
+        // Placeholder for GCS upload function
+        // if (!input.videoData.startsWith('gs://') && !input.videoData.startsWith('data:')) {
+        //   input.videoData = await uploadToGcs(input.videoData);
+        // }
+        // Run metadata extraction, video intelligence, and deepfake detection concurrently
+        const metadataPromise = extractVideoMetadata(input.videoData);
+        const intelligencePromise = analyzeVideoIntelligence(input.videoData);
+        const deepfakePromise = (async () => {
+            try {
+                const deepfakeResult = await detectDeepfake({ media: input.videoData, contentType: 'video' });
+                return { isManipulated: deepfakeResult.isDeepfake, manipulationConfidence: deepfakeResult.confidenceScore / 100 };
+            }
+            catch (error) {
+                console.error('Deepfake detection failed:', error);
+                const basicResult = await detectVideoDeepfake(input.videoData);
+                return { isManipulated: basicResult.isManipulated, manipulationConfidence: basicResult.confidence };
+            }
+        })();
+        const [metadata, intelligenceAnalysis, deepfakeInfo] = await Promise.all([
+            metadataPromise,
+            intelligencePromise,
+            deepfakePromise
+        ]);
+        // Fact-check after transcription is available
         const contentAnalysis = await analyzeVideoContentAndFactCheck(input.videoData, intelligenceAnalysis.transcription);
-        // Step 4: Deepfake detection
-        let isManipulated = false;
-        let manipulationConfidence = 0.5;
-        try {
-            const deepfakeResult = await detectDeepfake({
-                media: input.videoData,
-                contentType: 'video'
-            });
-            isManipulated = deepfakeResult.isDeepfake;
-            manipulationConfidence = deepfakeResult.confidenceScore / 100;
-        }
-        catch (error) {
-            console.error('Deepfake detection failed:', error);
-            // Fallback to basic detection
-            const basicResult = await detectVideoDeepfake(input.videoData);
-            isManipulated = basicResult.isManipulated;
-            manipulationConfidence = basicResult.confidence;
-        }
+        const isManipulated = deepfakeInfo.isManipulated;
+        const manipulationConfidence = deepfakeInfo.manipulationConfidence;
         // Step 5: Web analysis for context
         let webSources = [];
         if (intelligenceAnalysis.transcription) {
             try {
                 const webAnalysis = await performWebAnalysis({
                     query: intelligenceAnalysis.transcription.substring(0, 500),
-                    contentType: 'text'
+                    contentType: 'text',
+                    searchEngineId: options?.searchEngineId
                 });
                 webSources = webAnalysis.currentInformation || [];
             }
@@ -206,64 +215,33 @@ export async function analyzeVideoContent(input) {
         else if (disputedClaims > 0 || (isManipulated && manipulationConfidence > 0.5)) {
             analysisLabel = 'ORANGE';
         }
-        // Step 7: Generate AI-polished one-line description
-        const oneLineDescription = `Video analysis: ${intelligenceAnalysis.events.slice(0, 2).join(', ')}${intelligenceAnalysis.events.length > 2 ? '...' : ''} - ${analysisLabel === 'GREEN' ? 'Authentic video' : analysisLabel === 'RED' ? 'Manipulated or deepfake' : 'Requires verification'}`;
-        // Step 8: Generate AI-polished summary
-        const summary = `Comprehensive video analysis completed. ` +
-            `${intelligenceAnalysis.events.length > 0 ? `Detected events: ${intelligenceAnalysis.events.join(', ')}. ` : ''}` +
-            `${intelligenceAnalysis.transcription ? `Transcription contains ${contentAnalysis.factualClaims.length} verifiable claims. ` : ''}` +
-            `${isManipulated ? `Video manipulation detected with ${(manipulationConfidence * 100).toFixed(0)}% confidence. ` : 'No obvious manipulation detected. '}` +
-            `${metadata.creationDate ? `Video created on ${metadata.creationDate}. ` : ''}` +
-            `${metadata.device ? `Recorded with ${metadata.device}. ` : ''}` +
-            `Verification results: ${verifiedClaims} claims verified, ${disputedClaims} disputed. ` +
-            `Overall assessment: ${analysisLabel === 'GREEN' ? 'The video appears authentic and unmodified.' :
-                analysisLabel === 'RED' ? 'The video shows strong signs of manipulation or deepfake technology.' :
-                    'The video requires further verification before accepting as authentic.'}`;
-        // Step 9: Generate educational insight
-        const educationalInsight = `Understanding Video Manipulation: Advanced AI enables creation of convincing deepfakes and manipulated videos that can deceive viewers. ` +
-            `Key detection methods: (1) Look for unnatural facial movements, especially around eyes and mouth; ` +
-            `(2) Check for audio-visual synchronization issues; ` +
-            `(3) Observe inconsistent lighting, shadows, or reflections; ` +
-            `(4) Watch for blurring or artifacts around face edges; ` +
-            `(5) Verify the source and context of the video. ` +
-            `Protection strategies: Use deepfake detection tools like Deepware Scanner or Microsoft Video Authenticator, ` +
-            `cross-reference with trusted news sources, ` +
-            `be skeptical of videos showing unlikely scenarios or statements, ` +
-            `check metadata and upload history, ` +
-            `and support legislation for deepfake disclosure requirements.`;
-        // Step 10: Compile sources
-        const sources = [
-            { url: 'https://deepware.ai/', title: 'Deepware - AI-Powered Deepfake Detection', credibility: 0.88 },
-            { url: 'https://www.microsoft.com/en-us/research/project/video-authenticator/', title: 'Microsoft Video Authenticator', credibility: 0.92 },
-            { url: 'https://www.sensity.ai/deepfake-detection/', title: 'Sensity AI - Deepfake Detection Platform', credibility: 0.87 },
-            { url: 'https://detectfakes.media.mit.edu/', title: 'MIT Detect Fakes - Educational Resource', credibility: 0.90 },
-            { url: 'https://www.d-id.com/deepfake-detector/', title: 'D-ID Deepfake Detector', credibility: 0.85 },
-            { url: 'https://www.truepic.com/', title: 'Truepic - Visual Media Authentication', credibility: 0.86 },
-        ];
-        // Add web sources if available
-        webSources.slice(0, 2).forEach(source => {
-            if (source.url && source.title) {
-                sources.push({
-                    url: source.url,
-                    title: source.title,
-                    credibility: source.relevance ? source.relevance / 100 : 0.75
-                });
-            }
-        });
-        // Step 11: Calculate scores
+        // Step 7: Calculate scores
         const scores = calculateScores(contentAnalysis, { isManipulated, confidence: manipulationConfidence });
+        // Step 8: Gemini-driven formatting of presentation fields and sources
+        const candidateSources = (webSources || []).map((s) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }));
+        const presentation = await formatUnifiedPresentation({
+            contentType: 'video',
+            analysisLabel,
+            rawSignals: {
+                transcription: intelligenceAnalysis.transcription,
+                events: intelligenceAnalysis.events,
+                factualClaims: contentAnalysis.factualClaims,
+                isManipulated,
+                manipulationConfidence,
+                metadata
+            },
+            candidateSources
+        });
         return {
             analysisLabel,
-            oneLineDescription,
-            summary,
-            educationalInsight,
-            sources: sources.slice(0, 8), // Limit to 8 sources
+            oneLineDescription: presentation.oneLineDescription,
+            summary: presentation.summary,
+            educationalInsight: presentation.educationalInsight,
+            sources: presentation.sources.slice(0, 8),
             sourceIntegrityScore: scores.sourceIntegrityScore,
             contentAuthenticityScore: scores.contentAuthenticityScore,
             trustExplainabilityScore: scores.trustExplainabilityScore,
             metadata: {
-                creationDate: metadata.creationDate,
-                device: metadata.device,
                 location: metadata.location,
                 transcription: intelligenceAnalysis.transcription,
                 events: intelligenceAnalysis.events,

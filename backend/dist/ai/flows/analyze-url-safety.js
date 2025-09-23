@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import { groundedModel } from '../genkit.js';
 import { WebRiskServiceClient } from '@google-cloud/web-risk';
 import { performWebAnalysis } from './perform-web-analysis.js';
+import { verifySource } from './verify-source.js';
+import { formatUnifiedPresentation } from './format-unified-presentation.js';
 const UrlAnalysisInputSchema = z.object({
     url: z.string().url('Valid URL is required'),
 });
@@ -64,66 +65,68 @@ async function checkUrlSafety(url) {
         };
     }
 }
-// Helper to analyze domain with Gemini
-async function analyzeDomain(url) {
-    const prompt = `Analyze the domain of this URL for credibility and provide domain age in days if available, reputation score (0-1), registrar if known, and any related domains. URL: "${url}"`;
-    const result = await groundedModel.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.2 },
-    });
-    // Simplified parsing (in production, use structured output)
+// Helper to analyze domain using URL parsing and verification details
+function analyzeDomain(url, verification) {
+    const domain = new URL(url).hostname;
+    const reputationScore = Number(verification?.details?.reputationScore ?? verification?.sourceCredibility ?? 0.6);
+    const ageDays = Number(verification?.details?.ageDays ?? 0);
+    const registrar = String(verification?.details?.registrar || 'Unknown');
+    return { domain, reputationScore, ageDays, registrar };
+}
+// Helper to get operator info from verification details
+function getOperatorInfo(url, verification) {
     return {
-        domain: new URL(url).hostname,
-        ageDays: 365, // Placeholder from parsing
-        reputationScore: 0.75, // Placeholder
-        registrar: 'Unknown', // Placeholder
-        relatedDomains: [], // Placeholder
+        name: verification?.details?.operator || verification?.author || 'Unknown',
+        contact: verification?.details?.contact || 'Not available'
     };
 }
-// Helper to get operator info with Gemini
-async function getOperatorInfo(url) {
-    const prompt = `Identify the operator or owner of the website at this URL, including name and contact information if available. URL: "${url}"`;
-    const result = await groundedModel.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.2 },
-    });
-    return {
-        name: 'Unknown', // Placeholder
-        contact: 'Not available', // Placeholder
-    };
-}
-// Helper to calculate scores
+// Helper to calculate scores with proper bounds checking
 function calculateScores(securityStatus, domainInfo) {
     const safetyScore = securityStatus.isSafe ? 100 : 20;
     const reputationScore = (domainInfo.reputationScore || 0.5) * 100;
     const confidenceScore = securityStatus.confidence * 100;
-    return {
-        sourceIntegrityScore: Math.round(reputationScore),
-        contentAuthenticityScore: Math.round(safetyScore),
-        trustExplainabilityScore: Math.round(confidenceScore),
+    // Ensure all scores are within valid range (0-100)
+    const finalScores = {
+        sourceIntegrityScore: Math.min(100, Math.max(0, Math.round(reputationScore))),
+        contentAuthenticityScore: Math.min(100, Math.max(0, Math.round(safetyScore))),
+        trustExplainabilityScore: Math.min(100, Math.max(0, Math.round(confidenceScore))),
     };
+    console.log(`[INFO] URL trust scores: safety=${securityStatus.isSafe}, reputation=${domainInfo.reputationScore || 0.5}, confidence=${securityStatus.confidence}`);
+    console.log(`[INFO] Final URL scores: source=${finalScores.sourceIntegrityScore}, authenticity=${finalScores.contentAuthenticityScore}, explainability=${finalScores.trustExplainabilityScore}`);
+    return finalScores;
 }
 // Main analysis function
-export async function analyzeUrlSafety(input) {
+export async function analyzeUrlSafety(input, options) {
     try {
-        // Step 1: Security check with Web Risk API
-        const securityStatus = await checkUrlSafety(input.url);
-        // Step 2: Domain analysis
-        const domainInfo = await analyzeDomain(input.url);
-        // Step 3: Operator info
-        const operatorInfo = await getOperatorInfo(input.url);
-        // Step 4: Web analysis for additional context
-        let webSources = [];
-        try {
-            const webAnalysis = await performWebAnalysis({
-                query: input.url,
-                contentType: 'url'
-            });
-            webSources = webAnalysis.currentInformation || [];
-        }
-        catch (error) {
-            console.error('Web analysis failed:', error);
-        }
+        // Run independent steps concurrently for speed
+        const [securityStatus, sourceVerification, webSources] = await Promise.all([
+            // Web Risk
+            checkUrlSafety(input.url),
+            // Source verification (backend)
+            (async () => {
+                try {
+                    return await verifySource({ content: input.url, contentType: 'url' });
+                }
+                catch (e) {
+                    console.warn('verifySource failed:', e);
+                    return undefined;
+                }
+            })(),
+            // Web analysis (search)
+            (async () => {
+                try {
+                    const webAnalysis = await performWebAnalysis({ query: input.url, contentType: 'url', searchEngineId: options?.searchEngineId });
+                    return webAnalysis.currentInformation || [];
+                }
+                catch (error) {
+                    console.error('Web analysis failed:', error);
+                    return [];
+                }
+            })()
+        ]);
+        // Derive domain and operator info from URL and verification details
+        const domainInfo = analyzeDomain(input.url, sourceVerification);
+        const operatorInfo = getOperatorInfo(input.url, sourceVerification);
         // Step 5: Determine analysis label
         let analysisLabel = 'YELLOW';
         if (securityStatus.isSafe && (domainInfo.reputationScore || 0) > 0.8) {
@@ -135,56 +138,32 @@ export async function analyzeUrlSafety(input) {
         else if ((domainInfo.reputationScore || 0) < 0.5 || securityStatus.threats.length > 0) {
             analysisLabel = 'ORANGE';
         }
-        // Step 6: Generate AI-polished one-line description
-        const oneLineDescription = `URL analysis: ${domainInfo.domain} - ${analysisLabel === 'GREEN' ? 'Safe and verified' : analysisLabel === 'RED' ? 'Dangerous or malicious' : 'Potentially risky'}`;
-        // Step 7: Generate AI-polished summary
-        const summary = `Comprehensive URL safety analysis for ${input.url}. ` +
-            `Security assessment: ${securityStatus.isSafe ? 'No immediate threats detected' : `Threats identified: ${securityStatus.threats.join(', ')}`}. ` +
-            `Domain reputation score: ${domainInfo.reputationScore ? (domainInfo.reputationScore * 100).toFixed(0) + '%' : 'Unknown'}. ` +
-            `${domainInfo.ageDays ? `Domain age: ${domainInfo.ageDays} days. ` : ''}` +
-            `${domainInfo.registrar ? `Registrar: ${domainInfo.registrar}. ` : ''}` +
-            `${operatorInfo.name ? `Site operator: ${operatorInfo.name}. ` : ''}` +
-            `Overall assessment: ${analysisLabel === 'GREEN' ? 'This URL appears safe to visit.' :
-                analysisLabel === 'RED' ? 'This URL is dangerous and should not be visited.' :
-                    'This URL requires caution and further verification before visiting.'}`;
-        // Step 8: Generate educational insight
-        const educationalInsight = `Understanding URL Safety: Malicious websites use various deception techniques including ` +
-            `domain spoofing (similar-looking URLs), subdomain abuse, URL shorteners to hide destinations, and fake HTTPS certificates. ` +
-            `Key safety indicators: (1) Check for proper HTTPS with valid certificates; ` +
-            `(2) Verify exact domain spelling and avoid homograph attacks; ` +
-            `(3) Look for suspicious URL patterns like excessive subdomains or random characters; ` +
-            `(4) Check domain age and registration details. ` +
-            `Protection strategies: Use browser security features, install reputable security extensions, ` +
-            `hover over links before clicking to preview destinations, ` +
-            `use URL scanners like VirusTotal before visiting suspicious sites, ` +
-            `and keep your browser and security software updated.`;
-        // Step 9: Compile sources
-        const sources = [
-            { url: 'https://transparencyreport.google.com/safe-browsing/search', title: 'Google Safe Browsing - URL Checker', credibility: 0.95 },
-            { url: 'https://www.virustotal.com/gui/home/url', title: 'VirusTotal - URL and File Scanner', credibility: 0.93 },
-            { url: 'https://urlvoid.com', title: 'URLVoid - Website Reputation Checker', credibility: 0.88 },
-            { url: 'https://www.phishtank.com', title: 'PhishTank - Phishing URL Database', credibility: 0.90 },
-            { url: 'https://safeweb.norton.com', title: 'Norton Safe Web', credibility: 0.87 },
-            { url: 'https://sitecheck.sucuri.net', title: 'Sucuri SiteCheck - Website Security', credibility: 0.85 },
-        ];
-        // Add web sources if available
-        webSources.slice(0, 2).forEach(source => {
-            if (source.url && source.title) {
-                sources.push({
-                    url: source.url,
-                    title: source.title,
-                    credibility: source.relevance ? source.relevance / 100 : 0.75
-                });
-            }
-        });
-        // Step 10: Calculate scores
+        // Step 6: Calculate scores
         const scores = calculateScores(securityStatus, domainInfo);
+        // Step 7: Gemini-driven formatting of presentation fields and sources
+        const candidateSources = [
+            ...(webSources || []).map((s) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance })),
+            ...(sourceVerification?.relatedSources || []).map((s) => ({ url: s.url, title: s.title, relevance: s.similarity }))
+        ];
+        const presentation = await formatUnifiedPresentation({
+            contentType: 'url',
+            analysisLabel,
+            rawSignals: {
+                url: input.url,
+                securityStatus,
+                domainInfo,
+                operatorInfo,
+                webSources,
+                sourceVerification
+            },
+            candidateSources
+        });
         return {
             analysisLabel,
-            oneLineDescription,
-            summary,
-            educationalInsight,
-            sources: sources.slice(0, 8), // Limit to 8 sources
+            oneLineDescription: presentation.oneLineDescription,
+            summary: presentation.summary,
+            educationalInsight: presentation.educationalInsight,
+            sources: presentation.sources.slice(0, 8),
             sourceIntegrityScore: scores.sourceIntegrityScore,
             contentAuthenticityScore: scores.contentAuthenticityScore,
             trustExplainabilityScore: scores.trustExplainabilityScore,

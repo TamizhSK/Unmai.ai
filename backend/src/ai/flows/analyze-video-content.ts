@@ -195,7 +195,7 @@ function calculateScores(contentAnalysis: any, manipulationAnalysis: { isManipul
 }
 
 // Main analysis function
-export async function analyzeVideoContent(input: VideoAnalysisInput): Promise<VideoAnalysisOutput> {
+export async function analyzeVideoContent(input: VideoAnalysisInput, options?: { searchEngineId?: string }): Promise<VideoAnalysisOutput> {
   try {
     // Placeholder for GCS upload function
     // if (!input.videoData.startsWith('gs://') && !input.videoData.startsWith('data:')) {
@@ -233,7 +233,8 @@ export async function analyzeVideoContent(input: VideoAnalysisInput): Promise<Vi
       try {
         const webAnalysis = await performWebAnalysis({
           query: intelligenceAnalysis.transcription.substring(0, 500),
-          contentType: 'text'
+          contentType: 'text',
+          searchEngineId: options?.searchEngineId
         });
         webSources = webAnalysis.currentInformation || [];
       } catch (error) {

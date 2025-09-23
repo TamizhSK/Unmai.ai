@@ -23,12 +23,13 @@ export const generativeModel = vertexAI.getGenerativeModel({
 export const generativeVisionModel = vertexAI.getGenerativeModel({
     model: visionModel,
 });
-// IMPORTANT: GoogleSearchRetrieval tool is deprecated as of 2024
-// API Error: "google_search_retrieval is not supported; please use google_search field instead"
-// Using regular model for now - web search functionality handled via AI knowledge base
+// Grounded model (no extra tools in config to avoid type issues)
 export const groundedModel = vertexAI.getGenerativeModel({
     model: textModel,
-    // Removed deprecated googleSearchRetrieval tool to fix ClientError 400
+});
+// Model with custom search engine configuration
+export const customSearchModel = (_searchEngineId) => vertexAI.getGenerativeModel({
+    model: textModel,
 });
 // Initialize direct Gemini API client
 export const geminiAI = new GoogleGenerativeAI(geminiApiKey);
