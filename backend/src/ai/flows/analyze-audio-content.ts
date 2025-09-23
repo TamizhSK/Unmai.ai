@@ -58,25 +58,30 @@ async function transcribeAudio(audioData: string, mimeType?: string) {
   
   const encodingMap = {
     'audio/mp3': 'MP3',
+    'audio/mpeg': 'MP3',
     'audio/wav': 'LINEAR16',
+    'audio/x-wav': 'LINEAR16',
     'audio/flac': 'FLAC',
     'audio/ogg': 'OGG_OPUS',
+    'audio/ogg; codecs=opus': 'OGG_OPUS',
     'audio/amr': 'AMR',
     'audio/awb': 'AMR_WB',
+  } as const;
+  type Encoding = typeof encodingMap[keyof typeof encodingMap];
+  const sampleRateMap: Partial<Record<Encoding, number>> = {
+    OGG_OPUS: 48000,
+    AMR: 8000,
+    AMR_WB: 16000,
+    LINEAR16: 16000,
   };
 
-  const sampleRateMap = {
-      'OGG_OPUS': 48000,
-      'AMR': 8000,
-      'AMR_WB': 16000,
-      'LINEAR16': 16000, // Default for wav
-  };
-
-  const encoding = mimeType && encodingMap[mimeType] ? encodingMap[mimeType] : 'LINEAR16';
-  const sampleRateHertz = sampleRateMap[encoding];
+  const encodingFromMime: Encoding = (mimeType && (mimeType in encodingMap)
+    ? encodingMap[mimeType as keyof typeof encodingMap]
+    : 'LINEAR16');
+  const sampleRateHertz = sampleRateMap[encodingFromMime];
 
   const config: any = {
-    encoding: encoding as const,
+    encoding: encodingFromMime,
     languageCode: 'en-US',
     enableAutomaticPunctuation: true,
   };
