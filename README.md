@@ -1,123 +1,285 @@
+# <div align="center"><img src="frontend/public/unmaiai.png" alt="Unmai.ai" width="500"/></div>
+
 <div align="center">
-  <img src="frontend/public/unmaiai.png" alt="Unmai.ai Logo" width="200"/>
-  <h1>Unmai.ai</h1>
-  <p>
-    <b>AI-powered content verification and analysis platform to combat misinformation.</b>
-  </p>
-  <p>
-    <a href="https://github.com/your-repo/unmai.ai/actions/workflows/deploy.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/your-repo/unmai.ai/deploy.yml?branch=main&style=for-the-badge" alt="Build Status"/>
-    </a>
-    <a href="https://github.com/your-repo/unmai.ai/blob/main/LICENSE">
-      <img src="https://img.shields.io/github/license/your-repo/unmai.ai?style=for-the-badge" alt="License"/>
-    </a>
-    <a href="https://github.com/your-repo/unmai.ai/issues">
-      <img src="https://img.shields.io/github/issues/your-repo/unmai.ai?style=for-the-badge" alt="GitHub issues"/>
-    </a>
-  </p>
+
+## **AI-Powered Content Verification Platform**
+
+> **Combat misinformation with intelligent analysis and real-time verification**
+
+[![Build Status](https://img.shields.io/badge/Build-Passing-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://github.com/your-repo/unmai.ai/actions)
+[![Cloud Platform](https://img.shields.io/badge/Google_Cloud-Powered-EA4335?style=for-the-badge&logo=googlecloud&logoColor=white)](https://cloud.google.com)
+[![License](https://img.shields.io/badge/License-MIT-34A853?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-FBBC04?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+
 </div>
 
 ---
 
-## 🌟 About Unmai.ai
+## **Platform Overview**
 
-Unmai.ai is a powerful, AI-driven platform designed to help users navigate the digital world with confidence. It provides a comprehensive suite of tools to verify content, identify misinformation, detect deepfakes, and assess the credibility of various media types, including text, images, audio, and video.
+**Unmai.ai** leverages Google Cloud's comprehensive AI ecosystem to deliver enterprise-grade content verification solutions. Our platform integrates advanced machine learning with scalable cloud infrastructure to identify misinformation, authenticate media, and ensure digital content integrity across multiple formats.
 
-## ✨ Key Features
+<div align="center">
+<table width="100%">
+  <tr>
+    <td width="25%" align="center" style="padding: 20px; background-color: #f8f9fa;">
+      <img src="frontend/public/Cloud Vision API.png" width="60"/>
+      <br/><strong>Vision Intelligence</strong>
+      <br/><small>Advanced image & visual content analysis</small>
+    </td>
+    <td width="25%" align="center" style="padding: 20px; background-color: #e8f0fe;">
+      <img src="frontend/public/Vertex AI.png" width="60"/>
+      <br/><strong>AI/ML Models</strong>
+      <br/><small>Custom-trained verification algorithms</small>
+    </td>
+    <td width="25%" align="center" style="padding: 20px; background-color: #f8f9fa;">
+      <img src="frontend/public/Video Intelligence API.png" width="60"/>
+      <br/><strong>Video Analysis</strong>
+      <br/><small>Deepfake detection & content verification</small>
+    </td>
+    <td width="25%" align="center" style="padding: 20px; background-color: #e8f0fe;">
+      <img src="frontend/public/Speech-To-Text.png" width="60"/>
+      <br/><strong>Audio Processing</strong>
+      <br/><small>Voice authentication & transcription</small>
+    </td>
+  </tr>
+</table>
+</div>
 
-- ** Fact-Checking:** Verify claims against a vast database of reliable sources.
-- ** Deepfake Detection:** Analyze media to detect AI-generated or manipulated content.
-- ** Credibility Scoring:** Get an instant assessment of content trustworthiness.
-- ** Safety Assessment:** Evaluate content for harmful or malicious material.
-- ** Source Verification:** Authenticate the source and domain of the content.
-- ** Educational Insights:** Gain context and learn about misinformation indicators.
-- ** Web Analysis:** Analyze web pages for safety and credibility.
-- ** Multilingual Support:** Translate and analyze content in multiple languages.
+---
 
-## 🛠️ Technology Stack
+## **Core Capabilities**
 
-Our platform is built with a modern, scalable technology stack to deliver reliable and fast analysis.
+<table width="100%">
+  <tr>
+    <td width="50%" style="padding: 20px; vertical-align: top;">
+      <h3 style="color: #4285F4;">Primary Verification Suite</h3>
+      
+      **Fact-Checking Engine**
+      Cross-reference claims against verified knowledge graphs and authoritative sources
+      
+      **Deepfake Detection**
+      AI-powered analysis to identify synthetic and manipulated media content
+      
+      **Credibility Scoring**
+      Real-time trust assessment using multi-factor analysis algorithms
+      
+      **Safety Assessment**
+      Automated detection of harmful, malicious, and inappropriate content
+    </td>
+    <td width="50%" style="padding: 20px; vertical-align: top;">
+      <h3 style="color: #EA4335;">Advanced Analytics Suite</h3>
+      
+      **Source Verification**
+      Domain authentication and origin traceability for digital content
+      
+      **Educational Insights**
+      Pattern recognition and learning modules for misinformation identification
+      
+      **Web Page Analysis**
+      Comprehensive website credibility and safety evaluation
+      
+      **Global Language Support**
+      Multi-regional content processing with cultural context awareness
+    </td>
+  </tr>
+</table>
 
-### **Frontend**
-- **Next.js 15** (App Router)
-- **React 18** with TypeScript
-- **Tailwind CSS** & **shadcn/ui**
-- **Radix UI** & **Lucide React** for icons
+---
 
-### **Backend**
-- **Google Genkit AI** Framework
-- **Node.js** with TypeScript
-- **Google Cloud** Services
+## **Technology Architecture**
 
-### **Google Cloud Services Used**
+### **Frontend Infrastructure**
+```yaml
+Framework: Next.js 15 (App Router Architecture)
+Runtime: React 18 with TypeScript
+Styling: Tailwind CSS + shadcn/ui Components
+Icons: Radix UI + Lucide React Library
+```
 
-| Service | Logo |
-| :--- | :---: |
-| **Vertex AI** | <img src="frontend/public/Vertex AI.png" alt="Vertex AI" width="150"> |
-| **Cloud Vision API** | <img src="frontend/public/Cloud Vision API.png" alt="Cloud Vision API" width="150"> |
-| **Video Intelligence API** | <img src="frontend/public/Video Intelligence API.png" alt="Video Intelligence API" width="150"> |
-| **Speech-To-Text** | <img src="frontend/public/Speech-To-Text.png" alt="Speech-To-Text" width="150"> |
-| **Cloud Translation API** | <img src="frontend/public/Cloud Translation API.png" alt="Cloud Translation API" width="150"> |
-| **Web Risk API** | <img src="frontend/public/Web Risk.png" alt="Web Risk API" width="150"> |
-| **Firestore** | <img src="frontend/public/Firestore.png" alt="Firestore" width="150"> |
-| **Cloud Run** | <img src="frontend/public/Cloud Run.png" alt="Cloud Run" width="150"> |
-| **Cloud Build** | <img src="frontend/public/Cloud Build.png" alt="Cloud Build" width="150"> |
+### **Backend Infrastructure**
+```yaml
+AI Framework: Google Genkit AI Platform
+Runtime: Node.js with TypeScript
+Cloud Platform: Google Cloud Services
+Database: Firestore NoSQL
+```
 
+### **DevOps & Deployment**
+```yaml
+Container Platform: Cloud Run (Serverless)
+CI/CD Pipeline: Cloud Build
+Monitoring: Cloud Operations Suite
+Security: IAM + Service Accounts
+```
 
-## 🚀 Getting Started
+---
 
-### Prerequisites
+## **Google Cloud Services Integration**
 
-- Node.js (v18 or higher)
-- npm or yarn
+<table width="100%">
+  <thead>
+    <tr style="background-color: #4285F4; color: white;">
+      <th width="20%">**Category**</th>
+      <th width="15%">**Service**</th>
+      <th width="25%">**Name**</th>
+      <th width="40%">**Implementation Purpose**</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background-color: #f8f9fa;">
+      <td align="center"><strong>AI/ML</strong></td>
+      <td align="center"><img src="frontend/public/Vertex AI.png" width="50"/></td>
+      <td><strong>Vertex AI</strong></td>
+      <td>Custom ML model training & inference</td>
+    </tr>
+    <tr style="background-color: #e8f0fe;">
+      <td align="center"><strong>Computer Vision</strong></td>
+      <td align="center"><img src="frontend/public/Cloud Vision API.png" width="50"/></td>
+      <td><strong>Cloud Vision API</strong></td>
+      <td>Image analysis & object detection</td>
+    </tr>
+    <tr style="background-color: #f8f9fa;">
+      <td align="center"><strong>Media Intelligence</strong></td>
+      <td align="center"><img src="frontend/public/Video Intelligence API.png" width="50"/></td>
+      <td><strong>Video Intelligence API</strong></td>
+      <td>Video content analysis & labeling</td>
+    </tr>
+    <tr style="background-color: #e8f0fe;">
+      <td align="center"><strong>Speech Processing</strong></td>
+      <td align="center"><img src="frontend/public/Speech-To-Text.png" width="50"/></td>
+      <td><strong>Speech-to-Text</strong></td>
+      <td>Audio transcription & analysis</td>
+    </tr>
+    <tr style="background-color: #f8f9fa;">
+      <td align="center"><strong>Translation</strong></td>
+      <td align="center"><img src="frontend/public/Cloud Translation API.png" width="50"/></td>
+      <td><strong>Cloud Translation API</strong></td>
+      <td>Multi-language content processing</td>
+    </tr>
+    <tr style="background-color: #e8f0fe;">
+      <td align="center"><strong>Security</strong></td>
+      <td align="center"><img src="frontend/public/Web Risk.png" width="50"/></td>
+      <td><strong>Web Risk API</strong></td>
+      <td>URL threat detection & assessment</td>
+    </tr>
+    <tr style="background-color: #f8f9fa;">
+      <td align="center"><strong>Database</strong></td>
+      <td align="center"><img src="frontend/public/Firestore.png" width="50"/></td>
+      <td><strong>Firestore</strong></td>
+      <td>NoSQL document database</td>
+    </tr>
+    <tr style="background-color: #e8f0fe;">
+      <td align="center"><strong>Compute</strong></td>
+      <td align="center"><img src="frontend/public/Cloud Run.png" width="50"/></td>
+      <td><strong>Cloud Run</strong></td>
+      <td>Serverless container deployment</td>
+    </tr>
+    <tr style="background-color: #f8f9fa;">
+      <td align="center"><strong>CI/CD</strong></td>
+      <td align="center"><img src="frontend/public/Cloud Build.png" width="50"/></td>
+      <td><strong>Cloud Build</strong></td>
+      <td>Automated build & deployment</td>
+    </tr>
+  </tbody>
+</table>
 
-### Installation & Setup
+---
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-repo/unmai.ai.git
-    cd unmai.ai
-    ```
+## **Getting Started**
 
-2.  **Install all dependencies:**
-    ```bash
-    npm run install:all
-    ```
+### **Prerequisites**
 
-3.  **Set up environment variables:**
-    - **Backend:** Create a `.env` file in the `backend/` directory. You'll need your Google Cloud credentials.
-    - **Frontend:** Create a `.env.local` file in the `frontend/` directory for your frontend configuration.
+| **Requirement** | **Version** | **Purpose** |
+|:----------------|:------------|:------------|
+| **Node.js** | `â‰¥ 18.0` | Runtime environment |
+| **Package Manager** | `npm/yarn` | Dependency management |
+| **Google Cloud Account** | `Active` | Service authentication |
+| **Git** | `Latest` | Version control |
 
-4.  **Run the development servers:**
-    ```bash
-    npm run dev
-    ```
-    This will start the frontend on `http://localhost:3000` and the backend services concurrently.
+### **Installation**
 
-## 📜 Available Scripts
+```bash
+# Clone the repository
+git clone https://github.com/your-repo/unmai.ai.git  
+cd unmai.ai
 
-- `npm run dev`: Start both frontend and backend development servers.
-- `npm run build`: Build both applications for production.
-- `npm run start`: Start the production-ready servers.
-- `npm run clean`: Remove all build artifacts and `node_modules`.
-- `npm run typecheck`: Run TypeScript checks across the monorepo.
+# Install dependencies
+npm run install:all
 
-## 🤝 Contributing
+# Configure environment variables
+# backend/.env â†’ Google Cloud credentials & API keys
+# frontend/.env.local â†’ Frontend configuration variables
 
-Contributions are welcome! Please feel free to open an issue or submit a pull request.
+# Start development servers
+npm run dev
+```
 
-1.  Fork the Project
-2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4.  Push to the Branch (`git push origin feature/AmazingFeature`)
-5.  Open a Pull Request
+### **Application Endpoints**
 
-## 📄 License
+| **Service** | **URL** | **Status** |
+|:------------|:--------|:-----------|
+| **Frontend Application** | `http://localhost:3000` | Active |
+| **Backend API Gateway** | `Auto-configured` | Active |
+| **Cloud Services** | `GCP Integration` | Connected |
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+---
+
+## **Development Commands**
+
+| **Command** | **Description** | **Environment** |
+|:------------|:----------------|:----------------|
+| `npm run dev` | Launch full-stack development environment | Development |
+| `npm run build` | Generate optimized production builds | Production |
+| `npm run start` | Start production-ready server instances | Production |
+| `npm run clean` | Remove build artifacts and dependencies | Maintenance |
+| `npm run typecheck` | Validate TypeScript across the monorepo | Quality Assurance |
+
+---
+
+## **Contributing**
+
+We welcome contributions that enhance our mission of combating misinformation through technology.
+
+### **Development Workflow**
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/enhancement-name`)
+3. **Implement** your changes
+4. **Test** thoroughly
+5. **Commit** your changes (`git commit -m 'feat: add comprehensive feature description'`)
+6. **Submit** a pull request
+
+### **Code Quality Standards**
+
+| **Standard** | **Requirement** |
+|:-------------|:----------------|
+| **TypeScript** | Strict mode enabled |
+| **Testing** | Unit tests for new features |
+| **Documentation** | Inline comments & README updates |
+| **Code Style** | ESLint + Prettier compliance |
+
+---
+
+## **License & Support**
+
+**Licensed under MIT License**
+
+*Developed by the Unmai.ai Engineering Team*
+
+### **Resources**
+
+- **[Documentation](https://docs.unmai.ai)** - Comprehensive guides and API reference
+- **[Technical Support](https://github.com/your-repo/unmai.ai/issues)** - Issue tracking and bug reports
+- **[Developer Community](https://discord.gg/unmai)** - Connect with other developers
+- **[Google Cloud Platform](https://cloud.google.com)** - Cloud services and infrastructure
 
 ---
 
 <div align="center">
-  <em>Made with ❤️ by the Unmai.ai Team</em>
+
+### **Empowering Truth in the Digital Age Through Advanced AI Verification**
+
+*Powered by Google Cloud â€¢ Built for Global Impact â€¢ Designed for Trust*
+
 </div>
