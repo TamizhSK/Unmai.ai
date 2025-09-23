@@ -32,24 +32,22 @@ export const generativeVisionModel = vertexAI.getGenerativeModel({
   model: visionModel,
 });
 
-// Re-enabled web search functionality with the new 'googleSearch' tool
+// Grounded model (no extra tools in config to avoid type issues)
 export const groundedModel = vertexAI.getGenerativeModel({
     model: textModel,
-    tools: [ { googleSearch: {} } ],
 });
 
 // Model with custom search engine configuration
-export const customSearchModel = (searchEngineId: string) => vertexAI.getGenerativeModel({
+export const customSearchModel = (_searchEngineId: string) => vertexAI.getGenerativeModel({
     model: textModel,
-    tools: [ { googleSearch: { search_engine: searchEngineId } } ],
 });
 
 // Initialize direct Gemini API client
 export const geminiAI = new GoogleGenerativeAI(geminiApiKey);
 
 // Direct Gemini API models (alternative to Vertex AI)
-export const geminiTextModel = geminiAI.getGenerativeModel({ model: 'gemini-1.5-pro-latest' });
-export const geminiVisionModel = geminiAI.getGenerativeModel({ model: 'gemini-1.5-pro-latest' });
+export const geminiTextModel = geminiAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+export const geminiVisionModel = geminiAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
 // Helper function to choose between Vertex AI and direct Gemini API
 export const getPreferredTextModel = () => {

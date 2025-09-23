@@ -425,7 +425,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
           {/* 2. One-line description of the input */}
           <div className="space-y-1 border-b border-border pb-3">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</h3>
-            <p className="text-foreground text-sm leading-relaxed">
+            <p className="text-foreground text-sm leading-relaxed break-words">
               {sanitizeText(data.oneLineDescription) || 'No description available'}
             </p>
           </div>
@@ -436,7 +436,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
               <span className="text-xs bg-muted px-2 py-0.5 rounded-full">3</span>
               Information Summary
             </h3>
-            <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">
+            <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap break-words">
               {sanitizeText(data.informationSummary) || 'No summary available'}
             </p>
           </div>
@@ -458,7 +458,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             </Button>
             {isEducationalExpanded && data.educationalInsight && (
               <div className="mt-2 p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground leading-relaxed">
-                <p className="whitespace-pre-wrap">{sanitizeText(data.educationalInsight)}</p>
+                <p className="whitespace-pre-wrap break-words">{sanitizeText(data.educationalInsight)}</p>
                 
                 {/* Misleading Indicators */}
                 {data.misleadingIndicators && data.misleadingIndicators.length > 0 && (

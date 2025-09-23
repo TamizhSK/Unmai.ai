@@ -114,7 +114,6 @@ async function detectImageDeepfake(imageData: string) {
     const result = await groundedModel.generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.1 },
-      tools: [{googleSearch: {}}],
     });
     
     const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
