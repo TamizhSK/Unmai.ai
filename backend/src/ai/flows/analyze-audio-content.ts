@@ -50,16 +50,41 @@ const AudioAnalysisOutputSchema = z.object({
 export type AudioAnalysisOutput = z.infer<typeof AudioAnalysisOutputSchema>;
 
 // Helper to transcribe audio using Google Speech-to-Text
-async function transcribeAudio(audioData: string) {
+async function transcribeAudio(audioData: string, mimeType?: string) {
   const client = new SpeechClient();
   const audio = {
     content: audioData.includes('base64') ? Buffer.from(audioData.split(',')[1], 'base64') : audioData,
   };
-  const config = {
-    encoding: 'LINEAR16' as const,
-    sampleRateHertz: 16000,
-    languageCode: 'en-US',
+  
+  const encodingMap = {
+    'audio/mp3': 'MP3',
+    'audio/wav': 'LINEAR16',
+    'audio/flac': 'FLAC',
+    'audio/ogg': 'OGG_OPUS',
+    'audio/amr': 'AMR',
+    'audio/awb': 'AMR_WB',
   };
+
+  const sampleRateMap = {
+      'OGG_OPUS': 48000,
+      'AMR': 8000,
+      'AMR_WB': 16000,
+      'LINEAR16': 16000, // Default for wav
+  };
+
+  const encoding = mimeType && encodingMap[mimeType] ? encodingMap[mimeType] : 'LINEAR16';
+  const sampleRateHertz = sampleRateMap[encoding];
+
+  const config: any = {
+    encoding: encoding as const,
+    languageCode: 'en-US',
+    enableAutomaticPunctuation: true,
+  };
+
+  if (sampleRateHertz) {
+      config.sampleRateHertz = sampleRateHertz;
+  }
+  
   const request = { audio, config };
 
   try {
@@ -166,7 +191,7 @@ function calculateScores(
 export async function analyzeAudioContent(input: AudioAnalysisInput): Promise<AudioAnalysisOutput> {
   try {
     // Step 1: Transcribe audio
-    const transcription = await transcribeAudio(input.audioData);
+    const transcription = await transcribeAudio(input.audioData, input.mimeType);
     
     if (!transcription) {
       throw new Error('Failed to transcribe audio');

@@ -8,7 +8,7 @@
  */
 
 import {z} from 'zod';
-import {groundedModel} from '../genkit.js';
+import {groundedModel, customSearchModel} from '../genkit.js';
 import { config } from 'dotenv';
 
 // Load environment variables
@@ -19,6 +19,7 @@ const USER_AGENT = process.env.USER_AGENT || 'Mozilla/5.0 (compatible; unmai.ai/
 const PerformWebAnalysisInputSchema = z.object({
   query: z.string().describe('The query or content to analyze in real-time.'),
   contentType: z.enum(['text', 'url']).describe('The type of the content.'),
+  searchEngineId: z.string().optional().describe('The ID of the custom search engine to use.'),
 });
 export type PerformWebAnalysisInput = z.infer<typeof PerformWebAnalysisInputSchema>;
 
@@ -132,7 +133,8 @@ export async function performWebAnalysis(
   }`;
 
   try {
-    const result = await groundedModel.generateContent({
+    const model = input.searchEngineId ? customSearchModel(input.searchEngineId) : groundedModel;
+    const result = await model.generateContent({
       contents: [{role: 'user', parts: [{text: prompt}]}],
     });
 

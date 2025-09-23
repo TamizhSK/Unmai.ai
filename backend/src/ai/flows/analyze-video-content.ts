@@ -38,8 +38,6 @@ const VideoAnalysisOutputSchema = z.object({
   
   // Internal data for processing
   metadata: z.object({
-    creationDate: z.string().optional(),
-    device: z.string().optional(),
     location: z.string().optional(),
     transcription: z.string().optional(),
     events: z.array(z.string()).optional(),
@@ -61,16 +59,12 @@ async function extractVideoMetadata(videoData: string) {
     const [operation] = await client.annotateVideo(request);
     const [result] = await operation.promise();
     return {
-      creationDate: 'Unknown', // Placeholder
-      device: 'Unknown',
       location: result.annotationResults?.[0]?.segmentLabelAnnotations?.[0]?.entity?.description || 'Unknown',
       technicalData: { duration: result.annotationResults?.[0]?.inputUri || 'Unknown' },
     };
   } catch (error) {
     console.error('Video Intelligence metadata error:', error);
     return {
-      creationDate: 'Unknown',
-      device: 'Unknown',
       location: 'Unknown',
       technicalData: { error: 'Metadata extraction failed' },
     };
@@ -127,17 +121,21 @@ async function analyzeVideoContentAndFactCheck(
   const result = await groundedModel.generateContent({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.1 },
+    tools: [{googleSearch: {}}],
   });
   
   const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-  const factualClaims: Array<{
-    claim: string;
-    verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED';
-    confidence: number;
-  }> = responseText.includes('Claims:')
-    ? [{ claim: 'Placeholder video claim', verdict: 'UNVERIFIED', confidence: 0.5 }]
-    : [];
+  const claimsRegex = /Claim: "(.*?)"\s*Verdict: (VERIFIED|DISPUTED|UNVERIFIED)\s*Confidence: (\d\.\d+)/g;
+  const factualClaims: Array<{ claim: string; verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED'; confidence: number; }> = [];
+  let match;
+  while ((match = claimsRegex.exec(responseText)) !== null) {
+    factualClaims.push({
+      claim: match[1],
+      verdict: match[2] as 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED',
+      confidence: parseFloat(match[3]),
+    });
+  }
 
   return { factualClaims };
 }
@@ -149,13 +147,18 @@ async function detectVideoDeepfake(videoData: string) {
   const result = await groundedModel.generateContent({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.1 },
+    tools: [{googleSearch: {}}],
   });
   
   const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
+  const confidenceRegex = /Confidence: (\d\.\d+)/;
+  const confidenceMatch = responseText.match(confidenceRegex);
+  const confidence = confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5;
+
   return {
     isManipulated: responseText.includes('Manipulated: true'),
-    confidence: 0.7, // Placeholder
+    confidence: confidence,
     explanation: responseText.split('Explanation:')[1] || 'Analysis not conclusive.',
   };
 }
@@ -196,6 +199,11 @@ function calculateScores(contentAnalysis: any, manipulationAnalysis: { isManipul
 // Main analysis function
 export async function analyzeVideoContent(input: VideoAnalysisInput): Promise<VideoAnalysisOutput> {
   try {
+    // Placeholder for GCS upload function
+    // if (!input.videoData.startsWith('gs://') && !input.videoData.startsWith('data:')) {
+    //   input.videoData = await uploadToGcs(input.videoData);
+    // }
+
     // Run metadata extraction, video intelligence, and deepfake detection concurrently
     const metadataPromise = extractVideoMetadata(input.videoData);
     const intelligencePromise = analyzeVideoIntelligence(input.videoData);
@@ -278,8 +286,6 @@ export async function analyzeVideoContent(input: VideoAnalysisInput): Promise<Vi
       contentAuthenticityScore: scores.contentAuthenticityScore,
       trustExplainabilityScore: scores.trustExplainabilityScore,
       metadata: {
-        creationDate: metadata.creationDate,
-        device: metadata.device,
         location: metadata.location,
         transcription: intelligenceAnalysis.transcription,
         events: intelligenceAnalysis.events,

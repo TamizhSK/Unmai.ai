@@ -38,6 +38,11 @@ const TextAnalysisOutputSchema = z.object({
     verdict: z.enum(['VERIFIED', 'DISPUTED', 'UNVERIFIED']),
     confidence: z.number().min(0).max(1),
     explanation: z.string(),
+    evidence: z.array(z.object({
+        source: z.string(),
+        title: z.string(),
+        snippet: z.string(),
+    })).optional(),
   })).optional(),
 });
 export type TextAnalysisOutput = z.infer<typeof TextAnalysisOutputSchema>;
@@ -65,6 +70,7 @@ async function factCheckClaimWithSources(claim: string) {
                result.verdict === 'False' ? 'DISPUTED' as const : 'UNVERIFIED' as const,
       confidence: result.verdict === 'Uncertain' ? 0.3 : 0.7,
       explanation: result.explanation || 'Analysis completed',
+      evidence: result.evidence,
     };
   } catch (error) {
     console.error('Error fact-checking claim:', error);
@@ -73,6 +79,7 @@ async function factCheckClaimWithSources(claim: string) {
       verdict: 'UNVERIFIED' as const,
       confidence: 0.3,
       explanation: 'Unable to verify claim',
+      evidence: [],
     };
   }
 }
@@ -91,21 +98,35 @@ const determineOverallVerdict = (claims: any[]) => {
 };
 
 // Helper to calculate scores
-function calculateScores(claims: any[]): {
+function calculateScores(claims: any[], webSourcesCount: number): {
   sourceIntegrityScore: number;
   contentAuthenticityScore: number;
   trustExplainabilityScore: number;
 } {
+  const totalClaims = Math.max(1, claims.length);
   const verifiedClaims = claims.filter(c => c.verdict === 'VERIFIED').length;
-  const totalClaims = claims.length || 1;
+  const disputedClaims = claims.filter(c => c.verdict === 'DISPUTED').length;
   const avgConfidence = claims.reduce((sum, c) => sum + c.confidence, 0) / totalClaims;
-  const avgSourceCredibility = claims.reduce((sum, c) => 
-    sum + (c.sources?.reduce((s: number, src: any) => s + src.credibility, 0) / (c.sources?.length || 1) || 0), 0) / totalClaims;
   
+  // Source Integrity Score (based on verification rate and web sources)
+  const verificationRate = verifiedClaims / totalClaims;
+  const sourceBoost = Math.min(20, webSourcesCount * 4); // Up to 20 points for sources
+  const sourceIntegrityScore = Math.round(verificationRate * 80 + sourceBoost);
+
+  // Content Authenticity Score (based on claims)
+  const authenticityRate = verifiedClaims / totalClaims;
+  const disputePenalty = (disputedClaims / totalClaims) * 40;
+  const contentAuthenticityScore = Math.round(authenticityRate * 100 - disputePenalty);
+
+  // Trust Explainability Score (average of other scores with confidence factor)
+  const trustExplainabilityScore = Math.round(
+    (sourceIntegrityScore * 0.4 + contentAuthenticityScore * 0.4 + avgConfidence * 100 * 0.2)
+  );
+
   return {
-    sourceIntegrityScore: Math.round(avgSourceCredibility * 100),
-    contentAuthenticityScore: Math.round((verifiedClaims / totalClaims) * 100),
-    trustExplainabilityScore: Math.round(avgConfidence * 100),
+    sourceIntegrityScore: Math.min(100, Math.max(0, sourceIntegrityScore)),
+    contentAuthenticityScore: Math.min(100, Math.max(0, contentAuthenticityScore)),
+    trustExplainabilityScore: Math.min(100, Math.max(0, trustExplainabilityScore)),
   };
 }
 
@@ -140,7 +161,7 @@ export async function analyzeTextContent(input: TextAnalysisInput): Promise<Text
     const { verdict, label } = determineOverallVerdict(analyzedClaims);
     
     // Step 5: Calculate scores
-    const scores = calculateScores(analyzedClaims);
+    const scores = calculateScores(analyzedClaims, webSources.length);
 
     // Step 6: Gemini-driven formatting of presentation fields and sources
     const candidateSources = (webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }));
