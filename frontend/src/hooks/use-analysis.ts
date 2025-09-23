@@ -81,8 +81,10 @@ export function useAnalysis() {
         return { text: currentInput };
       };
 
+      const searchEngineId = process.env.NEXT_PUBLIC_CUSTOM_SEARCH_ENGINE_ID;
+
       // Call unified backend for primary analysis
-      result = await analyzeUnified(contentType, buildPayload());
+      result = await analyzeUnified(contentType, buildPayload(), searchEngineId);
 
       // Optional enrichment for URL: verify source and safe search (presented in UI via sourceResult)
       if (contentType === 'url') {

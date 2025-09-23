@@ -417,7 +417,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                     {data.deepfakeDetection.confidence}% confidence
                   </Badge>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">{data.deepfakeDetection.details}</p>
+                <p className="text-xs text-muted-foreground mt-1 text-justify">{data.deepfakeDetection.details}</p>
               </div>
             </div>
           )}
@@ -425,7 +425,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
           {/* 2. One-line description of the input */}
           <div className="space-y-1 border-b border-border pb-3">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</h3>
-            <p className="text-foreground text-sm leading-relaxed break-words">
+            <p className="text-foreground text-sm leading-relaxed break-words text-justify">
               {sanitizeText(data.oneLineDescription) || 'No description available'}
             </p>
           </div>
@@ -436,7 +436,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
               <span className="text-xs bg-muted px-2 py-0.5 rounded-full">3</span>
               Information Summary
             </h3>
-            <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap break-words">
+            <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap break-words text-justify">
               {sanitizeText(data.informationSummary) || 'No summary available'}
             </p>
           </div>
@@ -458,7 +458,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             </Button>
             {isEducationalExpanded && data.educationalInsight && (
               <div className="mt-2 p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground leading-relaxed">
-                <p className="whitespace-pre-wrap break-words">{sanitizeText(data.educationalInsight)}</p>
+                <p className="whitespace-pre-wrap break-words text-justify">{sanitizeText(data.educationalInsight)}</p>
                 
                 {/* Misleading Indicators */}
                 {data.misleadingIndicators && data.misleadingIndicators.length > 0 && (
@@ -493,7 +493,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                         {data.deepfakeDetection.isDeepfake ? "Detected" : "Not Detected"}
                       </Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground mb-2">{data.deepfakeDetection.details}</p>
+                    <p className="text-xs text-muted-foreground mb-2 text-justify">{data.deepfakeDetection.details}</p>
                     <div className="flex items-center gap-2">
                       <span className="text-xs">Confidence:</span>
                       <div className="w-20 bg-muted rounded-full h-1.5">
@@ -528,7 +528,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                   Sources
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+              <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto flex flex-col">
                 <DialogHeader className="flex-shrink-0">
                   <DialogTitle>Sources & Verification Details</DialogTitle>
                   <DialogDescription>Source information and verification results</DialogDescription>

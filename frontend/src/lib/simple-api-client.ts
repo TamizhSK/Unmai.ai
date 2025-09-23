@@ -30,8 +30,8 @@ export async function factCheckClaim(claim: string) {
   return apiCall('/api/fact-check', { claim });
 }
 
-export async function analyzeUnified(type: 'text' | 'url' | 'image' | 'video' | 'audio', payload: any) {
-  return apiCall('/api/analyze', { type, payload });
+export async function analyzeUnified(type: 'text' | 'url' | 'image' | 'video' | 'audio', payload: any, searchEngineId?: string) {
+  return apiCall('/api/analyze', { type, payload, searchEngineId });
 }
 
 export async function getCredibilityScore(text: string) {
@@ -54,8 +54,8 @@ export async function verifySource(content: string, contentType: 'text' | 'url' 
   return apiCall('/api/verify-source', { content, contentType });
 }
 
-export async function performWebAnalysis(query: string, contentType: 'text' | 'url') {
-  return apiCall('/api/web-analysis', { query, contentType });
+export async function performWebAnalysis(query: string, contentType: 'text' | 'url', searchEngineId?: string) {
+  return apiCall('/api/web-analysis', { query, contentType, searchEngineId });
 }
 
 export async function safeSearchUrl(url: string) {
