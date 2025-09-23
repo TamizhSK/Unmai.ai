@@ -59,6 +59,7 @@ function cleanAndParseJson(responseText: string): any {
     // Fix common JSON formatting issues
     cleanJson = cleanJson
       .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
+      .replace(/\"(?=\s*:)/g, '"') // Remove backslash before quote in a key
       .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":') // Quote unquoted keys
       .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"') // Convert single quotes to double
       // Fix control characters and newlines
