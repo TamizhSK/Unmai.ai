@@ -33,7 +33,7 @@ gcloud builds submit \
     --config cloudbuild.yaml \
     --substitutions _REGION=$REGION,_FRONTEND_SERVICE=unmai-frontend,_BACKEND_SERVICE=unmai-backend
 
-echo -e "${GREEN}✅ Deployment complete!${NC}"
+echo -e "${GREEN}  Deployment complete!${NC}"
 
 # Get service URLs
 echo -e "${YELLOW}🔗 Service URLs:${NC}"

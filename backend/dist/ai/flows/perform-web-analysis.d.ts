@@ -10,11 +10,11 @@ declare const PerformWebAnalysisInputSchema: z.ZodObject<{
     query: z.ZodString;
     contentType: z.ZodEnum<["text", "url"]>;
 }, "strip", z.ZodTypeAny, {
-    contentType: "text" | "url";
     query: string;
+    contentType: "text" | "url";
 }, {
-    contentType: "text" | "url";
     query: string;
+    contentType: "text" | "url";
 }>;
 export type PerformWebAnalysisInput = z.infer<typeof PerformWebAnalysisInputSchema>;
 declare const PerformWebAnalysisOutputSchema: z.ZodObject<{

@@ -5,13 +5,11 @@ import { factCheckClaim } from './ai/flows/fact-check-claim.js';
 import { getCredibilityScore } from './ai/flows/get-credibility-score.js';
 import { detectDeepfake } from './ai/flows/detect-deepfake.js';
 import { provideEducationalInsights } from './ai/flows/provide-educational-insights.js';
+import { analyzeUnified } from './ai/flows/unified-analysis.js';
 import { assessSafety } from './ai/flows/safety-assessment.js';
 import { verifySource } from './ai/flows/verify-source.js';
 import { performWebAnalysis } from './ai/flows/perform-web-analysis.js';
-import { detectSyntheticContent } from './ai/flows/detect-synthetic-content.js';
-import { analyzeContentForMisinformation } from './ai/flows/analyze-content-for-misinformation.js';
 import { safeSearchUrl } from './ai/flows/safe-search-url.js';
-import { transcribeAudioFlow } from './ai/flows/transcribe-audio.js';
 import { explainMisleadingIndicators } from './ai/flows/explain-misleading-indicators.js';
 import { translateTextFlow } from './ai/flows/translate-text.js';
 // Load environment variables
@@ -31,6 +29,25 @@ const PORT = process.env.PORT || 3001;
 const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || '50mb';
 app.use(cors());
 app.use(express.json({ limit: REQUEST_SIZE_LIMIT }));
+// Unified multimodal endpoint (preferred)
+app.post('/api/analyze', async (req, res) => {
+    try {
+        const { type, payload } = req.body || {};
+        if (!type || !payload) {
+            return res.status(400).json({ error: 'type and payload are required' });
+        }
+        const result = await analyzeUnified({ type, payload });
+        res.json(result);
+    }
+    catch (error) {
+        console.error('[ERROR] Unified analyze API failed:', error);
+        res.status(500).json({
+            error: 'Unified analysis service unavailable',
+            message: 'Unable to analyze content at this time',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -54,6 +71,7 @@ app.post('/api/fact-check', async (req, res) => {
         });
     }
 });
+// Removed modality-specific analyze endpoints in favor of unified /api/analyze
 app.post('/api/credibility-score', async (req, res) => {
     try {
         const { text } = req.body;
@@ -174,45 +192,6 @@ app.post('/api/web-analysis', async (req, res) => {
         });
     }
 });
-app.post('/api/detect-synthetic', async (req, res) => {
-    try {
-        const { media, contentType } = req.body;
-        if (!media || !contentType) {
-            return res.status(400).json({ error: 'Media and contentType are required' });
-        }
-        const result = await detectSyntheticContent({
-            media,
-            contentType: contentType
-        });
-        res.json(result);
-    }
-    catch (error) {
-        console.error('[ERROR] Synthetic detection API failed:', error);
-        res.status(500).json({
-            error: 'Synthetic content detection service unavailable',
-            message: 'Unable to detect synthetic content at this time',
-            timestamp: new Date().toISOString()
-        });
-    }
-});
-app.post('/api/analyze-misinformation', async (req, res) => {
-    try {
-        const { content } = req.body;
-        if (!content) {
-            return res.status(400).json({ error: 'Content is required' });
-        }
-        const result = await analyzeContentForMisinformation({ content });
-        res.json(result);
-    }
-    catch (error) {
-        console.error('[ERROR] Misinformation analysis API failed:', error);
-        res.status(500).json({
-            error: 'Misinformation analysis service unavailable',
-            message: 'Unable to analyze content for misinformation at this time',
-            timestamp: new Date().toISOString()
-        });
-    }
-});
 app.post('/api/safe-search', async (req, res) => {
     try {
         const { url } = req.body;
@@ -227,24 +206,6 @@ app.post('/api/safe-search', async (req, res) => {
         res.status(500).json({
             error: 'Safe search service unavailable',
             message: 'Unable to verify URL safety at this time',
-            timestamp: new Date().toISOString()
-        });
-    }
-});
-app.post('/api/transcribe-audio', async (req, res) => {
-    try {
-        const { audioData } = req.body;
-        if (!audioData) {
-            return res.status(400).json({ error: 'Audio data is required' });
-        }
-        const result = await transcribeAudioFlow({ audioData });
-        res.json(result);
-    }
-    catch (error) {
-        console.error('[ERROR] Audio transcription API failed:', error);
-        res.status(500).json({
-            error: 'Audio transcription service unavailable',
-            message: 'Unable to transcribe audio at this time',
             timestamp: new Date().toISOString()
         });
     }

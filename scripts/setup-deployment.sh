@@ -29,7 +29,7 @@ fi
 
 # Check if user is authenticated
 if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" | grep -q .; then
-    echo -e "${YELLOW}⚠️ Not authenticated with gcloud. Please run: gcloud auth login${NC}"
+    echo -e "${YELLOW} Not authenticated with gcloud. Please run: gcloud auth login${NC}"
     exit 1
 fi
 
@@ -60,9 +60,9 @@ if ! gcloud secrets describe gemini-api-key >/dev/null 2>&1; then
     echo -e "${YELLOW}Please enter your Gemini API key:${NC}"
     read -s GEMINI_API_KEY
     echo "$GEMINI_API_KEY" | gcloud secrets create gemini-api-key --data-file=-
-    echo -e "${GREEN}✅ Gemini API key stored in Secret Manager${NC}"
+    echo -e "${GREEN}  Gemini API key stored in Secret Manager${NC}"
 else
-    echo -e "${GREEN}✅ Gemini API key secret already exists${NC}"
+    echo -e "${GREEN}  Gemini API key secret already exists${NC}"
 fi
 
 # Grant Cloud Build access to secrets
@@ -126,7 +126,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
         --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/$GITHUB_REPO" \
         "github-actions@$PROJECT_ID.iam.gserviceaccount.com"
     
-    echo -e "${GREEN}✅ Workload Identity Federation configured${NC}"
+    echo -e "${GREEN}  Workload Identity Federation configured${NC}"
     echo -e "${YELLOW}📝 Add these secrets to your GitHub repository:${NC}"
     echo "GCP_PROJECT_ID: $PROJECT_ID"
     echo "WIF_PROVIDER: projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider"

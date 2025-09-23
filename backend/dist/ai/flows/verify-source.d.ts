@@ -10,11 +10,11 @@ declare const VerifySourceInputSchema: z.ZodObject<{
     content: z.ZodString;
     contentType: z.ZodEnum<["text", "url", "media"]>;
 }, "strip", z.ZodTypeAny, {
-    content: string;
     contentType: "text" | "url" | "media";
+    content: string;
 }, {
-    content: string;
     contentType: "text" | "url" | "media";
+    content: string;
 }>;
 export type VerifySourceInput = z.infer<typeof VerifySourceInputSchema>;
 declare const VerifySourceOutputSchema: z.ZodObject<{

@@ -19,13 +19,13 @@ declare const SafeSearchUrlOutputSchema: z.ZodObject<{
     threatTypes: z.ZodArray<z.ZodString, "many">;
     details: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    details: string;
     isSafe: boolean;
     threatTypes: string[];
+    details: string;
 }, {
-    details: string;
     isSafe: boolean;
     threatTypes: string[];
+    details: string;
 }>;
 export type SafeSearchUrlOutput = z.infer<typeof SafeSearchUrlOutputSchema>;
 export declare function safeSearchUrl(input: SafeSearchUrlInput): Promise<SafeSearchUrlOutput>;

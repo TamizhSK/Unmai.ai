@@ -10,20 +10,18 @@ export type InputType = 'text' | 'url' | 'image' | 'video' | 'audio';
 
 // Unified response format to match the UI card
 export const UnifiedResponseSchema = z.object({
-  label: z.enum(['RED', 'YELLOW', 'ORANGE', 'GREEN']),
+  analysisLabel: z.enum(['RED', 'YELLOW', 'ORANGE', 'GREEN']),
   oneLineDescription: z.string(),
-  informationSummary: z.string(),
+  summary: z.string(),
   educationalInsight: z.string(),
   sources: z.array(z.object({
     url: z.string().url(),
     title: z.string(),
     credibility: z.number().min(0).max(1),
   })),
-  scores: z.object({
-    sourceIntegrityScore: z.number().min(0).max(100),
-    contentAuthenticityScore: z.number().min(0).max(100),
-    trustExplainabilityScore: z.number().min(0).max(100),
-  }),
+  sourceIntegrityScore: z.number().min(0).max(100),
+  contentAuthenticityScore: z.number().min(0).max(100),
+  trustExplainabilityScore: z.number().min(0).max(100),
 });
 export type UnifiedResponse = z.infer<typeof UnifiedResponseSchema>;
 
@@ -42,6 +40,7 @@ function toOneLine(text: string): string {
 function toUnified(
   args: {
     analysisLabel?: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN';
+    oneLineDescription?: string;
     summary?: string;
     educationalInsight?: string;
     sourceIntegrityScore?: number;
@@ -51,23 +50,23 @@ function toUnified(
   },
   fallbackOneLiner: string
 ): UnifiedResponse {
-  const label = args.analysisLabel ?? 'YELLOW';
-  const informationSummary = args.summary ?? fallbackOneLiner;
+  const analysisLabel = args.analysisLabel ?? 'YELLOW';
+  const summary = args.summary ?? fallbackOneLiner;
   const educationalInsight = args.educationalInsight ?? 'No educational insight available.';
   const sources = args.sources ?? [];
-  const scores = {
-    sourceIntegrityScore: Math.round(args.sourceIntegrityScore ?? 60),
-    contentAuthenticityScore: Math.round(args.contentAuthenticityScore ?? 60),
-    trustExplainabilityScore: Math.round(args.trustExplainabilityScore ?? 60),
-  };
-  const oneLineDescription = toOneLine(informationSummary);
+  const sourceIntegrityScore = Math.round(args.sourceIntegrityScore ?? 60);
+  const contentAuthenticityScore = Math.round(args.contentAuthenticityScore ?? 60);
+  const trustExplainabilityScore = Math.round(args.trustExplainabilityScore ?? 60);
+  const oneLineDescription = args.oneLineDescription ? toOneLine(args.oneLineDescription) : toOneLine(summary);
   return UnifiedResponseSchema.parse({
-    label,
+    analysisLabel,
     oneLineDescription,
-    informationSummary,
+    summary,
     educationalInsight,
     sources,
-    scores,
+    sourceIntegrityScore,
+    contentAuthenticityScore,
+    trustExplainabilityScore,
   });
 }
 

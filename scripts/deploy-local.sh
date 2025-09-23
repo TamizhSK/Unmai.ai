@@ -28,7 +28,7 @@ echo -e "${YELLOW}🔍 Getting service URLs...${NC}"
 FRONTEND_URL=$(gcloud run services describe unmai-frontend --region $REGION --project $PROJECT_ID --format='value(status.url)')
 BACKEND_URL=$(gcloud run services describe unmai-backend --region $REGION --project $PROJECT_ID --format='value(status.url)')
 
-echo -e "${GREEN}✅ Deployment complete!${NC}"
+echo -e "${GREEN}  Deployment complete!${NC}"
 echo
 echo -e "${YELLOW}🌐 Service URLs:${NC}"
 echo "Frontend: $FRONTEND_URL"

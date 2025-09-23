@@ -2,21 +2,13 @@
 
 import { useState } from 'react';
 import {
-  detectDeepfake,
-  provideEducationalInsights,
-  assessSafety,
+  analyzeUnified,
   verifySource,
-  performWebAnalysis,
-  detectSyntheticContent,
-  analyzeContentForMisinformation,
-  safeSearchUrl,
-  factCheckClaim,
-  transcribeAudioFlow,
   translateText
 } from '@/lib/simple-api-client';
 import { useToast } from '@/hooks/use-toast';
 
-export type AnalysisTask = 'credibility' | 'deepfake' | 'insights' | 'safety' | 'verify-source' | 'web-analysis' | 'synthetic-content' | 'misinformation' | 'safe-search' | 'fact-check' | 'url-analysis';
+export type AnalysisTask = 'url-analysis' | 'text-analysis' | 'image-analysis' | 'video-analysis' | 'audio-analysis';
 
 type AiMessage = {
   type: 'ai';
@@ -40,28 +32,7 @@ export function useAnalysis() {
 
     try {
       let currentInput = input;
-      let currentFile = file;
-
-      if (currentFile && currentFile.type.startsWith('audio/')) {
-        try {
-          const base64Data = currentFile.dataUrl.split(',')[1];
-          const transcriptionResult = await transcribeAudioFlow(base64Data);
-          // Handle both string and object responses
-          currentInput = typeof transcriptionResult === 'string' 
-            ? transcriptionResult 
-            : (transcriptionResult as any)?.transcription || (transcriptionResult as any)?.text || '';
-          currentFile = null;
-        } catch (transcriptionError) {
-          console.error("Transcription failed:", transcriptionError);
-          toast({
-            title: "Audio Transcription Failed",
-            description: "Could not process the audio. Please try again.",
-            variant: "destructive",
-          });
-          removeLastMessage();
-          return;
-        }
-      }
+      const currentFile = file;
 
       let originalLanguage = language;
       if (language !== 'en-US' && currentInput && typeof currentInput === 'string') {
@@ -80,57 +51,50 @@ export function useAnalysis() {
         }
       }
 
-      let contentType: 'text' | 'url' | 'image' | 'video' = 'text';
+      let contentType: 'text' | 'url' | 'image' | 'video' | 'audio' = 'text';
       if (currentFile) {
         if (currentFile.type.startsWith('image/')) contentType = 'image';
         else if (currentFile.type.startsWith('video/')) contentType = 'video';
+        else if (currentFile.type.startsWith('audio/')) contentType = 'audio';
       } else if (currentInput.match(/^https?:\/\//)) {
         contentType = 'url';
       }
 
-      let task: AnalysisTask;
-      if (contentType === 'url') {
-        task = 'url-analysis';
-      } else if (contentType === 'image' || contentType === 'video') {
-        task = currentInput.toLowerCase().includes('synthetic') || currentInput.toLowerCase().includes('ai-generated')
-          ? 'synthetic-content'
-          : 'deepfake';
-      } else if (currentInput.toLowerCase().includes('explain') || currentInput.toLowerCase().includes('insight')) {
-        task = 'insights';
-      } else if (currentInput.toLowerCase().includes('safety') || currentInput.toLowerCase().includes('harm')) {
-        task = 'safety';
-      } else if (currentInput.toLowerCase().includes('web') || currentInput.toLowerCase().includes('search') || currentInput.toLowerCase().includes('current')) {
-        task = 'web-analysis';
-      } else if (currentInput.toLowerCase().includes('misinformation') || currentInput.toLowerCase().includes('disinformation')) {
-        task = 'misinformation';
-      } else {
-        task = 'fact-check';
-      }
+      const task: AnalysisTask =
+        contentType === 'url' ? 'url-analysis' :
+        contentType === 'image' ? 'image-analysis' :
+        contentType === 'video' ? 'video-analysis' :
+        contentType === 'audio' ? 'audio-analysis' :
+        'text-analysis';
 
-      let result;
+      let result: any;
       let sourceResult: any;
 
-      if (task === 'url-analysis' && contentType === 'url') {
-        const [safeSearchResult, verifySourceResult] = await Promise.all([
-          safeSearchUrl(currentInput),
-          verifySource(currentInput, 'url')
-        ]);
-        result = { safeSearch: safeSearchResult, verifySource: verifySourceResult };
-      } else if (task === 'deepfake' && currentFile) {
-        if (currentInput.match(/^https?:\/\//)) {
-          sourceResult = await verifySource(currentInput, 'url').catch(e => console.error('Source verification failed:', e));
+      // Build payload for unified analyzer
+      const buildPayload = () => {
+        if (contentType === 'text') return { text: currentInput };
+        if (contentType === 'url') return { url: currentInput };
+        if (currentFile && (contentType === 'image' || contentType === 'video' || contentType === 'audio')) {
+          const dataKey = contentType === 'image' ? 'imageData' : contentType === 'video' ? 'videoData' : 'audioData';
+          return { [dataKey]: currentFile.dataUrl, mimeType: currentFile.type } as any;
         }
-        result = await detectDeepfake(currentFile.dataUrl, contentType as 'image' | 'video', sourceResult?.sourceCredibility);
-      } else if (task === 'insights') {
-        result = await provideEducationalInsights(currentInput);
-      } else if (task === 'safety') {
-        result = await assessSafety(currentInput, contentType as 'text' | 'url' | 'image');
-      } else if (task === 'web-analysis') {
-        result = await performWebAnalysis(currentInput, contentType as 'text' | 'url');
-      } else if (task === 'synthetic-content' && currentFile) {
-        result = await detectSyntheticContent(currentFile.dataUrl, contentType as 'image' | 'video');
-      } else {
-        result = await factCheckClaim(currentInput);
+        return { text: currentInput };
+      };
+
+      // Call unified backend for primary analysis
+      result = await analyzeUnified(contentType, buildPayload());
+
+      // Optional enrichment for URL: verify source and safe search (presented in UI via sourceResult)
+      if (contentType === 'url') {
+        try {
+          const [verifySourceResult] = await Promise.all([
+            verifySource(currentInput, 'url')
+            // safeSearchUrl can still be inspected from result if unified analyzer returns it; keep lightweight here
+          ]);
+          sourceResult = verifySourceResult;
+        } catch (e) {
+          console.warn('Optional source verification failed:', e);
+        }
       }
 
       if (originalLanguage !== 'en-US' && result) {
