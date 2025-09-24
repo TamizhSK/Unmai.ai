@@ -12,68 +12,52 @@ const PresentationSchema = z.object({
     })).min(3).max(8)
 });
 function cleanJson(text) {
-    let clean = text
+    const parsed = safeJsonParse(text);
+    if (!parsed) {
+        throw new Error('Unable to parse AI presentation JSON');
+    }
+    return parsed;
+}
+function safeJsonParse(raw) {
+    if (!raw)
+        return null;
+    let txt = raw
         .replace(/^```json\s*/i, '')
-        .replace(/^```\s*/i, '')
+        .replace(/^```/i, '')
         .replace(/```\s*$/i, '')
         .trim();
-    // Find JSON boundaries
-    const jsonStart = clean.indexOf('{');
-    let jsonEnd = clean.lastIndexOf('}');
-    // If no closing brace found, try to reconstruct the JSON
-    if (jsonStart !== -1 && jsonEnd === -1) {
-        console.warn('[WARN] Incomplete JSON detected, attempting to reconstruct');
-        // Find the last complete field and add closing brace
-        const lines = clean.split('\n');
-        let reconstructed = '';
-        let braceCount = 0;
-        let inString = false;
-        let lastCompleteIndex = -1;
-        for (let i = 0; i < clean.length; i++) {
-            const char = clean[i];
-            if (char === '"' && clean[i - 1] !== '\\') {
-                inString = !inString;
-            }
-            if (!inString) {
-                if (char === '{')
-                    braceCount++;
-                if (char === '}')
-                    braceCount--;
-                if (char === ',' && braceCount === 1) {
-                    lastCompleteIndex = i;
-                }
-            }
-        }
-        if (lastCompleteIndex > jsonStart) {
-            clean = clean.substring(jsonStart, lastCompleteIndex) + '\n}';
-            jsonEnd = clean.length - 1;
-        }
-        else {
-            // Fallback: just add closing brace
-            clean = clean.substring(jsonStart) + '}';
-            jsonEnd = clean.length - 1;
-        }
+    const start = txt.indexOf('{');
+    const end = txt.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+        txt = txt.substring(start, end + 1);
     }
-    else if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-        clean = clean.substring(jsonStart, jsonEnd + 1);
+    if (attemptParse(txt))
+        return attemptParse(txt);
+    txt = normalizeJsonArtifacts(txt);
+    return attemptParse(txt);
+}
+function normalizeJsonArtifacts(input) {
+    return input
+        .replace(/[\u201C\u201D]/g, '"')
+        .replace(/[\u2018\u2019]/g, "'")
+        .replace(/[\x00-\x1F\x7F]/g, '')
+        .replace(/,(\s*[}\]])/g, '$1')
+        .replace(/"([^"\\]*?)\\"(\s*:)/g, '"$1"$2')
+        .replace(/"([^"\\]+)""(\s*:)/g, '"$1"$2')
+        .replace(/:\s*""([^"\\]*?)"/g, ': "$1"')
+        .replace(/:""([^"\\]*?)"/g, ':"$1"')
+        .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+        .replace(/"{3,}/g, '"')
+        .replace(/"{2}/g, '"')
+        .trim();
+}
+function attemptParse(value) {
+    try {
+        return JSON.parse(value);
     }
-    // Fix common JSON issues
-    clean = clean
-        .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
-        .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
-        .replace(/\n/g, '\\n') // Escape newlines
-        .replace(/\r/g, '\\r') // Escape carriage returns
-        .replace(/\t/g, '\\t') // Escape tabs
-        .replace(/"/g, '"') // Fix smart quotes
-        .replace(/"/g, '"') // Fix smart quotes
-        .replace(/'/g, "'") // Fix smart apostrophes
-        // Fix incomplete string values
-        .replace(/"([^"]*)"([^"]*)"([^"]*)"(\s*[,}])/g, '"$1\\"$2\\"$3"$4')
-        // Fix unterminated strings at end of object
-        .replace(/"([^"\\]*(\\.[^"\\]*)*)"\s*$/, '"$1"')
-        // Ensure proper string termination before commas or closing braces
-        .replace(/"([^"\\]*(\\.[^"\\]*)*)\s*([,}])/g, '"$1"$3');
-    return JSON.parse(clean);
+    catch {
+        return null;
+    }
 }
 export async function formatUnifiedPresentation(input) {
     const prompt = `You are a professional misinformation analyst. Generate factual, informative content based on the analysis results.

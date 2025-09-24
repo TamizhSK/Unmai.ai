@@ -20,56 +20,177 @@ const FactCheckClaimOutputSchema = z.object({
     })).describe('A list of source recommendations and verification guidance.'),
     explanation: z.string().describe('A detailed explanation of the fact-check result.'),
 });
-// Function to clean and parse potentially malformed JSON or extract structured info from text
+/**
+ * Cleans and parses potentially malformed JSON from AI responses
+ * @param responseText - Raw response text from AI model
+ * @returns Parsed JSON object or null if parsing fails
+ */
 function cleanAndParseJson(responseText) {
-    // First, try to find JSON in the response
+    if (!responseText || typeof responseText !== 'string') {
+        console.warn('[WARN] Invalid response text provided to cleanAndParseJson');
+        return null;
+    }
+    console.log('[DEBUG] Raw response first 200 chars:', responseText.substring(0, 200));
+    // Step 1: Remove markdown code blocks and trim
     let cleanJson = responseText
-        .replace(/```json\s*/gi, '')
-        .replace(/```\s*$/gi, '')
-        .replace(/```$/gm, '')
+        .replace(/^```json\s*/gim, '')
+        .replace(/^```\s*/gim, '')
+        .replace(/```\s*$/gim, '')
         .trim();
-    // Look for JSON object boundaries
+    // Step 2: Find JSON object boundaries first
     const jsonStart = cleanJson.indexOf('{');
-    let jsonEnd = cleanJson.lastIndexOf('}');
-    // If no closing brace found, try to reconstruct the JSON
-    if (jsonStart !== -1 && jsonEnd === -1) {
-        console.warn('[WARN] Incomplete JSON detected in fact-check, attempting to reconstruct');
-        // Fallback: just add closing brace
-        cleanJson = cleanJson.substring(jsonStart) + '}';
-        jsonEnd = cleanJson.length - 1;
+    const jsonEnd = cleanJson.lastIndexOf('}');
+    // Early validation of JSON boundaries
+    if (jsonStart === -1) {
+        console.warn('[WARN] No opening brace found in response');
+        return null;
     }
-    else if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd < jsonStart) {
-        console.warn('[WARN] Malformed JSON detected in fact-check, attempting to reconstruct');
-        // Fallback: remove all characters after the opening brace
-        cleanJson = cleanJson.substring(0, jsonStart + 1) + '}';
-        jsonEnd = cleanJson.length - 1;
+    if (jsonEnd === -1 || jsonEnd <= jsonStart) {
+        console.warn('[WARN] Invalid or missing closing brace, attempting reconstruction');
+        // Try to find a reasonable end point
+        let braceCount = 1;
+        let inString = false;
+        let lastValidIndex = 0;
+        for (let i = 1; i < cleanJson.length - jsonStart; i++) {
+            const char = cleanJson[jsonStart + i];
+            const prevChar = cleanJson[jsonStart + i - 1];
+            if (char === '"' && prevChar !== '\\') {
+                inString = !inString;
+            }
+            if (!inString) {
+                if (char === '{')
+                    braceCount++;
+                if (char === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                        cleanJson = cleanJson.substring(jsonStart, jsonStart + i + 1);
+                        break;
+                    }
+                }
+                // Track last valid position (after comma or closing quote)
+                if (char === ',' || (char === '"' && cleanJson[jsonStart + i + 1]?.match(/\s*[,}]/))) {
+                    lastValidIndex = i;
+                }
+            }
+        }
+        // If we couldn't find proper closing, use last valid position
+        if (braceCount > 0 && lastValidIndex > 0) {
+            cleanJson = cleanJson.substring(jsonStart, jsonStart + lastValidIndex + 1) + '}';
+        }
+        else if (braceCount > 0) {
+            cleanJson = cleanJson.substring(jsonStart) + '}';
+        }
     }
-    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+    else {
         cleanJson = cleanJson.substring(jsonStart, jsonEnd + 1);
-        // Fix common JSON formatting issues
-        cleanJson = cleanJson
-            .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
-            .replace(/\"(?=\s*:)/g, '"') // Remove backslash before quote in a key
-            .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":') // Quote unquoted keys
-            .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"') // Convert single quotes to double
-            // Fix control characters and newlines
-            .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
-            .replace(/\n/g, '\\n') // Escape newlines
-            .replace(/\r/g, '\\r') // Escape carriage returns
-            .replace(/\t/g, '\\t') // Escape tabs
-            // Fix unescaped quotes in string values (more robust approach)
-            .replace(/"([^"\\]*)\\?"([^"\\]*)"([^"\\]*)"(\s*[,}])/g, '"$1\\"$2\\"$3"$4')
-            // Fix incomplete strings at end of object
-            .replace(/"\s*$/, '"}');
-        try {
-            return JSON.parse(cleanJson);
+    }
+    console.log('[DEBUG] Extracted JSON boundaries, length:', cleanJson.length);
+    // Step 3: Apply comprehensive JSON cleaning
+    cleanJson = cleanJson
+        // Phase 1: Normalize quotes and basic structure
+        .replace(/[\u201C\u201D]/g, '"') // Smart quotes to straight
+        .replace(/[\u2018\u2019]/g, "'") // Smart apostrophes
+        .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+        // Phase 2: Fix malformed key-value separators
+        .replace(/"([^"\\]*?)\\"(\s*:)/g, '"$1"$2') // "key\": -> "key":
+        .replace(/"([^"\\]+)""(\s*:)/g, '"$1"$2') // "key"": -> "key":
+        .replace(/\\"(?=\s*:)/g, '"') // \" before colon -> "
+        // Phase 3: Fix malformed values
+        .replace(/:""([^"]*?)"/g, ':"$1"') // :""value" -> :"value"
+        .replace(/:\s*""([^"]*?)"/g, ': "$1"') // : ""value" -> : "value"
+        .replace(/:\s*\\"/g, ': "') // : \" -> : "
+        // Phase 4: Quote unquoted keys and fix single quotes
+        .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":') // Unquoted keys
+        .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"') // Single to double quotes
+        // Phase 5: Handle newlines and special characters in strings
+        .replace(/"([^"]*?)\n([^"]*?)"/g, '"$1\\n$2"') // Escape newlines in strings
+        .replace(/"([^"]*?)\r([^"]*?)"/g, '"$1\\r$2"') // Escape carriage returns
+        .replace(/"([^"]*?)\t([^"]*?)"/g, '"$1\\t$2"') // Escape tabs
+        // Phase 6: Fix trailing commas and incomplete structures
+        .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
+        .replace(/"\s*$/, '"}') // Fix incomplete string at end
+        .replace(/"([^"\\]*(\\.[^"\\]*)*)"\s*([,}])/g, '"$1"$3'); // Ensure proper string termination
+    // Step 4: Attempt JSON parsing with progressive fallbacks
+    console.log('[DEBUG] Attempting JSON parse, cleaned length:', cleanJson.length);
+    // First attempt: Standard parsing
+    try {
+        const parsed = JSON.parse(cleanJson);
+        console.log('[SUCCESS] JSON parsed successfully');
+        return parsed;
+    }
+    catch (firstError) {
+        console.log('[WARN] First parse attempt failed:', firstError.message);
+        // Extract error position for debugging
+        const posMatch = firstError.message.match(/position (\d+)/i);
+        if (posMatch) {
+            const pos = parseInt(posMatch[1]);
+            console.log(`[DEBUG] Error at position ${pos}:`, {
+                char: cleanJson[pos],
+                charCode: cleanJson.charCodeAt(pos),
+                context: cleanJson.substring(Math.max(0, pos - 15), pos + 15)
+            });
         }
-        catch (e) {
-            console.log('JSON parsing failed, trying text extraction. Error:', e);
-            console.log('Failed JSON:', cleanJson.substring(0, 500));
+        // Second attempt: Aggressive quote normalization
+        try {
+            let aggressiveClean = cleanJson
+                .replace(/"""+/g, '"') // Remove multiple consecutive quotes
+                .replace(/""(\s*[:}])/g, '"$1') // Fix doubled quotes before colons/braces
+                .replace(/([:,]\s*)""/g, '$1"') // Fix doubled quotes after colons/commas
+                .replace(/([^\\])""([^:])/g, '$1"$2') // Fix doubled quotes in middle of strings
+                .replace(/\\{2,}/g, '\\') // Normalize multiple backslashes
+                .replace(/([^"]),([^\s"])/g, '$1, $2'); // Add spaces after commas
+            console.log('[INFO] Attempting aggressive cleaning...');
+            const parsed = JSON.parse(aggressiveClean);
+            console.log('[SUCCESS] Aggressive cleaning succeeded');
+            return parsed;
+        }
+        catch (secondError) {
+            console.log('[ERROR] Aggressive cleaning failed:', secondError.message);
+            // Third attempt: Try to extract key-value pairs manually
+            try {
+                console.log('[INFO] Attempting manual key-value extraction...');
+                const manualParsed = extractKeyValuePairs(cleanJson);
+                if (manualParsed && Object.keys(manualParsed).length > 0) {
+                    console.log('[SUCCESS] Manual extraction succeeded');
+                    return manualParsed;
+                }
+            }
+            catch (thirdError) {
+                console.log('[ERROR] Manual extraction failed:', thirdError.message);
+            }
         }
     }
-    // If JSON parsing fails, extract information from the text
+    // Final fallback: Extract information from raw text
+    console.log('[INFO] All JSON parsing attempts failed, falling back to text extraction');
+    return extractFromText(responseText);
+}
+/**
+ * Manually extracts key-value pairs from malformed JSON using regex patterns
+ * @param jsonStr - Malformed JSON string
+ * @returns Extracted object or null if no valid data found
+ */
+function extractKeyValuePairs(jsonStr) {
+    const result = {};
+    // Extract verdict
+    const verdictMatch = jsonStr.match(/["']?verdict["']?\s*:\s*["']?(True|False|Misleading|Uncertain)["']?/i);
+    if (verdictMatch) {
+        result.verdict = verdictMatch[1];
+    }
+    // Extract explanation
+    const explanationMatch = jsonStr.match(/["']?explanation["']?\s*:\s*["']([^"']*(?:\\.[^"']*)*)["']?/i);
+    if (explanationMatch) {
+        result.explanation = explanationMatch[1].replace(/\\n/g, ' ').replace(/\\"/g, '"');
+    }
+    // Extract evidence array (simplified - returns empty array for now)
+    result.evidence = [];
+    return Object.keys(result).length > 0 ? result : null;
+}
+/**
+ * Extracts information from raw text when JSON parsing completely fails
+ * @param responseText - Raw response text
+ * @returns Structured object with extracted information
+ */
+function extractFromText(responseText) {
     const text = responseText.toLowerCase();
     let verdict = 'Uncertain';
     // Determine verdict from text content
@@ -83,14 +204,18 @@ function cleanAndParseJson(responseText) {
         verdict = 'Misleading';
     }
     // Create a clean, concise explanation
-    let explanation = responseText;
-    // Remove reference numbers like [1], [2], etc.
-    explanation = explanation.replace(/\[\d+(?:,\s*\d+)*\]/g, '');
-    // Split into sentences and take the first few that are substantial
-    const sentences = explanation.split(/[.!?]+/).filter((s) => s.trim().length > 20);
+    let explanation = responseText
+        .replace(/\[\d+(?:,\s*\d+)*\]/g, '') // Remove reference numbers
+        .replace(/```[^`]*```/g, '') // Remove code blocks
+        .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold markdown
+        .trim();
+    // Split into sentences and take substantial ones
+    const sentences = explanation.split(/[.!?]+/)
+        .map(s => s.trim())
+        .filter(s => s.length > 20 && !s.match(/^(json|```|{|})/i));
     explanation = sentences.slice(0, 3).join('. ').trim();
-    // Ensure it ends with a period
-    if (explanation && !explanation.endsWith('.')) {
+    // Ensure proper ending
+    if (explanation && !explanation.match(/[.!?]$/)) {
         explanation += '.';
     }
     // Limit explanation length
@@ -167,7 +292,7 @@ CRITICAL RULES:
         console.error('[ERROR] Fact-check analysis failed:', error);
         // Handle Zod validation errors specifically
         if (error?.constructor?.name === 'ZodError') {
-            console.error('[ERROR] Zod validation failed:', error?.issues);
+            console.error('[ERROR] Zod validation failed:', error?.message);
             console.error('Response that failed validation:', response?.candidates?.[0]?.content?.parts?.[0]?.text);
             // Try to use the cleanAndParseJson fallback for malformed responses
             try {

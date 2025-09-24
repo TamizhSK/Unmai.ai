@@ -115,26 +115,46 @@ export async function getCredibilityScore(input) {
     if (!response?.candidates?.[0]?.content?.parts?.[0]?.text) {
         throw new Error('Invalid or empty response received from the model');
     }
-    const responseText = response.candidates[0].content.parts[0].text;
-    // Clean up the response text by removing markdown code block markers if present
-    const cleanJson = responseText
-        .replace(/^```json\s*/, '') // Remove opening ```json
-        .replace(/```\s*$/, '') // Remove closing ```
-        .trim(); // Remove any extra whitespace
+    const responseText = response.candidates[0].content.parts[0].text.trim();
     try {
-        const parsedJson = JSON.parse(cleanJson);
+        const parsedJson = safeJsonParse(responseText);
+        if (!parsedJson)
+            throw new Error('Parsing failed');
         const validatedOutput = GetCredibilityScoreOutputSchema.parse(parsedJson);
-        validatedOutput.source = source; // Ensure the source is correctly set
+        validatedOutput.source = source;
         return validatedOutput;
     }
     catch (error) {
-        console.error('Error parsing or validating model output:', error);
+        console.error('[ERROR] Error parsing or validating model output:', error);
+        console.error('[ERROR] Raw response for debugging:', responseText);
         return {
             credibilityScore: 0,
             assessmentSummary: 'The model returned a response that was not in the expected JSON format.',
             misleadingIndicators: [],
             source: source,
         };
+    }
+}
+// Helper: attempts to parse JSON, returns object or null
+function safeJsonParse(raw) {
+    // Remove markdown fences
+    let txt = raw.replace(/^```json\s*/i, '').replace(/^```/i, '').replace(/```\s*$/i, '').trim();
+    // Quick first attempt
+    try {
+        return JSON.parse(txt);
+    }
+    catch { /* ignore */ }
+    // Minimal fixes: collapse double quotes and remove control chars
+    txt = txt
+        .replace(/"{2,}/g, '"')
+        .replace(/[\x00-\x1F\x7F]/g, '')
+        .replace(/,\s*([}\]])/g, '$1');
+    // Second attempt
+    try {
+        return JSON.parse(txt);
+    }
+    catch {
+        return null;
     }
 }
 //# sourceMappingURL=get-credibility-score.js.map

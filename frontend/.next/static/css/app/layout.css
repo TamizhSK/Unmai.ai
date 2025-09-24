@@ -978,6 +978,9 @@ video {
 .max-w-6xl {
   max-width: 72rem;
 }
+.max-w-\[7\.5rem\] {
+  max-width: 7.5rem;
+}
 .max-w-\[85\%\] {
   max-width: 85%;
 }
@@ -1660,6 +1663,9 @@ video {
 }
 .leading-snug {
   line-height: 1.375;
+}
+.leading-tight {
+  line-height: 1.25;
 }
 .tracking-\[-0\.02em\] {
   letter-spacing: -0.02em;
@@ -2725,6 +2731,10 @@ video {
 
   .md\:max-w-\[60\%\] {
     max-width: 60%;
+  }
+
+  .md\:justify-end {
+    justify-content: flex-end;
   }
 
   .md\:px-6 {

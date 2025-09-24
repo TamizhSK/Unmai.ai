@@ -37,13 +37,23 @@ const PerformWebAnalysisOutputSchema = z.object({
 });
 export type PerformWebAnalysisOutput = z.infer<typeof PerformWebAnalysisOutputSchema>;
 
+type ScrapeResult = {
+  content: string;
+  status?: number;
+  statusText?: string;
+  errorMessage?: string;
+};
+
 // Enhanced URL content scraper with better error handling
-async function scrapeUrl(url: string): Promise<string> {
+async function scrapeUrl(url: string): Promise<ScrapeResult> {
   try {
     // Validate URL format
     const urlObj = new URL(url);
     if (!['http:', 'https:'].includes(urlObj.protocol)) {
-      throw new Error('Only HTTP and HTTPS URLs are supported');
+      return {
+        content: '',
+        errorMessage: 'Only HTTP and HTTPS URLs are supported'
+      };
     }
 
     const controller = new AbortController();
@@ -70,7 +80,11 @@ async function scrapeUrl(url: string): Promise<string> {
       
       // Return empty string for 404s and other client errors instead of throwing
       if (response.status >= 400 && response.status < 500) {
-        return '';
+        return {
+          content: '',
+          status: response.status,
+          statusText: response.statusText
+        };
       }
       throw new Error(errorMsg);
     }
@@ -78,7 +92,12 @@ async function scrapeUrl(url: string): Promise<string> {
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.includes('text/html') && !contentType.includes('text/plain')) {
       console.warn(`[WARN] Non-text content type: ${contentType} for URL: ${url}`);
-      return '';
+      return {
+        content: '',
+        status: response.status,
+        statusText: response.statusText,
+        errorMessage: `Unsupported content type: ${contentType}`
+      };
     }
     
     const html = await response.text();
@@ -98,7 +117,7 @@ async function scrapeUrl(url: string): Promise<string> {
     // Return first 2000 characters for analysis
     const result = textContent.substring(0, 2000);
     console.log(`[INFO] Successfully scraped ${result.length} characters from ${url}`);
-    return result;
+    return { content: result };
     
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -106,9 +125,9 @@ async function scrapeUrl(url: string): Promise<string> {
     
     // Return empty string instead of throwing for common errors
     if (errorMsg.includes('fetch failed') || errorMsg.includes('timeout') || errorMsg.includes('404')) {
-      return '';
+      return { content: '', errorMessage: errorMsg };
     }
-    throw new Error(`Failed to scrape URL: ${errorMsg}`);
+    return { content: '', errorMessage: `Failed to scrape URL: ${errorMsg}` };
   }
 }
 
@@ -117,22 +136,32 @@ export async function performWebAnalysis(
 ): Promise<PerformWebAnalysisOutput> {
   let content = input.query;
   let urlScrapingFailed = false;
+  let urlScrapeInfo: { status?: number; statusText?: string; error?: string } | null = null;
   
   if (input.contentType === 'url') {
     try {
-      const scrapedContent = await scrapeUrl(input.query);
+      const scrapeResult = await scrapeUrl(input.query);
+      const scrapedContent = scrapeResult.content;
       if (scrapedContent.trim().length > 0) {
         content = scrapedContent;
         console.log(`[INFO] Successfully scraped content from URL: ${input.query}`);
       } else {
         console.warn(`[WARN] URL returned empty content: ${input.query}`);
         urlScrapingFailed = true;
+        urlScrapeInfo = {
+          status: scrapeResult.status,
+          statusText: scrapeResult.statusText,
+          error: scrapeResult.errorMessage
+        };
         // Use the original URL as content for analysis
         content = `URL analysis for: ${input.query}`;
       }
     } catch (error) {
       console.error(`[ERROR] Failed to scrape URL ${input.query}:`, error);
       urlScrapingFailed = true;
+      urlScrapeInfo = {
+        error: error instanceof Error ? error.message : 'Unknown scrape error'
+      };
       // Use the original URL as content for analysis
       content = `URL analysis for: ${input.query}`;
     }
@@ -215,7 +244,11 @@ export async function performWebAnalysis(
     let analysisSummary = `Failed to perform real-time web analysis: ${error instanceof Error ? error.message : 'Unknown error'}`;
     
     if (urlScrapingFailed && input.contentType === 'url') {
-      analysisSummary = `Unable to access the provided URL (${input.query}). This may be due to the website being unavailable, requiring authentication, or blocking automated access. The URL structure and domain can still be analyzed for safety indicators.`;
+      const statusDetail = urlScrapeInfo?.status
+        ? ` (HTTP ${urlScrapeInfo.status}${urlScrapeInfo.statusText ? ` ${urlScrapeInfo.statusText}` : ''})`
+        : '';
+      const errorDetail = urlScrapeInfo?.error ? ` Reason: ${urlScrapeInfo.error}.` : '';
+      analysisSummary = `Unable to access the provided URL (${input.query})${statusDetail}. This may be due to the website being unavailable, requiring authentication, or blocking automated access.${errorDetail} The URL structure and domain can still be analyzed for safety indicators.`;
     }
     
     return {

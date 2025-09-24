@@ -108,9 +108,9 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
       informationSummary: unifiedBackend.summary || 'Analysis summary unavailable.',
       educationalInsight: unifiedBackend.educationalInsight || 'Educational content will appear here.',
       trustScores: {
-        sourceContextScore: Number(unifiedBackend.sourceIntegrityScore ?? 0),
+        sourceIntegrityScore: Number(unifiedBackend.sourceIntegrityScore ?? 0),
         contentAuthenticityScore: Number(unifiedBackend.contentAuthenticityScore ?? 0),
-        explainabilityScore: Number(unifiedBackend.trustExplainabilityScore ?? 0)
+        trustExplainabilityScore: Number(unifiedBackend.trustExplainabilityScore ?? 0)
       },
       sources: safeSources(unifiedBackend.sources || []),
       sourceMetadata: extractSourceMetadata(sourceResult),
@@ -128,9 +128,9 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
     const baseScore = trustScore || 50;
     
     return {
-      sourceContextScore: Math.min(100, Math.max(0, result.sourceCredibility || baseScore + Math.floor(Math.random() * 10 - 5))),
+      sourceIntegrityScore: Math.min(100, Math.max(0, result.sourceCredibility || baseScore + Math.floor(Math.random() * 10 - 5))),
       contentAuthenticityScore: Math.min(100, Math.max(0, result.credibilityScore || baseScore + Math.floor(Math.random() * 10 - 5))),
-      explainabilityScore: Math.min(100, Math.max(0, baseScore + Math.floor(Math.random() * 8 - 4)))
+      trustExplainabilityScore: Math.min(100, Math.max(0, baseScore + Math.floor(Math.random() * 8 - 4)))
     };
   };
 
