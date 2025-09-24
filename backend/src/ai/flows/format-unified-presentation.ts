@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { groundedModel } from '../genkit.js';
 
 const PresentationSchema = z.object({
+  analysisLabel: z.enum(['RED', 'YELLOW', 'ORANGE', 'GREEN']),
   oneLineDescription: z.string().min(1),
   summary: z.string().min(1),
   educationalInsight: z.string().min(1),
@@ -48,7 +49,25 @@ function cleanJson(text: string): any {
       .replace(/:""([^"\\]*?)"/g, (_match, value) => `:"${value}"`)
       .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, (_match, prefix, key) => `${prefix}"${key}":`)
       .replace(/(?<!\\)"{3,}/g, '"')
-      .replace(/(?<!\\)""/g, '"');
+      .replace(/(?<!\\)""/g, '"')
+      .replace(/}\s*(?=\s*{)/g, '}, ');
+    return output;
+  };
+
+  const balanceContainers = (input: string): string => {
+    let output = input;
+    const openBraces = (output.match(/{/g) ?? []).length;
+    const closeBraces = (output.match(/}/g) ?? []).length;
+    if (closeBraces < openBraces) {
+      output += '}'.repeat(openBraces - closeBraces);
+    }
+
+    const openBrackets = (output.match(/\[/g) ?? []).length;
+    const closeBrackets = (output.match(/]/g) ?? []).length;
+    if (closeBrackets < openBrackets) {
+      output += ']'.repeat(openBrackets - closeBrackets);
+    }
+
     return output;
   };
 
@@ -71,20 +90,67 @@ function cleanJson(text: string): any {
   if (whitespaceNormalized !== structural) {
     attempts.push(whitespaceNormalized);
   }
-
-  let lastError: unknown = null;
-  for (const candidate of attempts) {
-    try {
-      return JSON.parse(candidate);
-    } catch (error) {
-      lastError = error;
-    }
+  const balanced = balanceContainers(whitespaceNormalized);
+  if (balanced !== whitespaceNormalized) {
+    attempts.push(balanced);
   }
 
-  const failedSample = attempts[attempts.length - 1] || base;
-  console.log('[ERROR] JSON parsing failed after normalization attempts:', lastError);
-  console.log('[ERROR] Failed JSON sample:', failedSample.substring(0, 200));
-  throw lastError instanceof Error ? lastError : new Error('Unable to parse AI JSON response');
+  // Helper to close unterminated strings and ensure object closure
+  const closeOpenString = (jsonStr: string): string => {
+    // First, close any unterminated string by adding quote at end if odd quotes
+    let fixed = jsonStr.trim();
+    
+    // Remove any trailing commas before closing braces/brackets
+    fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+    
+    // Count quotes to ensure they're balanced
+    const quoteMatches = fixed.match(/"/g) || [];
+    if (quoteMatches.length % 2 === 1) {
+      fixed = fixed + '"';
+    }
+    
+    // Ensure object/array is properly closed
+    const openBraces = (fixed.match(/{/g) || []).length;
+    const closeBraces = (fixed.match(/}/g) || []).length;
+    if (closeBraces < openBraces) {
+      fixed = fixed + '}'.repeat(openBraces - closeBraces);
+    }
+    
+    // Ensure no trailing commas in arrays/objects
+    fixed = fixed.replace(/,(\s*[}\]])(?=([^"]*"[^"]*")*[^"]*$)/g, '$1');
+    
+    return fixed;
+  };
+
+  // Try each candidate in sequence
+  let lastParseError: Error | null = null;
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      const candidate = attempts[i];
+      // First try direct parse
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastParseError = error instanceof Error ? error : new Error(String(error));
+      // If this is the last attempt, try with salvage
+      if (i === attempts.length - 1) {
+        const lastCandidate = attempts[attempts.length - 1] || base;
+        const salvaged = closeOpenString(lastCandidate);
+        try {
+          return JSON.parse(salvaged);
+        } catch (salvageError) {
+          // Log minimal error info
+          const errorContext = {
+            error: lastParseError.message,
+            sample: lastCandidate.substring(0, 200) + (lastCandidate.length > 200 ? '...' : ''),
+            attempt: i + 1
+          };
+          console.error('[ERROR] Failed to parse AI response after all attempts:', errorContext);
+          throw new Error('Failed to process AI response. The content may be malformed.');
+        }
+      }
+    }
+  }
+  throw lastParseError || new Error('No valid JSON could be parsed from the response');
 }
 
 // Helper function to check if JSON is properly formatted
@@ -144,21 +210,26 @@ candidateSources (prioritized list):
 ${JSON.stringify(input.candidateSources).slice(0, 4000)}
 `;
 
-  const result = await groundedModel.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 2000 }
-  });
-  const text = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
   try {
-    const parsed = cleanJson(text);
-    const validated = PresentationSchema.parse(parsed);
-    console.log('[INFO] Successfully parsed AI-generated presentation');
-    return validated;
-  } catch (e) {
-    console.error('[ERROR] Failed to parse AI response for presentation formatting:', e);
-    console.error('[ERROR] Raw AI response:', text.substring(0, 1000));
+    const result = await groundedModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 2000 }
+    });
+    const text = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
-    // Enhanced fallback with actual content from rawSignals
+    if (!text) {
+      throw new Error('Empty response from AI model');
+    }
+    
+    try {
+      const parsed = cleanJson(text);
+      return PresentationSchema.parse(parsed);
+    } catch (e) {
+      console.error('[ERROR] Error parsing AI response:', e instanceof Error ? e.message : 'Unknown error');
+      // Fall through to generate fallback response
+    }
+
+    // Generate fallback response if AI response parsing fails
     const claims = input.rawSignals?.claims || [];
     const verifiedCount = claims.filter((c: any) => c.verdict === 'VERIFIED').length;
     const disputedCount = claims.filter((c: any) => c.verdict === 'DISPUTED').length;
@@ -173,6 +244,7 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
     }
 
     let educationalText = 'Key protection strategies: Verify claims through multiple independent sources, check publication dates, examine author credentials, and cross-reference with established fact-checking organizations.';
+    
     if (input.analysisLabel === 'RED') {
       educationalText += ' This content shows high-risk indicators - exercise extreme caution before sharing.';
     }
@@ -180,10 +252,12 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
     const fallbackSources = (input.candidateSources || [])
       .filter(s => s.url && s.url.startsWith('http'))
       .slice(0, 6)
-      .map((s) => ({ 
-        url: s.url, 
-        title: s.title || 'Verification Resource', 
-        credibility: (s as any).relevance ? Math.min(1, Math.max(0.5, ((s as any).relevance as number) / 100)) : 0.8 
+      .map((s) => ({
+        url: s.url,
+        title: s.title || 'Verification Resource',
+        credibility: (s as any).relevance
+          ? Math.min(1, Math.max(0.5, ((s as any).relevance as number) / 100))
+          : 0.8
       }));
     
     const defaultSources = [
@@ -193,11 +267,15 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
       { url: 'https://fullfact.org', title: 'Full Fact - UK Fact Checking', credibility: 0.89 }
     ];
     
-    return PresentationSchema.parse({
+    return {
+      analysisLabel: input.analysisLabel,
       oneLineDescription: `${input.contentType.charAt(0).toUpperCase() + input.contentType.slice(1)} analysis completed - ${input.analysisLabel} risk level detected`,
       summary: summaryText,
       educationalInsight: educationalText,
       sources: fallbackSources.length >= 3 ? fallbackSources : defaultSources.slice(0, 5)
-    });
+    };
+  } catch (e) {
+    console.error('[ERROR] Unexpected error in formatUnifiedPresentation:', e instanceof Error ? e.message : 'Unknown error');
+    throw e;
   }
 }
