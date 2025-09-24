@@ -26,17 +26,30 @@ function cleanAndParseJson(responseText) {
     let cleanJson = responseText
         .replace(/```json\s*/gi, '')
         .replace(/```\s*$/gi, '')
-        .replace(/^```/gm, '')
         .replace(/```$/gm, '')
         .trim();
     // Look for JSON object boundaries
     const jsonStart = cleanJson.indexOf('{');
-    const jsonEnd = cleanJson.lastIndexOf('}');
+    let jsonEnd = cleanJson.lastIndexOf('}');
+    // If no closing brace found, try to reconstruct the JSON
+    if (jsonStart !== -1 && jsonEnd === -1) {
+        console.warn('[WARN] Incomplete JSON detected in fact-check, attempting to reconstruct');
+        // Fallback: just add closing brace
+        cleanJson = cleanJson.substring(jsonStart) + '}';
+        jsonEnd = cleanJson.length - 1;
+    }
+    else if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd < jsonStart) {
+        console.warn('[WARN] Malformed JSON detected in fact-check, attempting to reconstruct');
+        // Fallback: remove all characters after the opening brace
+        cleanJson = cleanJson.substring(0, jsonStart + 1) + '}';
+        jsonEnd = cleanJson.length - 1;
+    }
     if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
         cleanJson = cleanJson.substring(jsonStart, jsonEnd + 1);
         // Fix common JSON formatting issues
         cleanJson = cleanJson
             .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
+            .replace(/\"(?=\s*:)/g, '"') // Remove backslash before quote in a key
             .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":') // Quote unquoted keys
             .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"') // Convert single quotes to double
             // Fix control characters and newlines
@@ -46,7 +59,7 @@ function cleanAndParseJson(responseText) {
             .replace(/\t/g, '\\t') // Escape tabs
             // Fix unescaped quotes in string values (more robust approach)
             .replace(/"([^"\\]*)\\?"([^"\\]*)"([^"\\]*)"(\s*[,}])/g, '"$1\\"$2\\"$3"$4')
-            // Fix incomplete strings at end
+            // Fix incomplete strings at end of object
             .replace(/"\s*$/, '"}');
         try {
             return JSON.parse(cleanJson);
@@ -74,7 +87,7 @@ function cleanAndParseJson(responseText) {
     // Remove reference numbers like [1], [2], etc.
     explanation = explanation.replace(/\[\d+(?:,\s*\d+)*\]/g, '');
     // Split into sentences and take the first few that are substantial
-    const sentences = explanation.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    const sentences = explanation.split(/[.!?]+/).filter((s) => s.trim().length > 20);
     explanation = sentences.slice(0, 3).join('. ').trim();
     // Ensure it ends with a period
     if (explanation && !explanation.endsWith('.')) {

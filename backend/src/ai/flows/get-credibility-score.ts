@@ -143,7 +143,7 @@ export async function getCredibilityScore(
     .trim();                     // Remove any extra whitespace
 
   try {
-    const parsedJson = JSON.parse(responseText);
+    const parsedJson = JSON.parse(cleanJson);
     const validatedOutput = GetCredibilityScoreOutputSchema.parse(parsedJson);
     validatedOutput.source = source; // Ensure the source is correctly set
     return validatedOutput;
