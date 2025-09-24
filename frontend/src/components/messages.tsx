@@ -80,6 +80,9 @@ function AnalysisLoadingSkeleton() {
       <div className="text-card-foreground w-auto max-w-[85%] sm:max-w-[70%] md:max-w-[60%] lg:max-w-lg rounded-lg shadow-sm border transition-all duration-300 bg-card border-border/15">
         <div className="p-4 space-y-2">
           <Skeleton className="h-4 w-[250px]" />
+          <Skeleton className="h-4 w-[250px]" />
+          <Skeleton className="h-4 w-[250px]" />
+          <Skeleton className="h-4 w-[250px]" />
           <Skeleton className="h-4 w-[200px]" />
         </div>
       </div>

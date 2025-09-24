@@ -257,7 +257,7 @@ export async function analyzeAudioContent(input: AudioAnalysisInput, options?: {
       oneLineDescription: presentation.oneLineDescription,
       summary: presentation.summary,
       educationalInsight: presentation.educationalInsight,
-      sources: presentation.sources.slice(0, 8),
+      sources: presentation.sources,
       sourceIntegrityScore: scores.sourceIntegrityScore,
       contentAuthenticityScore: scores.contentAuthenticityScore,
       trustExplainabilityScore: scores.trustExplainabilityScore,

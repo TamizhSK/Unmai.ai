@@ -5,12 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ShineBorder } from '@/components/ui/shine-border';
-import { Link as LinkIcon, Globe, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield, Eye, Brain } from "lucide-react";
+import { Link as LinkIcon, Globe, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield } from "lucide-react";
 
 export interface MultiModalTrustScores {
-  sourceContextScore: number;      // Source & Context Verification score
-  contentAuthenticityScore: number; // Content Authenticity & Semantic Consistency score  
-  explainabilityScore: number;     // Explainability & Composite Trust Score
+  sourceIntegrityScore: number;      // Source credibility & integrity
+  contentAuthenticityScore: number;  // Content authenticity & semantic consistency
+  trustExplainabilityScore: number;  // Explainability & composite rationale
 }
 
 export interface MisleadingIndicator {
@@ -103,7 +103,7 @@ const getScoreColor = (score: number): string => {
 };
 
 // Circular trust score component
-const CircularTrustScore = ({ score, label, icon }: { score: number; label: string; icon: React.ReactNode }) => {
+const CircularTrustScore = ({ score, label }: { score: number; label: string }) => {
   const radius = 20;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (score / 100) * circumference;
@@ -143,9 +143,8 @@ const CircularTrustScore = ({ score, label, icon }: { score: number; label: stri
           </div>
         </div>
       </div>
-      <div className="text-xs text-center text-muted-foreground font-medium flex items-center gap-1 justify-center">
-        <span className="inline-flex items-center">{icon}</span>
-        <span>{label}</span>
+      <div className="text-xs text-center text-muted-foreground font-medium">
+        <span className="block leading-tight max-w-[7.5rem] break-words">{label}</span>
       </div>
     </div>
   );
@@ -211,7 +210,9 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
 
   // Calculate composite trust score from individual scores
   const getCompositeScore = (scores: MultiModalTrustScores) => {
-    return Math.round((scores.sourceContextScore + scores.contentAuthenticityScore + scores.explainabilityScore) / 3);
+    return Math.round(
+      (scores.sourceIntegrityScore + scores.contentAuthenticityScore + scores.trustExplainabilityScore) / 3
+    );
   };
 
   const EducationalCardsSection = ({ cards }: { cards?: EducationalCard[] }) => {
@@ -401,18 +402,15 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
           {/* 2. One-line description of the input */}
           <div className="space-y-1 border-b border-border pb-3">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</h3>
-            <p className="text-foreground text-sm leading-relaxed break-words text-justify">
+            <p className="text-foreground text-sm leading-relaxed break-words">
               {sanitizeText(data.oneLineDescription) || 'No description available'}
             </p>
           </div>
 
           {/* 3. Information Summary of the analysis */}
           <div className="space-y-2 border-b border-border pb-3">
-            <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
-              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">3</span>
-              Information Summary
-            </h3>
-            <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap break-words text-justify">
+            <h3 className="text-sm font-medium text-foreground">Information Summary</h3>
+            <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap break-words">
               {sanitizeText(data.informationSummary) || 'No summary available'}
             </p>
           </div>
@@ -424,7 +422,6 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
               onClick={() => setIsEducationalExpanded(!isEducationalExpanded)}
               className="h-auto p-0 text-sm font-medium text-foreground hover:bg-transparent justify-start flex items-center gap-2"
             >
-              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">4</span>
               Educational Insight: Manipulation Techniques & Protection Measures
               {isEducationalExpanded ? (
                 <ChevronUp className="ml-1 h-4 w-4" />
@@ -434,7 +431,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             </Button>
             {isEducationalExpanded && data.educationalInsight && (
               <div className="mt-2 p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground leading-relaxed">
-                <p className="whitespace-pre-wrap break-words text-justify">{sanitizeText(data.educationalInsight)}</p>
+                <p className="whitespace-pre-wrap break-words">{sanitizeText(data.educationalInsight)}</p>
                 
                 {/* Misleading Indicators */}
                 {data.misleadingIndicators && data.misleadingIndicators.length > 0 && (
@@ -501,10 +498,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
 
           {/* 5. Sources, Scores, and Overall Verdict */}
           <div className="space-y-3">
-            <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
-              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">5</span>
-              Sources, Trust Scores & Verdict
-            </h3>
+            <h3 className="text-sm font-medium text-foreground">Sources, Trust Scores & Verdict</h3>
             <div className="flex items-end justify-between">
               {/* Sources Button */}
               <Dialog>
@@ -593,23 +587,20 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             </Dialog>
 
             {/* Three Trust Score Circles */}
-            <div className="flex items-end gap-3">
+            <div className="flex flex-wrap items-center gap-4 justify-start md:justify-end">
               <CircularTrustScore 
-                score={data.trustScores?.sourceContextScore || 0} 
-                label="Source & Context Verification"
-                icon={<Shield className="h-3 w-3" />}
+                score={data.trustScores?.sourceIntegrityScore || 0} 
+                label="Source Integrity"
               />
               <CircularTrustScore 
                 score={data.trustScores?.contentAuthenticityScore || 0} 
-                label="Authenticity & Consistency"
-                icon={<Eye className="h-3 w-3" />}
+                label="Content Authenticity"
               />
               <CircularTrustScore 
-                score={(data.trustScores?.explainabilityScore ?? compositeScore) ?? 0} 
-                label="Explainability & Composite"
-                icon={<Brain className="h-3 w-3" />}
+                score={(data.trustScores?.trustExplainabilityScore ?? compositeScore) ?? 0} 
+                label="Trust Explainability"
               />
-              </div>
+            </div>
             </div>
             
             {/* Overall Verdict */}

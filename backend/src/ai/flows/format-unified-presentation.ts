@@ -10,89 +10,84 @@ const PresentationSchema = z.object({
     url: z.string().url(),
     title: z.string().min(1),
     credibility: z.number().min(0).max(1)
-  })).min(3).max(8)
+  })).min(3)
 });
 export type Presentation = z.infer<typeof PresentationSchema>;
 
 function cleanJson(text: string): any {
-  let clean = text
+  const stripped = text
     .replace(/^```json\s*/i, '')
     .replace(/^```\s*/i, '')
     .replace(/```\s*$/i, '')
     .trim();
-  
-  // Find JSON boundaries
-  const jsonStart = clean.indexOf('{');
-  let jsonEnd = clean.lastIndexOf('}');
-  
-  // If no closing brace found, try to reconstruct the JSON
-  if (jsonStart !== -1 && jsonEnd === -1) {
-    console.warn('[WARN] Incomplete JSON detected, attempting to reconstruct');
-    // Find the last complete field and add closing brace
-    const lines = clean.split('\n');
-    let reconstructed = '';
-    let braceCount = 0;
-    let inString = false;
-    let lastCompleteIndex = -1;
-    
-    for (let i = 0; i < clean.length; i++) {
-      const char = clean[i];
-      if (char === '"' && clean[i-1] !== '\\') {
-        inString = !inString;
-      }
-      if (!inString) {
-        if (char === '{') braceCount++;
-        if (char === '}') braceCount--;
-        if (char === ',' && braceCount === 1) {
-          lastCompleteIndex = i;
-        }
-      }
-    }
-    
-    if (lastCompleteIndex > jsonStart) {
-      clean = clean.substring(jsonStart, lastCompleteIndex) + '\n}';
-      jsonEnd = clean.length - 1;
-    } else {
-      // Fallback: just add closing brace
-      clean = clean.substring(jsonStart) + '}';
-      jsonEnd = clean.length - 1;
-    }
-  } else if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-    clean = clean.substring(jsonStart, jsonEnd + 1);
+
+  const jsonStart = stripped.indexOf('{');
+  if (jsonStart === -1) {
+    throw new Error('No JSON object found in AI response');
   }
-  
-  // Fix common JSON issues
-  clean = clean
-    // Normalize smart quotes/apostrophes to straight
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[\u2018\u2019]/g, "'")
-    // Remove trailing commas
-    .replace(/,(\s*[}\]])/g, '$1')
-    // Fix keys with stray backslash-quote before colon: "key\": -> "key":
-    .replace(/"([^"\\]*?)\\"(\s*:)/g, '"$1"$2')
-    // Remove backslash before quote that is immediately before a colon
-    .replace(/\\"(?=\s*:)/g, '"')
-    // Quote unquoted keys
-    .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
-    // Convert single-quoted values to double
-    .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"')
-    // If a value starts with an escaped quote, normalize
-    .replace(/:\s*\\"/g, ': "')
-    // Remove control chars
-    .replace(/[\x00-\x1F\x7F]/g, '')
-    // Escape bare newlines/tabs
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t')
-    // Escape interior quotes in values if unescaped
-    .replace(/("[^"]*?)(?<!\\)"([^"]*?")/g, '$1\\"$2')
-    // Fix unterminated string at end
-    .replace(/"([^"\\]*(\\.[^"\\]*)*)"\s*$/, '"$1"')
-    // Ensure proper termination before commas/braces
-    .replace(/"([^"\\]*(\\.[^"\\]*)*)\s*([,}])/g, '"$1"$3');
-    
-  return JSON.parse(clean);
+
+  const base = (() => {
+    const jsonEnd = stripped.lastIndexOf('}');
+    if (jsonEnd !== -1 && jsonEnd > jsonStart) {
+      return stripped.substring(jsonStart, jsonEnd + 1);
+    }
+    return stripped.substring(jsonStart);
+  })();
+
+  const sanitizeStructure = (input: string): string => {
+    let output = input;
+    output = output
+      .replace(/\r\n?/g, '\n')
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\x00-\x1F\x7F]/g, '')
+      .replace(/,\s*([}\]])/g, (_match, closing) => closing)
+      .replace(/"([^"\\]*?)\\"(\s*:)/g, (_match, key, suffix) => `"${key}"${suffix}`)
+      .replace(/"([^"\\]+)""(\s*:)/g, (_match, key, suffix) => `"${key}"${suffix}`)
+      .replace(/:\s*""([^"\\]*?)"/g, (_match, value) => `: "${value}"`)
+      .replace(/:""([^"\\]*?)"/g, (_match, value) => `:"${value}"`)
+      .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, (_match, prefix, key) => `${prefix}"${key}":`)
+      .replace(/(?<!\\)"{3,}/g, '"')
+      .replace(/(?<!\\)""/g, '"');
+    return output;
+  };
+
+  const sanitizeWhitespace = (input: string): string => {
+    return input
+      .replace(/"([^"\\]*?)\n([^"\\]*?)"/g, (_match, before, after) => `"${before}\\n${after}"`)
+      .replace(/"([^"\\]*?)\t([^"\\]*?)"/g, (_match, before, after) => `"${before}\\t${after}"`)
+      .replace(/"\s*:/g, '":')
+      .replace(/:\s*"\s*/g, ': "');
+  };
+
+  const attempts: string[] = [base];
+
+  const structural = sanitizeStructure(base);
+  if (structural !== base) {
+    attempts.push(structural);
+  }
+
+  const whitespaceNormalized = sanitizeWhitespace(structural);
+  if (whitespaceNormalized !== structural) {
+    attempts.push(whitespaceNormalized);
+  }
+
+  let lastError: unknown = null;
+  for (const candidate of attempts) {
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const failedSample = attempts[attempts.length - 1] || base;
+  console.log('[ERROR] JSON parsing failed after normalization attempts:', lastError);
+  console.log('[ERROR] Failed JSON sample:', failedSample.substring(0, 200));
+  throw lastError instanceof Error ? lastError : new Error('Unable to parse AI JSON response');
 }
+
+// Helper function to check if JSON is properly formatted
 
 export async function formatUnifiedPresentation(input: {
   contentType: 'text' | 'url' | 'image' | 'video' | 'audio';

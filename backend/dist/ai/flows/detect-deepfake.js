@@ -200,27 +200,44 @@ Incorporate these capabilities into your overall assessment.`
     if (!response?.candidates?.[0]?.content?.parts?.[0]?.text) {
         throw new Error('Invalid or empty response received from the model');
     }
-    const responseText = response.candidates[0].content.parts[0].text;
+    const responseText = response.candidates[0].content.parts[0].text.trim();
+    function safeJsonParse(raw) {
+        // Remove markdown fences
+        let txt = raw.replace(/^```json\s*/i, '').replace(/^```/i, '').replace(/```\s*$/i, '').trim();
+        // Quick first attempt
+        try {
+            return JSON.parse(txt);
+        }
+        catch { /* ignore */ }
+        // Minimal fixes: collapse double quotes and remove control chars
+        txt = txt
+            .replace(/"{2,}/g, '"')
+            .replace(/[\x00-\x1F\x7F]/g, '')
+            .replace(/,\s*([}\]])/g, '$1');
+        // Second attempt
+        try {
+            return JSON.parse(txt);
+        }
+        catch {
+            return null;
+        }
+    }
     try {
-        // Clean up the response text by removing markdown code block markers and any surrounding whitespace
-        const cleanJson = responseText
-            .replace(/^```json\s*/, '') // Remove opening ```json
-            .replace(/\s*```$/, '') // Remove closing ```
-            .trim(); // Remove any extra whitespace
-        const parsedJson = JSON.parse(cleanJson);
-        const validatedOutput = DetectDeepfakeOutputSchema.parse(parsedJson);
-        validatedOutput.visionApiAnalysis = visionApiAnalysis;
-        validatedOutput.videoIntelligenceAnalysis = videoIntelligenceAnalysis;
-        validatedOutput.synthIdAnalysis = synthIdAnalysis;
-        return validatedOutput;
+        const parsed = safeJsonParse(responseText);
+        if (!parsed)
+            throw new Error('Parsing failed');
+        const validated = DetectDeepfakeOutputSchema.parse(parsed);
+        validated.visionApiAnalysis = visionApiAnalysis;
+        validated.videoIntelligenceAnalysis = videoIntelligenceAnalysis;
+        validated.synthIdAnalysis = synthIdAnalysis;
+        return validated;
     }
     catch (error) {
-        console.error('Error parsing or validating model output:', error);
-        // Handle cases where the model doesn't return valid JSON
+        console.error('[ERROR] Error parsing or validating model output:', error);
         return {
             isDeepfake: false,
             confidenceScore: 0,
-            analysis: 'The model returned a response that was not in the expected JSON format.',
+            analysis: 'The model returned a response that was not valid JSON.',
             visionApiAnalysis,
             videoIntelligenceAnalysis,
             synthIdAnalysis,
