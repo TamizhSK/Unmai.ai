@@ -1,19 +1,18 @@
-# <div align="center"><img src="frontend/public/unmaiai.png" alt="Unmai.ai" width="500"/></div>
+<div align="center"><img src="frontend/public/unmaiai.png" alt="Unmai.ai" width="700"/></div>
 
 <div align="center">
 
 ## **AI-Powered Content Verification Platform**
 
-> **Combat misinformation with intelligent analysis and real-time verification**
+**Combat misinformation with intelligent analysis and real-time verification**
 
-[![Build Status](https://img.shields.io/badge/Build-Passing-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://github.com/your-repo/unmai.ai/actions)
-[![Cloud Platform](https://img.shields.io/badge/Google_Cloud-Powered-EA4335?style=for-the-badge&logo=googlecloud&logoColor=white)](https://cloud.google.com)
-[![License](https://img.shields.io/badge/License-MIT-34A853?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-FBBC04?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-
+  <img src="https://img.shields.io/badge/Build-Passing-4285F4?style=flat&logo=googlechrome&logoColor=white" alt="Build Status" />
+  <img src="https://img.shields.io/badge/Google_Cloud-Powered-EA4335?style=flat&logo=googlecloud&logoColor=white" alt="Google Cloud" />
+  <img src="https://img.shields.io/badge/TypeScript-Ready-FBBC04?style=flat&logo=typescript&logoColor=2d2d2d" alt="TypeScript" />
+  
 </div>
 
----
+
 
 ## **Platform Overview**
 
@@ -46,46 +45,59 @@
 </table>
 </div>
 
----
+
 
 ## **Core Capabilities**
-
-<table width="100%">
-  <tr>
-    <td width="50%" style="padding: 20px; vertical-align: top;">
-      <h3 style="color: #4285F4;">Primary Verification Suite</h3>
-      
-      **Fact-Checking Engine**
-      Cross-reference claims against verified knowledge graphs and authoritative sources
-      
-      **Deepfake Detection**
-      AI-powered analysis to identify synthetic and manipulated media content
-      
-      **Credibility Scoring**
-      Real-time trust assessment using multi-factor analysis algorithms
-      
-      **Safety Assessment**
-      Automated detection of harmful, malicious, and inappropriate content
-    </td>
-    <td width="50%" style="padding: 20px; vertical-align: top;">
-      <h3 style="color: #EA4335;">Advanced Analytics Suite</h3>
-      
-      **Source Verification**
-      Domain authentication and origin traceability for digital content
-      
-      **Educational Insights**
-      Pattern recognition and learning modules for misinformation identification
-      
-      **Web Page Analysis**
-      Comprehensive website credibility and safety evaluation
-      
-      **Global Language Support**
-      Multi-regional content processing with cultural context awareness
-    </td>
-  </tr>
-</table>
-
----
+<html lang="en">
+<body>
+    <table class="capabilities">
+        <tr>
+            <td class="primary">
+                <h3>Primary Verification Suite</h3>
+                <ul>
+                    <li>
+                        <strong>Fact-Checking Engine:</strong>
+                        Cross-reference claims against verified knowledge graphs and authoritative sources.
+                    </li>
+                    <li>
+                        <strong>Deepfake Detection:</strong>
+                        AI-powered analysis to identify synthetic and manipulated media content.
+                    </li>
+                    <li>
+                        <strong>Credibility Scoring:</strong>
+                        Real-time trust assessment using multi-factor analysis algorithms.
+                    </li>
+                    <li>
+                        <strong>Safety Assessment:</strong>
+                        Automated detection of harmful, malicious, and inappropriate content.
+                    </li>
+                </ul>
+            </td>
+            <td class="advanced">
+                <h3>Advanced Analytics Suite:</h3>
+                <ul>
+                    <li>
+                        <strong>Source Verification:</strong>
+                        Domain authentication and origin traceability for digital content.
+                    </li>
+                    <li>
+                        <strong>Educational Insights:</strong>
+                        Pattern recognition and learning modules for misinformation identification.
+                    </li>
+                    <li>
+                        <strong>Web Page Analysis:</strong>
+                        Comprehensive website credibility and safety evaluation.
+                    </li>
+                    <li>
+                        <strong>Global Language Support:</strong>
+                        Multi-regional content processing with cultural context awareness.
+                    </li>
+                </ul>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
 
 ## **Technology Architecture**
 
@@ -109,21 +121,18 @@ Database: Firestore NoSQL
 ```yaml
 Container Platform: Cloud Run (Serverless)
 CI/CD Pipeline: Cloud Build
-Monitoring: Cloud Operations Suite
-Security: IAM + Service Accounts
 ```
 
----
 
 ## **Google Cloud Services Integration**
 
 <table width="100%">
   <thead>
     <tr style="background-color: #4285F4; color: white;">
-      <th width="20%">**Category**</th>
-      <th width="15%">**Service**</th>
-      <th width="25%">**Name**</th>
-      <th width="40%">**Implementation Purpose**</th>
+      <th width="20%">Category</th>
+      <th width="15%">Service</th>
+      <th width="25%">Name</th>
+      <th width="40%">Implementation Purpose</th>
     </tr>
   </thead>
   <tbody>
@@ -131,7 +140,7 @@ Security: IAM + Service Accounts
       <td align="center"><strong>AI/ML</strong></td>
       <td align="center"><img src="frontend/public/Vertex AI.png" width="50"/></td>
       <td><strong>Vertex AI</strong></td>
-      <td>Custom ML model training & inference</td>
+      <td>AI inference engine</td>
     </tr>
     <tr style="background-color: #e8f0fe;">
       <td align="center"><strong>Computer Vision</strong></td>
@@ -184,7 +193,7 @@ Security: IAM + Service Accounts
   </tbody>
 </table>
 
----
+
 
 ## **Getting Started**
 
@@ -192,7 +201,7 @@ Security: IAM + Service Accounts
 
 | **Requirement** | **Version** | **Purpose** |
 |:----------------|:------------|:------------|
-| **Node.js** | `â‰¥ 18.0` | Runtime environment |
+| **Node.js** | `18.0` | Runtime environment |
 | **Package Manager** | `npm/yarn` | Dependency management |
 | **Google Cloud Account** | `Active` | Service authentication |
 | **Git** | `Latest` | Version control |
@@ -208,8 +217,8 @@ cd unmai.ai
 npm run install:all
 
 # Configure environment variables
-# backend/.env â†’ Google Cloud credentials & API keys
-# frontend/.env.local â†’ Frontend configuration variables
+# backend/.env Google Cloud credentials & API keys
+# frontend/.env.local Frontend configuration variables
 
 # Start development servers
 npm run dev
@@ -223,7 +232,7 @@ npm run dev
 | **Backend API Gateway** | `Auto-configured` | Active |
 | **Cloud Services** | `GCP Integration` | Connected |
 
----
+
 
 ## **Development Commands**
 
@@ -235,7 +244,7 @@ npm run dev
 | `npm run clean` | Remove build artifacts and dependencies | Maintenance |
 | `npm run typecheck` | Validate TypeScript across the monorepo | Quality Assurance |
 
----
+
 
 ## **Contributing**
 
@@ -259,27 +268,21 @@ We welcome contributions that enhance our mission of combating misinformation th
 | **Documentation** | Inline comments & README updates |
 | **Code Style** | ESLint + Prettier compliance |
 
----
 
-## **License & Support**
 
-**Licensed under MIT License**
+## **Support**
 
-*Developed by the Unmai.ai Engineering Team*
 
 ### **Resources**
 
-- **[Documentation](https://docs.unmai.ai)** - Comprehensive guides and API reference
-- **[Technical Support](https://github.com/your-repo/unmai.ai/issues)** - Issue tracking and bug reports
-- **[Developer Community](https://discord.gg/unmai)** - Connect with other developers
+- **[Technical Support](https://github.com/TamizhSK/Unmai.ai)** - Issue tracking and bug reports
 - **[Google Cloud Platform](https://cloud.google.com)** - Cloud services and infrastructure
 
----
+
 
 <div align="center">
 
 ### **Empowering Truth in the Digital Age Through Advanced AI Verification**
 
-*Powered by Google Cloud â€¢ Built for Global Impact â€¢ Designed for Trust*
-
+**Built with ❤️ by team Unmai.ai**
 </div>
