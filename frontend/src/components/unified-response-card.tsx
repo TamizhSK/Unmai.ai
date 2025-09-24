@@ -56,7 +56,7 @@ export interface UnifiedResponseData {
   deepfakeDetection?: DeepfakeDetection;
   
   // Source information
-  sources: Array<{url: string, title: string, favicon?: string}>;
+  sources: Array<{url: string, title: string, favicon?: string, credibility?: number}>;
   sourceMetadata?: SourceMetadata;
   
   // Overall verdict
@@ -94,11 +94,7 @@ const getLabelVariant = (verificationLevel: string) => {
   }
 };
 
-const getVerificationLevel = (score: number): 'authentic' | 'suspicious' | 'fake' => {
-  if (score >= 75) return 'authentic';
-  if (score >= 40) return 'suspicious';
-  return 'fake';
-};
+// Removed unused getVerificationLevel (handled upstream)
 
 const getScoreColor = (score: number): string => {
   if (score >= 75) return '#0F9D58'; // Green
@@ -147,7 +143,10 @@ const CircularTrustScore = ({ score, label, icon }: { score: number; label: stri
           </div>
         </div>
       </div>
-      <div className="text-xs text-center text-muted-foreground font-medium">{label}</div>
+      <div className="text-xs text-center text-muted-foreground font-medium flex items-center gap-1 justify-center">
+        <span className="inline-flex items-center">{icon}</span>
+        <span>{label}</span>
+      </div>
     </div>
   );
 };
@@ -177,19 +176,12 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
     return String(value);
   };
 
-  // Clean up any remaining markdown artifacts (backend should handle most of this)
+  // Frontend does not perform JSON/markdown formatting; backend returns clean strings.
   const sanitizeText = (value: any): string => {
     let text = safeRender(value);
     if (!text) return '';
-    
-    // Remove any remaining Markdown code fences (just in case)
-    text = text.replace(/```[a-zA-Z]*\n([\s\S]*?)```/g, '$1');
-    text = text.replace(/```/g, '').trim();
-    
-    // Collapse excessive whitespace
+    // Minimal whitespace normalization only
     text = text.replace(/\n{3,}/g, '\n\n').trim();
-    
-    // Backend now handles JSON parsing, so just return the cleaned text
     return text;
   };
 
@@ -249,52 +241,52 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
     );
   };
 
-  const SourceInformationSection = ({ sourceResult }: { sourceResult?: any }) => {
-    if (!sourceResult) return null;
-    
+  const SourceInformationSection = ({ sourceMetadata }: { sourceMetadata?: SourceMetadata }) => {
+    if (!sourceMetadata) return null;
     return (
-      <div className="space-y-4 p-4 border rounded-lg bg-muted">
-        <div className="flex items-center gap-2">
-          <Globe className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold">Source Information</h3>
-        </div>
-        
-        <div className="space-y-2">
-          {sourceResult.sourceCredibility !== undefined && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Credibility Score:</span>
-              <span className="font-medium">{safeRender(sourceResult.sourceCredibility)}/100</span>
+      <div className="p-4 border rounded-lg bg-muted/50">
+        <h3 className="font-medium mb-3 flex items-center gap-2">
+          <Shield className="h-4 w-4" />
+          Source Information
+        </h3>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          {sourceMetadata.domain && (
+            <div>
+              <span className="text-muted-foreground">Domain:</span>
+              <p className="font-medium">{sourceMetadata.domain}</p>
             </div>
           )}
-          
-          {sourceResult.sourceType && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Source Type:</span>
-              <span className="font-medium capitalize">{safeRender(sourceResult.sourceType)}</span>
+          {sourceMetadata.author && (
+            <div>
+              <span className="text-muted-foreground">Author:</span>
+              <p className="font-medium">{sourceMetadata.author}</p>
             </div>
           )}
-          
-          {sourceResult.verificationStatus && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Status:</span>
-              <span className={`text-xs px-2 py-1 rounded-full ${getSourceStatusColor(safeRender(sourceResult.verificationStatus))} flex items-center gap-1`}>
-                {getSourceStatusIcon(safeRender(sourceResult.verificationStatus))}
-                <span className="capitalize">{safeRender(sourceResult.verificationStatus)}</span>
+          {sourceMetadata.publishDate && (
+            <div>
+              <span className="text-muted-foreground">Published:</span>
+              <p className="font-medium">{sourceMetadata.publishDate}</p>
+            </div>
+          )}
+          {sourceMetadata.reputation && (
+            <div>
+              <span className="text-muted-foreground">Reputation:</span>
+              <p className="font-medium capitalize">{sourceMetadata.reputation}</p>
+            </div>
+          )}
+          {sourceMetadata.verificationStatus && (
+            <div>
+              <span className="text-muted-foreground">Status:</span>
+              <span className={`ml-2 text-xs px-2 py-1 rounded-full ${getSourceStatusColor(sourceMetadata.verificationStatus)} inline-flex items-center gap-1`}>
+                {getSourceStatusIcon(sourceMetadata.verificationStatus)}
+                <span className="capitalize">{sourceMetadata.verificationStatus}</span>
               </span>
             </div>
           )}
-          
-          {sourceResult.details?.domain && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Domain:</span>
-              <span className="font-medium">{safeRender(sourceResult.details.domain)}</span>
-            </div>
-          )}
-          
-          {sourceResult.details?.reputation && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Reputation:</span>
-              <span className="font-medium capitalize">{safeRender(sourceResult.details.reputation)}</span>
+          {typeof sourceMetadata.ssl === 'boolean' && (
+            <div>
+              <span className="text-muted-foreground">SSL:</span>
+              <p className="font-medium">{sourceMetadata.ssl ? 'Enabled' : 'Disabled'}</p>
             </div>
           )}
         </div>
@@ -468,6 +460,13 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                   </div>
                 )}
 
+                {/* Educational Cards (if available) */}
+                {data.educationalCards && data.educationalCards.length > 0 && (
+                  <div className="mt-4">
+                    <EducationalCardsSection cards={data.educationalCards} />
+                  </div>
+                )}
+
                 {/* Deepfake Detection Results */}
                 {data.deepfakeDetection && (
                   <div className="mt-4 p-3 bg-background rounded border">
@@ -488,6 +487,12 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                       </div>
                       <span className="text-xs text-muted-foreground">{data.deepfakeDetection.confidence}%</span>
                     </div>
+                    {data.deepfakeDetection.technicalDetails && (
+                      <details className="mt-2">
+                        <summary className="text-xs text-muted-foreground cursor-pointer">Technical details</summary>
+                        <pre className="mt-1 text-[10px] leading-snug whitespace-pre-wrap text-muted-foreground bg-muted/50 p-2 rounded">{sanitizeText(data.deepfakeDetection.technicalDetails)}</pre>
+                      </details>
+                    )}
                   </div>
                 )}
               </div>
@@ -520,40 +525,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                 <div className="flex-1 overflow-y-auto space-y-4 pr-2">
                   {/* Source Metadata */}
                   {data.sourceMetadata && (
-                    <div className="p-4 border rounded-lg bg-muted/50">
-                      <h3 className="font-medium mb-3 flex items-center gap-2">
-                        <Shield className="h-4 w-4" />
-                        Source Information
-                      </h3>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        {data.sourceMetadata.domain && (
-                          <div>
-                            <span className="text-muted-foreground">Domain:</span>
-                            <p className="font-medium">{data.sourceMetadata.domain}</p>
-                          </div>
-                        )}
-                        {data.sourceMetadata.author && (
-                          <div>
-                            <span className="text-muted-foreground">Author:</span>
-                            <p className="font-medium">{data.sourceMetadata.author}</p>
-                          </div>
-                        )}
-                        {data.sourceMetadata.reputation && (
-                          <div>
-                            <span className="text-muted-foreground">Reputation:</span>
-                            <p className="font-medium capitalize">{data.sourceMetadata.reputation}</p>
-                          </div>
-                        )}
-                        {data.sourceMetadata.verificationStatus && (
-                          <div>
-                            <span className="text-muted-foreground">Status:</span>
-                            <Badge variant={(data.sourceMetadata.verificationStatus === 'verified' ? 'default' : 'secondary') as 'default' | 'secondary'}>
-                              {data.sourceMetadata.verificationStatus}
-                            </Badge>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    <SourceInformationSection sourceMetadata={data.sourceMetadata} />
                   )}
                   
                   {/* Sources List */}
@@ -561,14 +533,14 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                     <h3 className="font-medium mb-2">Referenced Sources ({data.sources?.length || 0})</h3>
                     {data.sources && data.sources.length > 0 ? (
                       data.sources.map((source, index) => {
-                        const fav = getFavicon(source.url);
+                        const fav = source.favicon || getFavicon(source.url);
                         const hostname = getHostname(source.url);
                         return (
                           <a
                             key={index}
                             href={source.url || '#'}
                             target={source.url ? "_blank" : undefined}
-                            rel={source.url ? "noopener noreferrer" : undefined}
+                            rel={source.url ? "nofollow noopener noreferrer" : undefined}
                             className="flex items-start gap-3 rounded-lg px-3 py-3 hover:bg-accent hover:text-accent-foreground transition-all duration-200 text-sm border border-border/15 hover:border-[#4285F4]/20 group"
                           >
                             {fav ? (
@@ -596,11 +568,15 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                                       {new URL(source.url).protocol.replace(':', '')}
                                     </div>
                                   )}
+                                  {typeof source.credibility === 'number' && (
+                                    <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
+                                      Cred {Math.round(source.credibility * 100)}%
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
                             <div className="flex items-start gap-2 flex-shrink-0 mt-1">
-                              <div className="w-2 h-2 rounded-full bg-[#0F9D58]" title="Verified Source" />
                               <LinkIcon className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
                             </div>
                           </a>
@@ -621,17 +597,17 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
               <CircularTrustScore 
                 score={data.trustScores?.sourceContextScore || 0} 
                 label="Source & Context Verification"
-                icon={<Shield />}
+                icon={<Shield className="h-3 w-3" />}
               />
               <CircularTrustScore 
                 score={data.trustScores?.contentAuthenticityScore || 0} 
                 label="Authenticity & Consistency"
-                icon={<Eye />}
+                icon={<Eye className="h-3 w-3" />}
               />
               <CircularTrustScore 
-                score={data.trustScores?.explainabilityScore || compositeScore || 0} 
+                score={(data.trustScores?.explainabilityScore ?? compositeScore) ?? 0} 
                 label="Explainability & Composite"
-                icon={<Brain />}
+                icon={<Brain className="h-3 w-3" />}
               />
               </div>
             </div>

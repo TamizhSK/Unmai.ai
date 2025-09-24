@@ -28,7 +28,7 @@ const FactCheckClaimOutputSchema = z.object({
 export type FactCheckClaimOutput = z.infer<typeof FactCheckClaimOutputSchema>;
 
 // Function to clean and parse potentially malformed JSON or extract structured info from text
-function cleanAndParseJson(responseText: string): any {
+function cleanAndParseJson(responseText: string): Record<string, unknown> | null {
   // First, try to find JSON in the response
   let cleanJson = responseText
     .replace(/```json\s*/gi, '')
@@ -58,17 +58,29 @@ function cleanAndParseJson(responseText: string): any {
 
     // Fix common JSON formatting issues
     cleanJson = cleanJson
-      .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
-      .replace(/\"(?=\s*:)/g, '"') // Remove backslash before quote in a key
-      .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":') // Quote unquoted keys
-      .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"') // Convert single quotes to double
-      // Fix control characters and newlines
-      .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
-      .replace(/\n/g, '\\n') // Escape newlines
-      .replace(/\r/g, '\\r') // Escape carriage returns
-      .replace(/\t/g, '\\t') // Escape tabs
-      // Fix unescaped quotes in string values (more robust approach)
-      .replace(/"([^"\\]*)\\?"([^"\\]*)"([^"\\]*)"(\s*[,}])/g, '"$1\\"$2\\"$3"$4')
+      // Normalize smart quotes to straight quotes
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      // Remove trailing commas before object/array end
+      .replace(/,(\s*[}\]])/g, '$1')
+      // Fix keys that end with a stray backslash-quote before the colon: "key\": -> "key":
+      .replace(/"([^"\\]*?)\\"(\s*:)/g, '"$1"$2"')
+      // Remove backslash before a quote that is immediately before a colon (general safeguard)
+      .replace(/\\"(?=\s*:)/g, '"')
+      // Ensure unquoted keys are quoted
+      .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+      // Convert single-quoted string values to double-quoted
+      .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"')
+      // If a value starts with an escaped quote, normalize to plain quote: : \" -> : "
+      .replace(/:\s*\\"/g, ': "')
+      // Remove control characters
+      .replace(/[\x00-\x1F\x7F]/g, '')
+      // Escape bare newlines/tabs inside strings to keep JSON valid
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t')
+      // Fix common unescaped quote sequences within values by escaping interior quotes between value boundaries
+      .replace(/("[^"]*?)(?<!\\)"([^"]*?")/g, '$1\\"$2"')
       // Fix incomplete strings at end of object
       .replace(/"\s*$/, '"}');
 
@@ -193,7 +205,7 @@ CRITICAL RULES:
     
     // Handle Zod validation errors specifically
     if (error?.constructor?.name === 'ZodError') {
-      console.error('[ERROR] Zod validation failed:', (error as any)?.issues);
+      console.error('[ERROR] Zod validation failed:', (error as Error)?.message);
       console.error('Response that failed validation:', response?.candidates?.[0]?.content?.parts?.[0]?.text);
       
       // Try to use the cleanAndParseJson fallback for malformed responses
@@ -202,9 +214,9 @@ CRITICAL RULES:
         
         // Create a safe fallback with proper structure
         return {
-          verdict: fallbackResult?.verdict || 'Uncertain',
+          verdict: (fallbackResult?.verdict as 'True' | 'False' | 'Misleading' | 'Uncertain') || 'Uncertain',
           evidence: Array.isArray(fallbackResult?.evidence) ? 
-            fallbackResult.evidence.map((item: any) => ({
+            fallbackResult.evidence.map((item: Record<string, unknown>) => ({
               source: String(item?.source || 'Knowledge base analysis'),
               title: String(item?.title || 'AI assessment'),
               snippet: String(item?.snippet || 'Based on training knowledge')
