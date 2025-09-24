@@ -11,12 +11,12 @@ declare const PerformWebAnalysisInputSchema: z.ZodObject<{
     contentType: z.ZodEnum<["text", "url"]>;
     searchEngineId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    query: string;
     contentType: "text" | "url";
+    query: string;
     searchEngineId?: string | undefined;
 }, {
-    query: string;
     contentType: "text" | "url";
+    query: string;
     searchEngineId?: string | undefined;
 }>;
 export type PerformWebAnalysisInput = z.infer<typeof PerformWebAnalysisInputSchema>;
