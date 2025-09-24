@@ -63,19 +63,32 @@ function cleanJson(text: string): any {
   
   // Fix common JSON issues
   clean = clean
-    .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
-    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
-    .replace(/\n/g, '\\n') // Escape newlines
-    .replace(/\r/g, '\\r') // Escape carriage returns
-    .replace(/\t/g, '\\t') // Escape tabs
-    .replace(/"/g, '"') // Fix smart quotes
-    .replace(/"/g, '"') // Fix smart quotes
-    .replace(/'/g, "'") // Fix smart apostrophes
-    // Fix incomplete string values
-    .replace(/"([^"]*)"([^"]*)"([^"]*)"(\s*[,}])/g, '"$1\\"$2\\"$3"$4')
-    // Fix unterminated strings at end of object
+    // Normalize smart quotes/apostrophes to straight
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    // Remove trailing commas
+    .replace(/,(\s*[}\]])/g, '$1')
+    // Fix keys with stray backslash-quote before colon: "key\": -> "key":
+    .replace(/"([^"\\]*?)\\"(\s*:)/g, '"$1"$2')
+    // Remove backslash before quote that is immediately before a colon
+    .replace(/\\"(?=\s*:)/g, '"')
+    // Quote unquoted keys
+    .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+    // Convert single-quoted values to double
+    .replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"')
+    // If a value starts with an escaped quote, normalize
+    .replace(/:\s*\\"/g, ': "')
+    // Remove control chars
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    // Escape bare newlines/tabs
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+    // Escape interior quotes in values if unescaped
+    .replace(/("[^"]*?)(?<!\\)"([^"]*?")/g, '$1\\"$2')
+    // Fix unterminated string at end
     .replace(/"([^"\\]*(\\.[^"\\]*)*)"\s*$/, '"$1"')
-    // Ensure proper string termination before commas or closing braces
+    // Ensure proper termination before commas/braces
     .replace(/"([^"\\]*(\\.[^"\\]*)*)\s*([,}])/g, '"$1"$3');
     
   return JSON.parse(clean);
@@ -163,7 +176,7 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
         summaryText += ' Contains potentially false or misleading information.';
       }
     }
-    
+
     let educationalText = 'Key protection strategies: Verify claims through multiple independent sources, check publication dates, examine author credentials, and cross-reference with established fact-checking organizations.';
     if (input.analysisLabel === 'RED') {
       educationalText += ' This content shows high-risk indicators - exercise extreme caution before sharing.';

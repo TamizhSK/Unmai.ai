@@ -15,7 +15,7 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
   };
 
   // Helper function to safely format sources
-  const safeSources = (sources: any[]): Array<{url: string, title: string, favicon?: string}> => {
+  const safeSources = (sources: any[]): Array<{url: string, title: string, favicon?: string, credibility?: number}> => {
     if (!Array.isArray(sources)) return [];
 
     return sources.map((source, index) => {
@@ -26,7 +26,8 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
         return {
           url: (source.url || source.source || `source-${index}`),
           title: (source.title || source.url || source.source || `Source ${index + 1}`),
-          favicon: source.favicon
+          favicon: source.favicon,
+          credibility: typeof source.credibility === 'number' ? source.credibility : undefined
         };
       }
       return { url: '', title: `Source ${index + 1}` };
