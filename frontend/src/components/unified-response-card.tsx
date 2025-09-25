@@ -358,6 +358,14 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
   }
 
   const data = response as UnifiedResponseData;
+  const descriptionText = React.useMemo(() => {
+    const d = sanitizeText(data.oneLineDescription);
+    if (d && d.trim().endsWith('...') && data.informationSummary) {
+      // If the one-line description looks truncated, show the full summary instead
+      return sanitizeText(data.informationSummary);
+    }
+    return d || '';
+  }, [data.oneLineDescription, data.informationSummary]);
 
   return (
     <div className="relative rounded-xl p-0.5">
@@ -398,11 +406,11 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             </div>
           )}
           
-          {/* 2. One-line description of the input */}
+          {/* 2. Description of the input (falls back to full summary if truncated) */}
           <div className="space-y-1 border-b border-border pb-3">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</h3>
-            <p className="text-foreground text-sm leading-relaxed break-words">
-              {sanitizeText(data.oneLineDescription) || 'No description available'}
+            <p className="text-foreground text-sm leading-relaxed break-words whitespace-pre-wrap">
+              {descriptionText || 'No description available'}
             </p>
           </div>
 
@@ -507,7 +515,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                   size="sm"
                   className="rounded-full bg-muted hover:bg-muted/80 border-0 text-foreground"
                 >
-                  Sources
+                  Sources ({data.sources?.length || 0})
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto flex flex-col">
@@ -611,6 +619,43 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                 </Badge>
               </div>
             </div>
+            {/* Inline source preview (top 3) */}
+            {data.sources && data.sources.length > 0 ? (
+              <div className="mt-3 grid gap-2">
+                {data.sources.slice(0, 3).map((source, index) => {
+                  const fav = source.favicon || getFavicon(source.url);
+                  const hostname = getHostname(source.url);
+                  return (
+                    <a
+                      key={index}
+                      href={source.url || '#'}
+                      target={source.url ? "_blank" : undefined}
+                      rel={source.url ? "nofollow noopener noreferrer" : undefined}
+                      className="flex items-center gap-2 text-sm hover:text-[#4285F4] transition-colors"
+                    >
+                      {fav ? (
+                        <img src={fav} alt={source.title} className="w-4 h-4 rounded-sm bg-muted border border-border/15" />
+                      ) : (
+                        <div className="w-4 h-4 rounded-sm bg-gradient-to-br from-[#4285F4] to-[#0F9D58] border border-border/15 flex items-center justify-center">
+                          <Globe className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                      <span className="font-medium truncate max-w-[22rem]">{source.title}</span>
+                      {hostname && (
+                        <span className="text-xs text-muted-foreground truncate max-w-[10rem]">{hostname}</span>
+                      )}
+                    </a>
+                  );
+                })}
+                {data.sources.length > 3 && (
+                  <div className="text-xs text-muted-foreground">
+                    +{data.sources.length - 3} more sources
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-muted-foreground">No sources available for this analysis</div>
+            )}
           </div>
         </CardContent>
       </Card>
