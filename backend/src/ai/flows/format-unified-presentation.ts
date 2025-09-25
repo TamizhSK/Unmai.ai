@@ -79,6 +79,63 @@ function cleanJson(text: string): any {
       .replace(/:\s*"\s*/g, ': "');
   };
 
+  const normalizeValueStrings = (input: string): string => {
+    const out: string[] = [];
+    let i = 0;
+    while (i < input.length) {
+      const ch = input[i];
+      if (ch === ':') {
+        out.push(ch);
+        i++;
+        while (i < input.length && /\s/.test(input[i])) {
+          out.push(input[i]);
+          i++;
+        }
+        if (i < input.length && input[i] === '"') {
+          out.push('"');
+          i++;
+          let closed = false;
+          while (i < input.length) {
+            const c = input[i];
+            if (c === '\\') {
+              out.push(c);
+              if (i + 1 < input.length) {
+                out.push(input[i + 1]);
+                i += 2;
+              } else {
+                i++;
+              }
+              continue;
+            }
+            if (c === '"') {
+              let k = i + 1;
+              while (k < input.length && /\s/.test(input[k])) k++;
+              if (k >= input.length || ',}]'.includes(input[k])) {
+                out.push('"');
+                i++;
+                closed = true;
+                break;
+              }
+              out.push('\\"');
+              i++;
+              continue;
+            }
+            out.push(c);
+            i++;
+          }
+          if (!closed) {
+            out.push('"');
+          }
+          continue;
+        }
+        continue;
+      }
+      out.push(ch);
+      i++;
+    }
+    return out.join('');
+  };
+
   const attempts: string[] = [base];
 
   const structural = sanitizeStructure(base);
@@ -93,6 +150,11 @@ function cleanJson(text: string): any {
   const balanced = balanceContainers(whitespaceNormalized);
   if (balanced !== whitespaceNormalized) {
     attempts.push(balanced);
+  }
+
+  const valueNormalized = normalizeValueStrings(balanced);
+  if (valueNormalized !== balanced) {
+    attempts.push(valueNormalized);
   }
 
   // Helper to close unterminated strings and ensure object closure
@@ -139,12 +201,13 @@ function cleanJson(text: string): any {
           return JSON.parse(salvaged);
         } catch (salvageError) {
           // Log minimal error info
-          const errorContext = {
-            error: lastParseError.message,
-            sample: lastCandidate.substring(0, 200) + (lastCandidate.length > 200 ? '...' : ''),
-            attempt: i + 1
-          };
-          console.error('[ERROR] Failed to parse AI response after all attempts:', errorContext);
+          const snippet = lastCandidate.substring(0, 200) + (lastCandidate.length > 200 ? '...' : '');
+          const context = { error: lastParseError.message, attempt: i + 1, snippet };
+          if (process.env.NODE_ENV !== 'production') {
+            console.warn('[WARN] Presentation JSON salvage failed', context);
+          } else {
+            console.warn('[WARN] Presentation JSON salvage failed');
+          }
           throw new Error('Failed to process AI response. The content may be malformed.');
         }
       }
@@ -225,8 +288,12 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
       const parsed = cleanJson(text);
       return PresentationSchema.parse(parsed);
     } catch (e) {
-      console.error('[ERROR] Error parsing AI response:', e instanceof Error ? e.message : 'Unknown error');
-      // Fall through to generate fallback response
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[WARN] Presentation JSON parse failed; using fallback:', e);
+        console.warn('[DEBUG] Raw AI snippet:', text.substring(0, 300));
+      } else {
+        console.warn('[WARN] Presentation JSON parse failed; using fallback');
+      }
     }
 
     // Generate fallback response if AI response parsing fails
@@ -267,13 +334,13 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
       { url: 'https://fullfact.org', title: 'Full Fact - UK Fact Checking', credibility: 0.89 }
     ];
     
-    return {
+    return PresentationSchema.parse({
       analysisLabel: input.analysisLabel,
       oneLineDescription: `${input.contentType.charAt(0).toUpperCase() + input.contentType.slice(1)} analysis completed - ${input.analysisLabel} risk level detected`,
       summary: summaryText,
       educationalInsight: educationalText,
       sources: fallbackSources.length >= 3 ? fallbackSources : defaultSources.slice(0, 5)
-    };
+    });
   } catch (e) {
     console.error('[ERROR] Unexpected error in formatUnifiedPresentation:', e instanceof Error ? e.message : 'Unknown error');
     throw e;
