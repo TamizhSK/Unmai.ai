@@ -15,6 +15,8 @@ import { config } from 'dotenv';
 config();
 
 const USER_AGENT = process.env.USER_AGENT || 'Mozilla/5.0 (compatible; unmai.ai/1.0; +https://unmai.ai)';
+const CSE_API_KEY = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
+const DEFAULT_SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID;
 
 const PerformWebAnalysisInputSchema = z.object({
   query: z.string().describe('The query or content to analyze in real-time.'),
@@ -131,13 +133,45 @@ async function scrapeUrl(url: string): Promise<ScrapeResult> {
   }
 }
 
+// Optional: Google Custom Search JSON API (text search)
+async function customSearch(query: string, cx: string): Promise<Array<{ title: string; url: string; snippet: string; date: string; relevance: number }>> {
+  try {
+    const trimmed = (query || '').toString().slice(0, 512);
+    const params = new URLSearchParams({
+      key: CSE_API_KEY as string,
+      cx,
+      q: trimmed,
+      num: '5',
+      safe: 'active'
+    });
+    const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params.toString()}`);
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      console.warn(`[WARN] CSE fetch failed: HTTP ${res.status} ${res.statusText} ${t}`);
+      return [];
+    }
+    const data = await res.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    return items.map((it: any, idx: number) => ({
+      title: String(it.title || ''),
+      url: String(it.link || it.formattedUrl || ''),
+      snippet: String(it.snippet || it.htmlSnippet || ''),
+      date: String(it.pagemap?.metatags?.[0]?.['article:published_time'] || it.pagemap?.metatags?.[0]?.['og:updated_time'] || ''),
+      relevance: Math.max(0, 100 - idx * 10)
+    })).filter(r => r.url);
+  } catch (err) {
+    console.warn('[WARN] CSE query error:', err);
+    return [];
+  }
+}
+
 export async function performWebAnalysis(
   input: PerformWebAnalysisInput
 ): Promise<PerformWebAnalysisOutput> {
   let content = input.query;
   let urlScrapingFailed = false;
   let urlScrapeInfo: { status?: number; statusText?: string; error?: string } | null = null;
-  
+  let cseResults: Array<{ title: string; url: string; snippet: string; date: string; relevance: number }> = [];
   if (input.contentType === 'url') {
     try {
       const scrapeResult = await scrapeUrl(input.query);
@@ -167,6 +201,24 @@ export async function performWebAnalysis(
     }
   }
 
+  // Attempt CSE grounding if keys are present
+  const effectiveCx = input.searchEngineId || DEFAULT_SEARCH_ENGINE_ID;
+  if (CSE_API_KEY && effectiveCx) {
+    try {
+      const queryForSearch = input.contentType === 'url' ? input.query : content;
+      cseResults = await customSearch(queryForSearch, effectiveCx);
+      if (cseResults.length > 0) {
+        console.log(`[INFO] CSE returned ${cseResults.length} items for grounding`);
+      }
+    } catch (e) {
+      console.warn('[WARN] CSE grounding failed:', e);
+    }
+  }
+
+  const cseGroundingSection = cseResults.length > 0
+    ? `\n\nUse the following web search results as grounding evidence. Prefer citing these URLs in "currentInformation":\n${JSON.stringify(cseResults.slice(0, 5))}`
+    : '';
+
   const prompt = `You are an expert in real-time web analysis and fact-checking.
 
   Perform a real-time analysis of the following content:
@@ -178,6 +230,7 @@ export async function performWebAnalysis(
   3. Check for any fact-checking articles or debunking information
   4. Identify information gaps that need further research
   5. Provide a summary of your findings
+  ${cseGroundingSection}
   
   Your response must be in the following JSON format:
   {
