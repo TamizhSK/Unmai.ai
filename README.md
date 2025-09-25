@@ -8,7 +8,7 @@
 
   <img src="https://img.shields.io/badge/Build-Passing-4285F4?style=flat&logo=googlechrome&logoColor=white" alt="Build Status" />
   <img src="https://img.shields.io/badge/Google_Cloud-Powered-EA4335?style=flat&logo=googlecloud&logoColor=white" alt="Google Cloud" />
-  <img src="https://img.shields.io/badge/TypeScript-Ready-FBBC04?style=flat&logo=typescript&logoColor=2d2d2d" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/TypeScript-Ready-FBBC04?style=flat&logo=typescript&logoColor=white" alt="TypeScript" />
   
 </div>
 
@@ -284,5 +284,5 @@ We welcome contributions that enhance our mission of combating misinformation th
 
 ### **Empowering Truth in the Digital Age Through Advanced AI Verification**
 
-**Built with ❤️ by team Unmai.ai**
+**Built with ❤️ by Team Unmai.ai**
 </div>
