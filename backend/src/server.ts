@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
 import { factCheckClaim } from './ai/flows/fact-check-claim.js';
@@ -32,9 +33,11 @@ const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || '50mb';
 
 app.use(cors());
 app.use(express.json({ limit: REQUEST_SIZE_LIMIT }));
+// Support form submissions (e.g. multipart clients sending urlencoded payloads)
+app.use(express.urlencoded({ extended: true, limit: REQUEST_SIZE_LIMIT }));
 
 // Unified multimodal endpoint (preferred)
-app.post('/api/analyze', async (req, res) => {
+app.post('/api/analyze', async (req: Request, res: Response) => {
   try {
     const { type, payload, searchEngineId } = req.body || {};
     if (!type || !payload) {
@@ -52,13 +55,40 @@ app.post('/api/analyze', async (req, res) => {
   }
 });
 
+// Minimal educational insights route to support frontend client
+app.post('/api/educational-insights', async (req: Request, res: Response) => {
+  try {
+    const { text } = req.body || {};
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+    const insights = [
+      'Cross-check claims with multiple reputable sources.',
+      'Look for publication date, author credentials, and primary sources.',
+      'Beware of emotionally charged language and missing context.'
+    ];
+    return res.json({
+      insights,
+      inputPreview: String(text).slice(0, 120),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[ERROR] Educational insights API failed:', error);
+    return res.status(500).json({
+      error: 'Educational insights service unavailable',
+      message: 'Unable to provide insights at this time',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // API Routes
-app.post('/api/fact-check', async (req, res) => {
+app.post('/api/fact-check', async (req: Request, res: Response) => {
   try {
     const { claim } = req.body;
     if (!claim) {
@@ -78,7 +108,7 @@ app.post('/api/fact-check', async (req, res) => {
 
 // Removed modality-specific analyze endpoints in favor of unified /api/analyze
 
-app.post('/api/credibility-score', async (req, res) => {
+app.post('/api/credibility-score', async (req: Request, res: Response) => {
   try {
     const { text } = req.body;
     if (!text) {
@@ -96,7 +126,7 @@ app.post('/api/credibility-score', async (req, res) => {
   }
 });
 
-app.post('/api/detect-deepfake', async (req, res) => {
+app.post('/api/detect-deepfake', async (req: Request, res: Response) => {
   try {
     const { media, contentType, sourceCredibility } = req.body;
     if (!media || !contentType) {
@@ -117,7 +147,7 @@ app.post('/api/detect-deepfake', async (req, res) => {
   }
 });
 
-app.post('/api/safety-assessment', async (req, res) => {
+app.post('/api/safety-assessment', async (req: Request, res: Response) => {
   try {
     const { content, contentType } = req.body;
     if (!content || !contentType) {
@@ -138,7 +168,7 @@ app.post('/api/safety-assessment', async (req, res) => {
   }
 });
 
-app.post('/api/verify-source', async (req, res) => {
+app.post('/api/verify-source', async (req: Request, res: Response) => {
   try {
     const { content, contentType } = req.body;
     if (!content || !contentType) {
@@ -159,7 +189,7 @@ app.post('/api/verify-source', async (req, res) => {
   }
 });
 
-app.post('/api/web-analysis', async (req, res) => {
+app.post('/api/web-analysis', async (req: Request, res: Response) => {
   try {
     const { query, contentType, searchEngineId } = req.body;
     if (!query || !contentType) {
@@ -182,7 +212,7 @@ app.post('/api/web-analysis', async (req, res) => {
 });
 
 
-app.post('/api/safe-search', async (req, res) => {
+app.post('/api/safe-search', async (req: Request, res: Response) => {
   try {
     const { url } = req.body;
     if (!url) {
@@ -199,7 +229,7 @@ app.post('/api/safe-search', async (req, res) => {
     });
   }
 });
-app.post('/api/translate-text', async (req, res) => {
+app.post('/api/translate-text', async (req: Request, res: Response) => {
   try {
     const { text, targetLanguage } = req.body;
     if (!text || !targetLanguage) {
@@ -215,6 +245,42 @@ app.post('/api/translate-text', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   }
+});
+
+// Fallback for unknown routes - ensure JSON response
+app.use((req: Request, res: Response, _next: NextFunction) => {
+  res.status(404).json({
+    error: 'Not Found',
+    path: req.originalUrl,
+    method: req.method,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Global error handler to always return JSON (including parser errors)
+// Must have 4 args to be recognized by Express as error middleware
+app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+  const anyErr = err as any;
+  if (anyErr?.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: 'Payload Too Large',
+      message: `Request entity too large. Max allowed: ${REQUEST_SIZE_LIMIT}`,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  if (err instanceof SyntaxError && 'body' in (err as any)) {
+    return res.status(400).json({
+      error: 'Invalid JSON',
+      message: (err as SyntaxError).message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  console.error('[ERROR] Unhandled application error:', err);
+  return res.status(500).json({
+    error: 'Internal Server Error',
+    message: 'An unexpected error occurred',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Start server with error handling
@@ -248,7 +314,7 @@ server.on('error', (error: any) => {
 const shutdown = (signal: string) => {
   console.log(`\n[INFO] Received ${signal}. Starting graceful shutdown...`);
   
-  server.close((err) => {
+  server.close((err?: Error) => {
     if (err) {
       console.error('[ERROR] Error during server shutdown:', err);
       process.exit(1);
@@ -271,12 +337,12 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Handle uncaught exceptions and unhandled rejections
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', (error: unknown) => {
   console.error('[ERROR] Uncaught Exception:', error);
   shutdown('UNCAUGHT_EXCEPTION');
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
   console.error('[ERROR] Unhandled Rejection at:', promise, 'reason:', reason);
   shutdown('UNHANDLED_REJECTION');
 });
