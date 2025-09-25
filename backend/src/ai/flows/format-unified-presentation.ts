@@ -286,7 +286,9 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
     
     try {
       const parsed = cleanJson(text);
-      return PresentationSchema.parse(parsed);
+      // Ensure required fields like analysisLabel are present even if the model omits them
+      const normalized = { ...parsed, analysisLabel: input.analysisLabel };
+      return PresentationSchema.parse(normalized);
     } catch (e) {
       if (process.env.NODE_ENV !== 'production') {
         console.warn('[WARN] Presentation JSON parse failed; using fallback:', e);

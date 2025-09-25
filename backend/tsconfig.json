@@ -9,6 +9,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "moduleResolution": "bundler",
+    "types": ["node"],
     "allowImportingTsExtensions": false,
     "noEmit": false,
     "declaration": true,
