@@ -102,6 +102,18 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
 
     const { level, verdict } = mapLabelToVerification(unifiedBackend.analysisLabel);
 
+    // Prefer model-provided sources; fall back to known alternative fields if empty
+    const unifiedSourcesRaw = (unifiedBackend as any).sources && (unifiedBackend as any).sources.length > 0
+      ? (unifiedBackend as any).sources
+      : (
+          (result as any).candidateSources ||
+          (result as any).references ||
+          (result as any).referenceLinks ||
+          (result as any).webResults ||
+          (result as any)?.rawSignals?.sources ||
+          []
+        );
+
     const unifiedMapped: UnifiedResponseData = {
       mainLabel: `${safeString(task).toUpperCase()} - ${unifiedBackend.analysisLabel}`,
       oneLineDescription: unifiedBackend.oneLineDescription || `Analysis of ${safeString(task)} content`,
@@ -112,7 +124,7 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
         contentAuthenticityScore: Number(unifiedBackend.contentAuthenticityScore ?? 0),
         trustExplainabilityScore: Number(unifiedBackend.trustExplainabilityScore ?? 0)
       },
-      sources: safeSources(unifiedBackend.sources || []),
+      sources: safeSources(unifiedSourcesRaw),
       sourceMetadata: extractSourceMetadata(sourceResult),
       verificationLevel: level,
       verdict,
@@ -202,6 +214,17 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
   };
 
   // Default structure
+  // Collect sources from multiple potential fields
+  const genericSourcesRaw = (
+    (result as any)?.sources ||
+    (result as any)?.candidateSources ||
+    (result as any)?.references ||
+    (result as any)?.referenceLinks ||
+    (result as any)?.webResults ||
+    (result as any)?.rawSignals?.sources ||
+    []
+  );
+
   const unifiedResponse: UnifiedResponseData = {
     mainLabel: 'Analysis',
     oneLineDescription: 'Here is the result of the analysis.',
@@ -210,7 +233,7 @@ function transformToUnifiedResponse(task: string, result: any, sourceResult?: an
     trustScores,
     misleadingIndicators,
     deepfakeDetection,
-    sources: safeSources(result.sources || []),
+    sources: safeSources(genericSourcesRaw),
     sourceMetadata,
     verificationLevel: getVerificationLevel(trustScore),
     verdict: getVerdict(trustScore),
