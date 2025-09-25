@@ -112,7 +112,7 @@ const CircularTrustScore = ({ score, label }: { score: number; label: string }) 
   return (
     <div className="flex flex-col items-center gap-1">
       <div className="relative">
-        <svg className="w-14 h-14 transform -rotate-90" viewBox="0 0 50 50">
+        <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 50 50">
           {/* Background circle */}
           <circle
             cx="25"
@@ -139,7 +139,7 @@ const CircularTrustScore = ({ score, label }: { score: number; label: string }) 
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center">
-            <div className={`text-xs font-bold`} style={{ color }}>{score}</div>
+            <div className={`text-lg font-bold`} style={{ color }}>{score}</div>
           </div>
         </div>
       </div>
