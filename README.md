@@ -284,5 +284,5 @@ We welcome contributions that enhance our mission of combating misinformation th
 
 ### **Empowering Truth in the Digital Age Through Advanced AI Verification**
 
-**Built with ❤️ by team Unmai.ai**
+**Built with ❤️ by Team Unmai.ai**
 </div>
