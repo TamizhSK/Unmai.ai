@@ -15,6 +15,128 @@ const PresentationSchema = z.object({
 });
 export type Presentation = z.infer<typeof PresentationSchema>;
 
+type CandidateSource = {
+  url: string;
+  title?: string;
+  snippet?: string;
+  relevance?: number;
+};
+
+const DEFAULT_PRESENTATION_SOURCES: Presentation['sources'] = [
+  { url: 'https://www.snopes.com', title: 'Snopes - Fact Checking', credibility: 0.95 },
+  { url: 'https://www.factcheck.org', title: 'FactCheck.org - Nonpartisan Analysis', credibility: 0.93 },
+  { url: 'https://www.politifact.com', title: 'PolitiFact - Truth-O-Meter', credibility: 0.91 },
+  { url: 'https://fullfact.org', title: 'Full Fact - UK Fact Checking', credibility: 0.89 }
+];
+
+const VALID_ANALYSIS_LABELS: ReadonlySet<Presentation['analysisLabel']> = new Set(['RED', 'YELLOW', 'ORANGE', 'GREEN']);
+
+const coercePresentationSource = (entry: any): Presentation['sources'][number] | null => {
+  if (!entry || typeof entry !== 'object') return null;
+  const url = typeof entry.url === 'string' ? entry.url.trim() : '';
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  const title = typeof entry.title === 'string' && entry.title.trim().length > 0
+    ? entry.title.trim()
+    : 'Verification Resource';
+  let credibility: number;
+  if (typeof entry.credibility === 'number' && Number.isFinite(entry.credibility)) {
+    credibility = entry.credibility;
+  } else if (typeof entry.relevance === 'number' && Number.isFinite(entry.relevance)) {
+    credibility = entry.relevance / 100;
+  } else {
+    credibility = 0.8;
+  }
+  credibility = Math.min(1, Math.max(0, credibility));
+  return { url, title, credibility };
+};
+
+const normalizeSources = (
+  rawSources: any,
+  candidateSources: CandidateSource[]
+): Presentation['sources'] => {
+  const normalized: Presentation['sources'] = [];
+  const seen = new Set<string>();
+  const addSource = (source: Presentation['sources'][number]) => {
+    if (seen.has(source.url)) return;
+    normalized.push({ ...source });
+    seen.add(source.url);
+  };
+
+  if (Array.isArray(rawSources)) {
+    rawSources.forEach((entry) => {
+      const source = coercePresentationSource(entry);
+      if (source) addSource(source);
+    });
+  }
+
+  for (const candidate of candidateSources || []) {
+    if (normalized.length >= 5) break;
+    const source = coercePresentationSource({
+      url: candidate?.url,
+      title: candidate?.title ?? 'Supporting Source',
+      credibility: candidate?.relevance != null
+        ? Math.min(1, Math.max(0, (candidate.relevance as number) / 100))
+        : 0.75
+    });
+    if (source) addSource(source);
+  }
+
+  for (const fallback of DEFAULT_PRESENTATION_SOURCES) {
+    if (normalized.length >= 3) break;
+    addSource(fallback);
+  }
+
+  while (normalized.length < 3) {
+    const fallback = DEFAULT_PRESENTATION_SOURCES[normalized.length % DEFAULT_PRESENTATION_SOURCES.length];
+    addSource(fallback);
+  }
+
+  return normalized.slice(0, 5);
+};
+
+const sanitizePresentationFields = (
+  parsed: any,
+  input: {
+    analysisLabel: Presentation['analysisLabel'];
+    contentType: 'text' | 'url' | 'image' | 'video' | 'audio';
+    candidateSources: CandidateSource[];
+  }
+): Presentation => {
+  const coerceText = (value: any, fallback: string) => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+    return fallback;
+  };
+
+  const inferredLabel = typeof parsed?.analysisLabel === 'string'
+    ? parsed.analysisLabel.toUpperCase()
+    : '';
+  const analysisLabel = VALID_ANALYSIS_LABELS.has(inferredLabel as Presentation['analysisLabel'])
+    ? (inferredLabel as Presentation['analysisLabel'])
+    : input.analysisLabel;
+
+  return {
+    analysisLabel,
+    oneLineDescription: coerceText(
+      parsed?.oneLineDescription,
+      `Analysis of ${input.contentType} content`
+    ),
+    summary: coerceText(
+      parsed?.summary,
+      'Detailed summary unavailable due to formatting issues in the AI response.'
+    ),
+    educationalInsight: coerceText(
+      parsed?.educationalInsight,
+      'Exercise caution and verify this content using reputable fact-checking sources.'
+    ),
+    sources: normalizeSources(parsed?.sources, input.candidateSources)
+  };
+};
+
 function cleanJson(text: string): any {
   const stripped = text
     .replace(/^```json\s*/i, '')
@@ -286,8 +408,11 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
     
     try {
       const parsed = cleanJson(text);
-      // Ensure required fields like analysisLabel are present even if the model omits them
-      const normalized = { ...parsed, analysisLabel: input.analysisLabel };
+      const normalized = sanitizePresentationFields(parsed, {
+        analysisLabel: input.analysisLabel,
+        contentType: input.contentType,
+        candidateSources: input.candidateSources
+      });
       return PresentationSchema.parse(normalized);
     } catch (e) {
       if (process.env.NODE_ENV !== 'production') {
@@ -336,13 +461,17 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
       { url: 'https://fullfact.org', title: 'Full Fact - UK Fact Checking', credibility: 0.89 }
     ];
     
-    return PresentationSchema.parse({
+    return PresentationSchema.parse(sanitizePresentationFields({
       analysisLabel: input.analysisLabel,
       oneLineDescription: `${input.contentType.charAt(0).toUpperCase() + input.contentType.slice(1)} analysis completed - ${input.analysisLabel} risk level detected`,
       summary: summaryText,
       educationalInsight: educationalText,
       sources: fallbackSources.length >= 3 ? fallbackSources : defaultSources.slice(0, 5)
-    });
+    }, {
+      analysisLabel: input.analysisLabel,
+      contentType: input.contentType,
+      candidateSources: input.candidateSources
+    }));
   } catch (e) {
     console.error('[ERROR] Unexpected error in formatUnifiedPresentation:', e instanceof Error ? e.message : 'Unknown error');
     throw e;
