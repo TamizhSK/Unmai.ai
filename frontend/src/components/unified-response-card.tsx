@@ -2,7 +2,6 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ShineBorder } from '@/components/ui/shine-border';
 import { Link as LinkIcon, Globe, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield } from "lucide-react";
@@ -360,7 +359,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
   const data = response as UnifiedResponseData;
 
   return (
-    <div className="relative rounded-xl p-0.5">
+    <div className="relative rounded-xl p-0.5 max-w-4xl w-full mx-auto">
       <ShineBorder 
         duration={10}
         borderWidth={1.5}
@@ -402,7 +401,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
           {/* 2. One-line description of the input */}
           <div className="space-y-1 border-b border-border pb-3">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</h3>
-            <p className="text-foreground text-sm leading-relaxed break-words">
+            <p className="text-foreground text-sm leading-relaxed break-words whitespace-pre-wrap">
               {sanitizeText(data.oneLineDescription) || 'No description available'}
             </p>
           </div>
@@ -499,110 +498,24 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
           {/* 5. Sources, Scores, and Overall Verdict */}
           <div className="space-y-3">
             <h3 className="text-sm font-medium text-foreground">Sources, Trust Scores & Verdict</h3>
-            <div className="flex items-end justify-between">
-              {/* Sources Button */}
-              <Dialog>
-              <DialogTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="rounded-full bg-muted hover:bg-muted/80 border-0 text-foreground"
-                >
-                  Sources
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto flex flex-col">
-                <DialogHeader className="flex-shrink-0">
-                  <DialogTitle>Sources & Verification Details</DialogTitle>
-                  <DialogDescription>Source information and verification results</DialogDescription>
-                </DialogHeader>
-                <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                  {/* Source Metadata */}
-                  {data.sourceMetadata && (
-                    <SourceInformationSection sourceMetadata={data.sourceMetadata} />
-                  )}
-                  
-                  {/* Sources List */}
-                  <div className="space-y-2">
-                    <h3 className="font-medium mb-2">Referenced Sources ({data.sources?.length || 0})</h3>
-                    {data.sources && data.sources.length > 0 ? (
-                      data.sources.map((source, index) => {
-                        const fav = source.favicon || getFavicon(source.url);
-                        const hostname = getHostname(source.url);
-                        return (
-                          <a
-                            key={index}
-                            href={source.url || '#'}
-                            target={source.url ? "_blank" : undefined}
-                            rel={source.url ? "nofollow noopener noreferrer" : undefined}
-                            className="flex items-start gap-3 rounded-lg px-3 py-3 hover:bg-accent hover:text-accent-foreground transition-all duration-200 text-sm border border-border/15 hover:border-[#4285F4]/20 group"
-                          >
-                            {fav ? (
-                              <img
-                                src={fav}
-                                alt={source.title}
-                                className="w-6 h-6 rounded-sm bg-muted border border-border/15 flex-shrink-0 mt-0.5"
-                              />
-                            ) : (
-                              <div className="w-6 h-6 rounded-sm bg-gradient-to-br from-[#4285F4] to-[#0F9D58] border border-border/15 flex-shrink-0 flex items-center justify-center mt-0.5">
-                                <Globe className="w-3 h-3 text-white" />
-                              </div>
-                            )}
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="font-medium text-foreground leading-5 line-clamp-2 group-hover:text-[#4285F4] transition-colors">
-                                {source.title}
-                              </div>
-                              {source.url && (
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="text-xs text-muted-foreground break-all leading-4">
-                                    {hostname || source.url}
-                                  </div>
-                                  {hostname && (
-                                    <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
-                                      {new URL(source.url).protocol.replace(':', '')}
-                                    </div>
-                                  )}
-                                  {typeof source.credibility === 'number' && (
-                                    <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
-                                      Cred {Math.round(source.credibility * 100)}%
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-start gap-2 flex-shrink-0 mt-1">
-                              <LinkIcon className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
-                            </div>
-                          </a>
-                        );
-                      })
-                    ) : (
-                      <div className="text-sm text-muted-foreground p-4 bg-muted/50 rounded-lg text-center">
-                        No sources available for this analysis
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+            {/* Three Trust Score Circles - centered */}
+            <div className="flex justify-center">
+              <div className="flex flex-wrap items-center gap-6 justify-center">
+                <CircularTrustScore 
+                  score={data.trustScores?.sourceIntegrityScore || 0} 
+                  label="Source Integrity"
+                />
+                <CircularTrustScore 
+                  score={data.trustScores?.contentAuthenticityScore || 0} 
+                  label="Content Authenticity"
+                />
+                <CircularTrustScore 
+                  score={(data.trustScores?.trustExplainabilityScore ?? compositeScore) ?? 0} 
+                  label="Trust Explainability"
+                />
+              </div>
+            </div>
 
-            {/* Three Trust Score Circles */}
-            <div className="flex flex-wrap items-center gap-4 justify-start md:justify-end">
-              <CircularTrustScore 
-                score={data.trustScores?.sourceIntegrityScore || 0} 
-                label="Source Integrity"
-              />
-              <CircularTrustScore 
-                score={data.trustScores?.contentAuthenticityScore || 0} 
-                label="Content Authenticity"
-              />
-              <CircularTrustScore 
-                score={(data.trustScores?.trustExplainabilityScore ?? compositeScore) ?? 0} 
-                label="Trust Explainability"
-              />
-            </div>
-            </div>
-            
             {/* Overall Verdict */}
             <div className="p-3 bg-muted/50 rounded-lg">
               <div className="flex items-center justify-between">
@@ -611,6 +524,72 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                   {data.verdict}
                 </Badge>
               </div>
+            </div>
+
+            {/* Sources below Overall Verdict with links */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-foreground">Sources</h3>
+              {data.sourceMetadata && (
+                <div className="mb-2">
+                  <SourceInformationSection sourceMetadata={data.sourceMetadata} />
+                </div>
+              )}
+              {data.sources && data.sources.length > 0 ? (
+                data.sources.map((source, index) => {
+                  const fav = source.favicon || getFavicon(source.url);
+                  const hostname = getHostname(source.url);
+                  return (
+                    <a
+                      key={index}
+                      href={source.url || '#'}
+                      target={source.url ? "_blank" : undefined}
+                      rel={source.url ? "nofollow noopener noreferrer" : undefined}
+                      className="flex items-start gap-3 rounded-lg px-3 py-3 hover:bg-accent hover:text-accent-foreground transition-all duration-200 text-sm border border-border/15 hover:border-[#4285F4]/20 group"
+                    >
+                      {fav ? (
+                        <img
+                          src={fav}
+                          alt={source.title}
+                          className="w-6 h-6 rounded-sm bg-muted border border-border/15 flex-shrink-0 mt-0.5"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 rounded-sm bg-gradient-to-br from-[#4285F4] to-[#0F9D58] border border-border/15 flex-shrink-0 flex items-center justify-center mt-0.5">
+                          <Globe className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="font-medium text-foreground leading-5 line-clamp-2 group-hover:text-[#4285F4] transition-colors">
+                          {source.title}
+                        </div>
+                        {source.url && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="text-xs text-muted-foreground break-all leading-4">
+                              {hostname || source.url}
+                            </div>
+                            {hostname && (
+                              <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
+                                {new URL(source.url).protocol.replace(':', '')}
+                              </div>
+                            )}
+                            {typeof source.credibility === 'number' && (
+                              <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
+                                Cred {Math.round(source.credibility * 100)}%
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-start gap-2 flex-shrink-0 mt-1">
+                        <LinkIcon className="h-4 w-4 text-muted-foreground group-hover:text-[#4285F4] transition-colors" />
+                      </div>
+                    </a>
+                  );
+                })
+              ) : (
+                <div className="text-sm text-muted-foreground p-4 bg-muted/50 rounded-lg text-center">
+                  No sources available for this analysis
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
