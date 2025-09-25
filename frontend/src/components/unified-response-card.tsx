@@ -373,7 +373,6 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
             <Badge className={`text-sm px-3 py-1 text-white w-fit ${getLabelVariant(data.verificationLevel)}`}>
               {data.mainLabel}
             </Badge>
-            <span className="text-xs text-muted-foreground">Risk Assessment</span>
           </div>
           {/* Prominent Deepfake Banner (if applicable) */}
           {data.deepfakeDetection && (
