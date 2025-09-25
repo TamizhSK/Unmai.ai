@@ -515,17 +515,9 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
               />
             </div>
             
-            {/* Overall Verdict */}
-            <div className="p-3 bg-muted/50 rounded-lg">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-foreground">Overall Verdict:</span>
-                <Badge className={`${getLabelVariant(data.verificationLevel)} text-white px-4 py-1`}>
-                  {data.verdict}
-                </Badge>
-              </div>
-            </div>
-            {/* Sources Button below Verdict */}
-            <div className="flex justify-center">
+            {/* Verdict + Sources in a single bar */}
+            <div className="p-3 bg-muted/50 rounded-lg flex flex-wrap items-center justify-between gap-3">
+              {/* Sources Button (left) */}
               <Dialog>
                 <DialogTrigger asChild>
                   <Button 
@@ -610,6 +602,14 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                   </div>
                 </DialogContent>
               </Dialog>
+
+              {/* Overall Verdict (right) */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-foreground">Overall Verdict:</span>
+                <Badge className={`${getLabelVariant(data.verificationLevel)} text-white px-4 py-1`}>
+                  {data.verdict}
+                </Badge>
+              </div>
             </div>
           </div>
         </CardContent>
