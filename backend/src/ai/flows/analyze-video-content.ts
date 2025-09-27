@@ -1,17 +1,9 @@
 import { z } from 'zod';
-<<<<<<< HEAD
-import { groundedModel } from '../genkit.js';
-=======
 import { groundedModel, generativeVisionModel } from '../genkit.js';
->>>>>>> a458a6d (Video api and custom method)
 import { v1 as videoIntelligence, protos as viProtos } from '@google-cloud/video-intelligence';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
-<<<<<<< HEAD
-import { factCheckClaim } from './fact-check-claim.js';
-=======
->>>>>>> a458a6d (Video api and custom method)
 
 const VideoAnalysisInputSchema = z.object({
   videoData: z.string().min(1, 'Video data is required'), // Base64 or GCS URL
@@ -49,37 +41,26 @@ const VideoAnalysisOutputSchema = z.object({
     transcription: z.string().optional(),
     events: z.array(z.string()).optional(),
     isManipulated: z.boolean().optional(),
+    technicalData: z.record(z.unknown()).optional(),
   }).optional(),
 });
 export type VideoAnalysisOutput = z.infer<typeof VideoAnalysisOutputSchema>;
 
-<<<<<<< HEAD
-// Helper to extract video metadata using Video Intelligence API
-=======
 // Helper to extract video metadata using Video Intelligence API (kept as primary metadata source)
->>>>>>> a458a6d (Video api and custom method)
 async function extractVideoMetadata(videoData: string) {
   const client = new videoIntelligence.VideoIntelligenceServiceClient();
   const request = {
     inputUri: videoData.startsWith('gs://') ? videoData : undefined,
     inputContent: videoData.startsWith('data:') ? Buffer.from(videoData.split(',')[1], 'base64') : undefined,
     features: [viProtos.google.cloud.videointelligence.v1.Feature.LABEL_DETECTION],
-<<<<<<< HEAD
-  };
-=======
   } as any;
->>>>>>> a458a6d (Video api and custom method)
 
   try {
     const [operation] = await client.annotateVideo(request);
     const [result] = await operation.promise();
     return {
       location: result.annotationResults?.[0]?.segmentLabelAnnotations?.[0]?.entity?.description || 'Unknown',
-<<<<<<< HEAD
-      technicalData: { duration: result.annotationResults?.[0]?.inputUri || 'Unknown' },
-=======
       technicalData: { inputUri: result.annotationResults?.[0]?.inputUri || 'Unknown' },
->>>>>>> a458a6d (Video api and custom method)
     };
   } catch (error) {
     console.error('Video Intelligence metadata error:', error);
@@ -90,11 +71,7 @@ async function extractVideoMetadata(videoData: string) {
   }
 }
 
-<<<<<<< HEAD
-// Helper for video intelligence analysis
-=======
 // Helper for speech + labels using Video Intelligence API (primary for transcription/events)
->>>>>>> a458a6d (Video api and custom method)
 async function analyzeVideoIntelligence(videoData: string) {
   const client = new videoIntelligence.VideoIntelligenceServiceClient();
   const request = {
@@ -110,11 +87,7 @@ async function analyzeVideoIntelligence(videoData: string) {
         enableAutomaticPunctuation: true,
       },
     },
-<<<<<<< HEAD
-  };
-=======
   } as any;
->>>>>>> a458a6d (Video api and custom method)
 
   try {
     const [operation] = await client.annotateVideo(request);
@@ -124,11 +97,7 @@ async function analyzeVideoIntelligence(videoData: string) {
     return {
       events,
       transcription,
-<<<<<<< HEAD
-      keyFrames: ['Placeholder keyframe'],
-=======
       keyFrames: [],
->>>>>>> a458a6d (Video api and custom method)
     };
   } catch (error) {
     console.error('Video Intelligence analysis error:', error);
@@ -140,8 +109,6 @@ async function analyzeVideoIntelligence(videoData: string) {
   }
 }
 
-<<<<<<< HEAD
-=======
 // Build a file part for Gemini/Vertex AI based on the provided video data
 function buildVideoPart(videoData: string, mimeType?: string): any {
   // data:[mime];base64,<...>
@@ -378,8 +345,6 @@ async function reverseWebGrounding(
   }
   return Array.from(byUrl.values()).slice(0, 12);
 }
-
->>>>>>> a458a6d (Video api and custom method)
 // Helper to fact-check video content
 async function analyzeVideoContentAndFactCheck(
   videoData: string,
@@ -410,27 +375,6 @@ async function analyzeVideoContentAndFactCheck(
   return { factualClaims };
 }
 
-<<<<<<< HEAD
-// Helper for deepfake detection
-async function detectVideoDeepfake(videoData: string) {
-  const prompt = `Analyze this video for signs of deepfake or manipulation. Provide a boolean (true/false) if manipulated, a confidence score (0-1), and a detailed explanation.`;
-  
-  const result = await groundedModel.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1 },
-  });
-  
-  const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  const confidenceRegex = /Confidence: (\d\.\d+)/;
-  const confidenceMatch = responseText.match(confidenceRegex);
-  const confidence = confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5;
-
-  return {
-    isManipulated: responseText.includes('Manipulated: true'),
-    confidence: confidence,
-    explanation: responseText.split('Explanation:')[1] || 'Analysis not conclusive.',
-=======
 // Helper for deepfake detection using Gemini vision with structured JSON
 async function detectVideoDeepfake(videoData: string, mimeType?: string) {
   const prompt = `You are a media forensics expert. Analyze the provided video and return STRICT JSON only with this shape:
@@ -476,7 +420,6 @@ Guidance:
     isManipulated: /Manipulated:\s*true/i.test(responseText),
     confidence: conf ? Math.max(0, Math.min(1, parseFloat(conf))) : 0.5,
     explanation: responseText.split('Explanation:')[1]?.trim() || 'Analysis not conclusive.',
->>>>>>> a458a6d (Video api and custom method)
   };
 }
 
@@ -521,39 +464,21 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
     //   input.videoData = await uploadToGcs(input.videoData);
     // }
 
-<<<<<<< HEAD
-    // Run metadata extraction, video intelligence, and deepfake detection concurrently
-    const metadataPromise = extractVideoMetadata(input.videoData);
-    const intelligencePromise = analyzeVideoIntelligence(input.videoData);
-=======
     // Run Video Intelligence (metadata + transcription), Gemini understanding, and deepfake detection concurrently
     const metadataPromise = extractVideoMetadata(input.videoData);
     const intelligencePromise = analyzeVideoIntelligence(input.videoData);
     const understandingPromise = geminiVideoUnderstanding(input.videoData, input.mimeType);
->>>>>>> a458a6d (Video api and custom method)
     const deepfakePromise = (async () => {
       try {
         const deepfakeResult = await detectDeepfake({ media: input.videoData, contentType: 'video' });
         return { isManipulated: deepfakeResult.isDeepfake, manipulationConfidence: deepfakeResult.confidenceScore / 100 };
       } catch (error) {
         console.error('Deepfake detection failed:', error);
-<<<<<<< HEAD
-        const basicResult = await detectVideoDeepfake(input.videoData);
-=======
         const basicResult = await detectVideoDeepfake(input.videoData, input.mimeType);
->>>>>>> a458a6d (Video api and custom method)
         return { isManipulated: basicResult.isManipulated, manipulationConfidence: basicResult.confidence };
       }
     })();
 
-<<<<<<< HEAD
-    const [metadata, intelligenceAnalysis, deepfakeInfo] = await Promise.all([
-      metadataPromise,
-      intelligencePromise,
-      deepfakePromise
-    ]);
-
-=======
     const [metadataVI, intelligenceAnalysis, understanding, deepfakeInfo] = await Promise.all([
       metadataPromise,
       intelligencePromise,
@@ -567,9 +492,8 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
       transcription: intelligenceAnalysis?.transcription || '',
       events: intelligenceAnalysis?.events || [],
       isManipulated: deepfakeInfo.isManipulated,
+      technicalData: metadataVI?.technicalData,
     };
-
->>>>>>> a458a6d (Video api and custom method)
     // Fact-check after transcription is available
     const contentAnalysis = await analyzeVideoContentAndFactCheck(input.videoData, intelligenceAnalysis.transcription);
     const isManipulated = deepfakeInfo.isManipulated;
@@ -590,8 +514,6 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
       }
     }
 
-<<<<<<< HEAD
-=======
     // Reverse source tracking via shot boundaries + semantic queries (Gemini & VI)
     try {
       const shotSpans = await getShotChangeTimestamps(input.videoData);
@@ -609,7 +531,6 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
       console.warn('[WARN] Reverse source tracking failed:', e);
     }
 
->>>>>>> a458a6d (Video api and custom method)
     // Step 6: Determine analysis label
     let analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN' = 'YELLOW';
     const verifiedClaims = contentAnalysis.factualClaims.filter((c: any) => c.verdict === 'VERIFIED').length;
@@ -638,12 +559,8 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
         factualClaims: contentAnalysis.factualClaims,
         isManipulated,
         manipulationConfidence,
-<<<<<<< HEAD
-        metadata
-=======
         metadata,
-        geminiUnderstanding: understanding
->>>>>>> a458a6d (Video api and custom method)
+        geminiUnderstanding: understanding,
       },
       candidateSources
     });
@@ -661,7 +578,8 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
         location: metadata.location,
         transcription: intelligenceAnalysis.transcription,
         events: intelligenceAnalysis.events,
-        isManipulated
+        isManipulated,
+        technicalData: metadata.technicalData,
       }
     };
   } catch (error) {
