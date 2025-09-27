@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { groundedModel, generativeVisionModel } from '../genkit.js';
+import { groundedModel, generativeModel, generativeVisionModel } from '../genkit.js';
 import { v1 as videoIntelligence, protos as viProtos } from '@google-cloud/video-intelligence';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
@@ -34,7 +34,7 @@ const VideoAnalysisOutputSchema = z.object({
   sourceIntegrityScore: z.number().min(0).max(100).describe('Source integrity score'),
   contentAuthenticityScore: z.number().min(0).max(100).describe('Content authenticity score'),
   trustExplainabilityScore: z.number().min(0).max(100).describe('Trust explainability score'),
-  
+
   // Internal data for processing
   metadata: z.object({
     location: z.string().optional(),
@@ -42,6 +42,13 @@ const VideoAnalysisOutputSchema = z.object({
     events: z.array(z.string()).optional(),
     isManipulated: z.boolean().optional(),
     technicalData: z.record(z.unknown()).optional(),
+  }).optional(),
+  deepAnalysis: z.object({
+    what: z.string(),
+    how: z.string(),
+    why: z.string(),
+    when: z.string(),
+    educationalInsights: z.array(z.string()),
   }).optional(),
 });
 export type VideoAnalysisOutput = z.infer<typeof VideoAnalysisOutputSchema>;
@@ -180,6 +187,142 @@ type GeminiVideoUnderstanding = {
   transcription: string;
   events: string[];
 };
+
+type DeepAnalysisNarrative = {
+  what: string;
+  how: string;
+  why: string;
+  when: string;
+  educationalInsights: string[];
+};
+
+async function buildGeminiGuidedSearchQueries(
+  understanding: GeminiVideoUnderstanding,
+  transcription: string
+): Promise<string[]> {
+  try {
+    const prompt = `You are assisting with targeted OSINT research for a misinformation analysis task.
+
+Given the following structured context, propose up to five highly specific web search queries that would help verify authenticity, origin, and credibility:
+
+Context JSON:
+${JSON.stringify({
+  description: understanding?.contentDescription || '',
+  events: understanding?.events || [],
+  transcription,
+  recognizedText: understanding?.contextualInfo?.recognizedText || [],
+  locations: understanding?.contextualInfo?.locations || [],
+  potentialIssues: understanding?.potentialIssues || [],
+})}
+
+Return STRICT JSON in the format:
+{
+  "queries": ["query one", "query two", ...],
+  "rationale": "short explanation of how these help"
+}`;
+
+    const result = await generativeModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [{ text: prompt }],
+      }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+    });
+
+    const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parsed = tryParseJsonLoose(text);
+    if (!parsed) {
+      return [];
+    }
+
+    const queriesCandidate = Array.isArray(parsed?.queries) ? parsed.queries : parsed;
+    if (Array.isArray(queriesCandidate)) {
+      return queriesCandidate
+        .map((q) => (typeof q === 'string' ? q.trim() : ''))
+        .filter((q) => q.length > 0)
+        .slice(0, 5);
+    }
+  } catch (error) {
+    console.warn('[WARN] Gemini-guided search query generation failed:', error);
+  }
+  return [];
+}
+
+async function generateDeepAnalysisNarrative(params: {
+  transcription: string;
+  events: string[];
+  understanding: GeminiVideoUnderstanding;
+  analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN';
+  existingEducationalInsight?: string;
+  sources: Array<{ url: string; title: string }>;
+}): Promise<DeepAnalysisNarrative> {
+  try {
+    const prompt = `You are an educational analyst expanding a misinformation screening report.
+
+Using the structured context below, produce STRICT JSON with:
+{
+  "what": "Concise description of what is happening in the video",
+  "how": "Explain how the events unfold or the technique used",
+  "why": "Explain why the content might exist or be impactful",
+  "when": "Describe temporal clues or context",
+  "educationalInsights": ["Actionable media literacy insight", ...]
+}
+
+Structured context:
+${JSON.stringify({
+  transcription: params.transcription,
+  events: params.events,
+  understanding: params.understanding,
+  analysisLabel: params.analysisLabel,
+  sources: params.sources,
+  existingEducationalInsight: params.existingEducationalInsight,
+})}`;
+
+    const result = await generativeModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [{ text: prompt }],
+      }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+    });
+
+    const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parsed = tryParseJsonLoose(text);
+    if (parsed && typeof parsed === 'object') {
+      const narrative: DeepAnalysisNarrative = {
+        what: String(parsed.what || '').trim() || 'Detailed description unavailable.',
+        how: String(parsed.how || '').trim() || 'How the events unfold could not be determined.',
+        why: String(parsed.why || '').trim() || 'Motivation for the content remains unclear.',
+        when: String(parsed.when || '').trim() || 'Temporal context could not be derived.',
+        educationalInsights: Array.isArray(parsed.educationalInsights)
+          ? parsed.educationalInsights
+              .map((ins: any) => String(ins || '').trim())
+              .filter((ins: string) => ins.length > 0)
+          : [],
+      };
+
+      if (narrative.educationalInsights.length === 0 && params.existingEducationalInsight) {
+        narrative.educationalInsights = [params.existingEducationalInsight];
+      }
+
+      return narrative;
+    }
+  } catch (error) {
+    console.warn('[WARN] Gemini deep analysis narrative generation failed:', error);
+  }
+
+  const fallbackInsight = params.existingEducationalInsight
+    ? [params.existingEducationalInsight]
+    : ['Cross-verify video claims with reputable sources and look for corroborating evidence.'];
+
+  return {
+    what: 'Detailed description unavailable due to limited context.',
+    how: 'How the events unfold could not be determined from the available data.',
+    why: 'The motive or intent behind the content remains unclear.',
+    when: 'Temporal context could not be inferred.',
+    educationalInsights: fallbackInsight,
+  };
+}
 
 // Gemini-based comprehensive video understanding
 async function geminiVideoUnderstanding(videoData: string, mimeType?: string): Promise<GeminiVideoUnderstanding> {
@@ -516,10 +659,14 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
 
     // Reverse source tracking via shot boundaries + semantic queries (Gemini & VI)
     try {
-      const shotSpans = await getShotChangeTimestamps(input.videoData);
-      const queries = buildReverseSearchQueries(understanding, intelligenceAnalysis.transcription, shotSpans);
-      if (queries.length > 0) {
-        const reverseSources = await reverseWebGrounding(queries, options?.searchEngineId);
+      const [shotSpans, guidedQueries] = await Promise.all([
+        getShotChangeTimestamps(input.videoData),
+        buildGeminiGuidedSearchQueries(understanding, intelligenceAnalysis.transcription),
+      ]);
+      const reverseQueries = buildReverseSearchQueries(understanding, intelligenceAnalysis.transcription, shotSpans);
+      const combinedQueries = Array.from(new Set([...reverseQueries, ...guidedQueries]));
+      if (combinedQueries.length > 0) {
+        const reverseSources = await reverseWebGrounding(combinedQueries, options?.searchEngineId);
         if (Array.isArray(reverseSources) && reverseSources.length > 0) {
           const byUrl = new Map<string, any>();
           for (const s of webSources) if (s?.url) byUrl.set(s.url, s);
@@ -565,6 +712,18 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
       candidateSources
     });
 
+    const deepAnalysis = await generateDeepAnalysisNarrative({
+      transcription: intelligenceAnalysis.transcription,
+      events: intelligenceAnalysis.events,
+      understanding,
+      analysisLabel,
+      existingEducationalInsight: presentation.educationalInsight,
+      sources: (presentation.sources || []).map((source: any) => ({
+        url: source.url,
+        title: source.title,
+      })),
+    });
+
     return {
       analysisLabel,
       oneLineDescription: presentation.oneLineDescription,
@@ -580,7 +739,8 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
         events: intelligenceAnalysis.events,
         isManipulated,
         technicalData: metadata.technicalData,
-      }
+      },
+      deepAnalysis,
     };
   } catch (error) {
     console.error('Error in video analysis:', error);
@@ -597,7 +757,16 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
       sourceIntegrityScore: 0,
       contentAuthenticityScore: 0,
       trustExplainabilityScore: 0,
-      metadata: {}
+      metadata: {},
+      deepAnalysis: {
+        what: 'Video analysis unavailable due to an internal error.',
+        how: 'Technical processing steps failed before a narrative could be assembled.',
+        why: 'The system could not determine the motivation or implications without successful analysis.',
+        when: 'Temporal cues were not extracted.',
+        educationalInsights: [
+          'Retry the analysis later and corroborate information with trusted educational resources.'
+        ],
+      }
     };
   }
 }
