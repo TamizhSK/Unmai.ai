@@ -4,6 +4,15 @@ import { performWebAnalysis } from './perform-web-analysis.js';
 import { verifySource } from './verify-source.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 
+const SECURITY_HEADERS = [
+  'strict-transport-security',
+  'content-security-policy',
+  'x-frame-options',
+  'x-content-type-options',
+  'referrer-policy',
+  'permissions-policy',
+];
+
 const UrlAnalysisInputSchema = z.object({
   url: z.string().url('Valid URL is required'),
 });
@@ -78,6 +87,182 @@ async function checkUrlSafety(url: string) {
   }
 }
 
+type UrlMetadata = {
+  status: number;
+  finalUrl: string;
+  contentType?: string;
+  usesHttps: boolean;
+  securityHeaders: string[];
+  missingSecurityHeaders: string[];
+  meta: {
+    title?: string;
+    description?: string;
+    keywords?: string[];
+    language?: string;
+    canonical?: string;
+    robots?: string;
+  };
+  headings: string[];
+  trackingScripts: string[];
+  hasLoginForm: boolean;
+  wordCount: number;
+  detectedFrameworks: string[];
+  fetchError?: string;
+};
+
+// Minimal HTML scrubber
+function stripHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function fetchUrlMetadata(targetUrl: string): Promise<UrlMetadata> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(targetUrl, {
+      signal: controller.signal,
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; UnmaiBot/1.0; +https://unmai.ai)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    clearTimeout(timeout);
+
+    const finalUrl = response.url || targetUrl;
+    const contentType = response.headers.get('content-type') || undefined;
+    const headerEntries = SECURITY_HEADERS.filter(h => response.headers.has(h));
+    const missingHeaders = SECURITY_HEADERS.filter(h => !response.headers.has(h));
+
+    let html = '';
+    if (contentType && /html/i.test(contentType)) {
+      try {
+        html = await response.text();
+      } catch (err) {
+        console.error('URL html read failed:', err);
+      }
+    }
+
+    const meta: UrlMetadata['meta'] = {};
+    const headings: string[] = [];
+    const trackingScripts: string[] = [];
+    let hasLoginForm = false;
+    let wordCount = 0;
+    const frameworks: string[] = [];
+
+    if (html) {
+      const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+      const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i);
+      const kwMatch = html.match(/<meta[^>]+name=["']keywords["'][^>]+content=["']([^"']*)["']/i);
+      const langMatch = html.match(/<html[^>]+lang=["']([a-zA-Z-]+)["']/i);
+      const canonicalMatch = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
+      const robotsMatch = html.match(/<meta[^>]+name=["']robots["'][^>]+content=["']([^"']*)["']/i);
+
+      meta.title = titleMatch?.[1]?.trim() || undefined;
+      meta.description = descMatch?.[1]?.trim() || undefined;
+      meta.language = langMatch?.[1]?.trim() || undefined;
+      meta.keywords = kwMatch?.[1]?.split(',').map(k => k.trim()).filter(Boolean);
+      meta.canonical = canonicalMatch?.[1]?.trim();
+      meta.robots = robotsMatch?.[1]?.trim();
+
+      const headingRegex = /<h[12][^>]*>([^<]+)<\/h[12]>/gi;
+      let match;
+      while ((match = headingRegex.exec(html)) && headings.length < 10) {
+        const text = match[1].replace(/<[^>]+>/g, '').trim();
+        if (text) headings.push(text);
+      }
+
+      const strip = stripHtml(html);
+      wordCount = strip ? strip.split(/\s+/).filter(Boolean).length : 0;
+
+      const loginRegex = /<(form|a)[^>]*(login|sign-?in|account|portal)[^>]*>/i;
+      hasLoginForm = loginRegex.test(html);
+
+      const scriptRegex = /<script[^>]*src=["']([^"']+)["'][^>]*><\/script>/gi;
+      while ((match = scriptRegex.exec(html)) && trackingScripts.length < 15) {
+        const src = match[1];
+        if (/analytics|ads|tracker|metrics|tagmanager|pixel/i.test(src)) {
+          trackingScripts.push(src);
+        }
+        if (/wp-content|wordpress/i.test(src) && !frameworks.includes('WordPress')) {
+          frameworks.push('WordPress');
+        }
+        if (/cloudflare/i.test(src) && !frameworks.includes('Cloudflare')) {
+          frameworks.push('Cloudflare');
+        }
+      }
+      if (/shopify/i.test(html) && !frameworks.includes('Shopify')) frameworks.push('Shopify');
+      if (/squarespace/i.test(html) && !frameworks.includes('Squarespace')) frameworks.push('Squarespace');
+      if (/wix/i.test(html) && !frameworks.includes('Wix')) frameworks.push('Wix');
+    }
+
+    return {
+      status: response.status,
+      finalUrl,
+      contentType,
+      usesHttps: finalUrl.startsWith('https://'),
+      securityHeaders: headerEntries,
+      missingSecurityHeaders: missingHeaders,
+      meta,
+      headings,
+      trackingScripts,
+      hasLoginForm,
+      wordCount,
+      detectedFrameworks: frameworks,
+    };
+  } catch (error) {
+    clearTimeout(timeout);
+    console.error('URL metadata fetch failed:', error);
+    return {
+      status: 0,
+      finalUrl: targetUrl,
+      usesHttps: targetUrl.startsWith('https://'),
+      securityHeaders: [],
+      missingSecurityHeaders: SECURITY_HEADERS,
+      meta: {},
+      headings: [],
+      trackingScripts: [],
+      hasLoginForm: false,
+      wordCount: 0,
+      detectedFrameworks: [],
+      fetchError: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+function deriveUrlRiskInsights(input: {
+  securityStatus: Awaited<ReturnType<typeof checkUrlSafety>>;
+  domainInfo: ReturnType<typeof analyzeDomain>;
+  operatorInfo: ReturnType<typeof getOperatorInfo>;
+  metadata: UrlMetadata;
+  sourceVerification?: any;
+}) {
+  const { securityStatus, domainInfo, operatorInfo, metadata, sourceVerification } = input;
+  const riskFactors: string[] = [];
+  const trustFactors: string[] = [];
+
+  if (!metadata.usesHttps) riskFactors.push('Site does not enforce HTTPS by default.');
+  if (metadata.missingSecurityHeaders.includes('content-security-policy')) riskFactors.push('Missing Content-Security-Policy header leaves the site vulnerable to XSS.');
+  if (metadata.missingSecurityHeaders.includes('strict-transport-security')) riskFactors.push('Missing HSTS header allows downgrade attacks.');
+  if (metadata.hasLoginForm && !metadata.usesHttps) riskFactors.push('Login or account entry detected on non-HTTPS page.');
+  if (securityStatus.threats?.length) riskFactors.push(`Web Risk flags: ${securityStatus.threats.join(', ')}`);
+  if (metadata.fetchError) riskFactors.push(`Site fetch failed: ${metadata.fetchError}`);
+
+  if (metadata.usesHttps) trustFactors.push('Site responds over HTTPS.');
+  if (metadata.securityHeaders.includes('content-security-policy')) trustFactors.push('Content-Security-Policy header is present.');
+  if (metadata.securityHeaders.includes('strict-transport-security')) trustFactors.push('HSTS header is enforced.');
+  if ((domainInfo.reputationScore || 0) > 0.7) trustFactors.push('Domain reputation from verification service is strong.');
+  if (sourceVerification?.sourceVerified) trustFactors.push('Source verification API confirms origin.');
+
+  return { riskFactors, trustFactors };
+}
+
 // Helper to analyze domain using URL parsing and verification details
 function analyzeDomain(url: string, verification?: any) {
   const domain = new URL(url).hostname;
@@ -125,7 +310,8 @@ export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { sear
     const [
       securityStatus,
       sourceVerification,
-      webSources
+      webSources,
+      metadata
     ] = await Promise.all([
       // Web Risk
       checkUrlSafety(input.url),
@@ -134,7 +320,7 @@ export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { sear
         try {
           return await verifySource({ content: input.url, contentType: 'url' });
         } catch (e) {
-          console.warn('verifySource failed:', e);
+          console.error('verifySource failed:', e);
           return undefined;
         }
       })(),
@@ -147,12 +333,20 @@ export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { sear
           console.error('Web analysis failed:', error);
           return [] as any[];
         }
-      })()
+      })(),
+      fetchUrlMetadata(input.url)
     ] as const);
 
     // Derive domain and operator info from URL and verification details
     const domainInfo = analyzeDomain(input.url, sourceVerification);
     const operatorInfo = getOperatorInfo(input.url, sourceVerification);
+    const insights = deriveUrlRiskInsights({
+      securityStatus,
+      domainInfo,
+      operatorInfo,
+      metadata,
+      sourceVerification,
+    });
 
     // Step 5: Determine analysis label
     let analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN' = 'YELLOW';
@@ -170,7 +364,8 @@ export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { sear
     // Step 7: Gemini-driven formatting of presentation fields and sources
     const candidateSources = [
       ...(webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance })),
-      ...(sourceVerification?.relatedSources || []).map((s: any) => ({ url: s.url, title: s.title, relevance: s.similarity }))
+      ...(sourceVerification?.relatedSources || []).map((s: any) => ({ url: s.url, title: s.title, relevance: s.similarity })),
+      ...(metadata.meta.canonical ? [{ url: metadata.meta.canonical, title: metadata.meta.title || 'Canonical Source', relevance: 80 }] : [])
     ];
     const presentation = await formatUnifiedPresentation({
       contentType: 'url',
@@ -181,7 +376,10 @@ export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { sear
         domainInfo,
         operatorInfo,
         webSources,
-        sourceVerification
+        sourceVerification,
+        urlMetadata: metadata,
+        riskFactors: insights.riskFactors,
+        trustFactors: insights.trustFactors
       },
       candidateSources
     });
@@ -200,7 +398,15 @@ export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { sear
         threats: securityStatus.threats,
         isSafe: securityStatus.isSafe,
         reputationScore: domainInfo.reputationScore,
-        ageDays: domainInfo.ageDays
+        ageDays: domainInfo.ageDays,
+        status: metadata.status,
+        finalUrl: metadata.finalUrl,
+        usesHttps: metadata.usesHttps,
+        securityHeaders: metadata.securityHeaders,
+        missingSecurityHeaders: metadata.missingSecurityHeaders,
+        detectedFrameworks: metadata.detectedFrameworks,
+        hasLoginForm: metadata.hasLoginForm,
+        wordCount: metadata.wordCount
       }
     };
   } catch (error) {
