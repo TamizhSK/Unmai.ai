@@ -50,7 +50,8 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
       'te-IN': 'TL',
       'mr-IN': 'MR',
       'gu-IN': 'GU',
-      'kn-IN': 'KN'
+      'kn-IN': 'KN',
+      'ml-IN': 'ML'
     };
     return codes[lang] || 'EN';
   };
@@ -429,6 +430,7 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
                   <SelectItem value="mr-IN">Marathi</SelectItem>
                   <SelectItem value="gu-IN">Gujarati</SelectItem>
                   <SelectItem value="kn-IN">Kannada</SelectItem>
+                  <SelectItem value="ml-IN">Malayalam</SelectItem>
                 </SelectContent>
               </Select>
             </div>
