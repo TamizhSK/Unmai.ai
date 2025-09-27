@@ -3,7 +3,7 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
-import { groundedModel } from '../genkit.js';
+import { groundedModel, generativeModel, generativeVisionModel } from '../genkit.js';
 
 const ImageAnalysisInputSchema = z.object({
   imageData: z.string().min(1, 'Image data is required'), // Base64 or URL
@@ -41,9 +41,305 @@ const ImageAnalysisOutputSchema = z.object({
     ocrText: z.string().optional(),
     description: z.string().optional(),
     isManipulated: z.boolean().optional(),
+    understandingDescription: z.string().optional(),
+  }).optional(),
+  deepAnalysis: z.object({
+    what: z.string(),
+    how: z.string(),
+    why: z.string(),
+    when: z.string(),
+    educationalInsights: z.array(z.string()),
   }).optional(),
 });
 export type ImageAnalysisOutput = z.infer<typeof ImageAnalysisOutputSchema>;
+
+function buildImagePart(imageData: string, mimeType?: string): any {
+  if (imageData.startsWith('data:')) {
+    const commaIdx = imageData.indexOf(',');
+    const header = imageData.substring(5, commaIdx); // e.g., image/png;base64
+    const derivedMime = header.split(';')[0] || 'image/png';
+    const base64Data = imageData.substring(commaIdx + 1);
+    return {
+      inlineData: {
+        mimeType: mimeType || derivedMime || 'image/png',
+        data: base64Data,
+      },
+    };
+  }
+  if (imageData.startsWith('http://') || imageData.startsWith('https://') || imageData.startsWith('gs://')) {
+    return {
+      fileData: {
+        fileUri: imageData,
+        mimeType: mimeType || 'image/png',
+      },
+    };
+  }
+  return {
+    inlineData: {
+      mimeType: mimeType || 'image/png',
+      data: imageData,
+    },
+  };
+}
+
+function tryParseJsonLoose(text: string): any {
+  try {
+    const stripped = text
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    const start = stripped.indexOf('{');
+    const end = stripped.lastIndexOf('}');
+    const candidate = start !== -1 && end !== -1 ? stripped.substring(start, end + 1) : stripped;
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      const noTrailingCommas = candidate.replace(/,(\s*[}\]])/g, '$1');
+      return JSON.parse(noTrailingCommas);
+    }
+  } catch {
+    return null;
+  }
+}
+
+type GeminiImageUnderstanding = {
+  description: string;
+  detectedObjects: string[];
+  recognizedText: string[];
+  locations: string[];
+  authenticityScore: number;
+  potentialIssues: string[];
+  recommendedFactChecks: string[];
+};
+
+type ImageDeepAnalysisNarrative = {
+  what: string;
+  how: string;
+  why: string;
+  when: string;
+  educationalInsights: string[];
+};
+
+async function geminiImageUnderstanding(imageData: string, mimeType?: string): Promise<GeminiImageUnderstanding> {
+  const prompt = `Analyze the provided image strictly for misinformation-related context. Return STRICT JSON only with this shape:
+{
+  "description": string,
+  "detectedObjects": string[],
+  "recognizedText": string[],
+  "locations": string[],
+  "authenticityScore": number,
+  "potentialIssues": string[],
+  "recommendedFactChecks": string[]
+}
+
+Guidelines:
+- Mention notable objects and symbols.
+- Include recognized text (short strings) if visible.
+- State location clues if present.
+- authenticityScore: 0-100, higher means more likely authentic.
+- Flag potential manipulation indicators.`;
+
+  try {
+    const filePart = buildImagePart(imageData, mimeType);
+    const result = await generativeVisionModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [{ text: prompt }, filePart as any],
+      }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+    });
+    const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parsed = tryParseJsonLoose(text);
+    if (parsed && typeof parsed === 'object') {
+      return {
+        description: String(parsed.description || ''),
+        detectedObjects: Array.isArray(parsed.detectedObjects) ? parsed.detectedObjects.map((v: any) => String(v)) : [],
+        recognizedText: Array.isArray(parsed.recognizedText) ? parsed.recognizedText.map((v: any) => String(v)) : [],
+        locations: Array.isArray(parsed.locations) ? parsed.locations.map((v: any) => String(v)) : [],
+        authenticityScore: Number.isFinite(parsed.authenticityScore) ? Math.max(0, Math.min(100, Number(parsed.authenticityScore))) : 50,
+        potentialIssues: Array.isArray(parsed.potentialIssues) ? parsed.potentialIssues.map((v: any) => String(v)) : [],
+        recommendedFactChecks: Array.isArray(parsed.recommendedFactChecks) ? parsed.recommendedFactChecks.map((v: any) => String(v)) : [],
+      };
+    }
+  } catch (error) {
+    console.warn('[WARN] Gemini image understanding failed:', error);
+  }
+
+  return {
+    description: 'Image understanding unavailable',
+    detectedObjects: [],
+    recognizedText: [],
+    locations: [],
+    authenticityScore: 50,
+    potentialIssues: [],
+    recommendedFactChecks: [],
+  };
+}
+
+async function buildGeminiGuidedSearchQueries(
+  understanding: GeminiImageUnderstanding,
+  ocrText: string
+): Promise<string[]> {
+  try {
+    const prompt = `You assist with reverse image intelligence. Based on this structured context, propose up to five precise search queries (strict JSON).
+
+Context:
+${JSON.stringify({
+  description: understanding?.description || '',
+  objects: understanding?.detectedObjects || [],
+  recognizedText: understanding?.recognizedText || [],
+  locations: understanding?.locations || [],
+  potentialIssues: understanding?.potentialIssues || [],
+  ocrText,
+})}
+
+Return format:
+{
+  "queries": ["..."],
+  "notes": "short rationale"
+}`;
+
+    const result = await generativeModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+    });
+    const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parsed = tryParseJsonLoose(text);
+    const queriesCandidate = Array.isArray(parsed?.queries) ? parsed.queries : parsed;
+    if (Array.isArray(queriesCandidate)) {
+      return queriesCandidate
+        .map((q) => (typeof q === 'string' ? q.trim() : ''))
+        .filter((q) => q.length > 0)
+        .slice(0, 5);
+    }
+  } catch (error) {
+    console.warn('[WARN] Gemini-guided image search generation failed:', error);
+  }
+  return [];
+}
+
+function buildReverseImageQueries(
+  understanding: GeminiImageUnderstanding,
+  ocrText: string
+): string[] {
+  const queries: string[] = [];
+  const add = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) queries.push(trimmed);
+  };
+
+  understanding.detectedObjects?.slice(0, 4).forEach((obj) => add(`${obj} authenticity check`));
+  understanding.recognizedText?.slice(0, 3).forEach((text) => add(text));
+  understanding.locations?.slice(0, 2).forEach((loc) => add(`${loc} news verification`));
+  understanding.potentialIssues?.slice(0, 2).forEach((issue) => add(`${issue} fact check`));
+
+  if (understanding.description) {
+    add(understanding.description.slice(0, 120));
+  }
+  if (ocrText) {
+    add(ocrText.slice(0, 120));
+  }
+
+  const seen = new Set<string>();
+  return queries.filter((q) => {
+    const key = q.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 6);
+}
+
+async function reverseImageGrounding(
+  queries: string[],
+  searchEngineId?: string
+): Promise<Array<{ title: string; url: string; snippet: string; date: string; relevance: number }>> {
+  const results: Array<{ title: string; url: string; snippet: string; date: string; relevance: number }> = [];
+  for (const q of queries) {
+    try {
+      const r = await performWebAnalysis({ query: q, contentType: 'text', searchEngineId });
+      if (Array.isArray(r?.currentInformation)) {
+        results.push(...r.currentInformation);
+      }
+    } catch (error) {
+      console.warn('[WARN] reverseImageGrounding query failed:', q, error);
+    }
+  }
+
+  const byUrl = new Map<string, { title: string; url: string; snippet: string; date: string; relevance: number }>();
+  for (const item of results) {
+    if (item?.url && !byUrl.has(item.url)) {
+      byUrl.set(item.url, item);
+    }
+  }
+  return Array.from(byUrl.values()).slice(0, 12);
+}
+
+async function generateDeepAnalysisNarrative(params: {
+  understanding: GeminiImageUnderstanding;
+  ocrText: string;
+  analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN';
+  existingEducationalInsight?: string;
+  sources: Array<{ url: string; title: string }>;
+}): Promise<ImageDeepAnalysisNarrative> {
+  try {
+    const prompt = `You extend an image misinformation report with educational framing. Using the structured context below, output STRICT JSON with:
+{
+  "what": "What the image appears to show",
+  "how": "How the image may have been produced or manipulated",
+  "why": "Why the image exists or matters",
+  "when": "Temporal or situational clues",
+  "educationalInsights": ["Actionable media literacy tips"]
+}
+
+Context:
+${JSON.stringify({
+  understanding: params.understanding,
+  ocrText: params.ocrText,
+  analysisLabel: params.analysisLabel,
+  sources: params.sources,
+  existingEducationalInsight: params.existingEducationalInsight,
+})}`;
+
+    const result = await generativeModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+    });
+    const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parsed = tryParseJsonLoose(text);
+    if (parsed && typeof parsed === 'object') {
+      const narrative: ImageDeepAnalysisNarrative = {
+        what: String(parsed.what || '').trim() || 'Detailed description unavailable.',
+        how: String(parsed.how || '').trim() || 'Potential manipulation technique could not be determined.',
+        why: String(parsed.why || '').trim() || 'Motivation or impact remains unclear.',
+        when: String(parsed.when || '').trim() || 'Temporal context could not be inferred.',
+        educationalInsights: Array.isArray(parsed.educationalInsights)
+          ? parsed.educationalInsights.map((v: any) => String(v || '').trim()).filter((v: string) => v.length > 0)
+          : [],
+      };
+
+      if (narrative.educationalInsights.length === 0 && params.existingEducationalInsight) {
+        narrative.educationalInsights = [params.existingEducationalInsight];
+      }
+
+      return narrative;
+    }
+  } catch (error) {
+    console.warn('[WARN] Gemini image deep analysis narrative failed:', error);
+  }
+
+  const fallbackInsight = params.existingEducationalInsight
+    ? [params.existingEducationalInsight]
+    : ['Use reverse image search and look for trustworthy reporting before sharing.'];
+
+  return {
+    what: 'Detailed description unavailable due to limited context.',
+    how: 'Potential manipulation signs could not be identified.',
+    why: 'Motivation or impact of this image remains unclear.',
+    when: 'Temporal information could not be determined.',
+    educationalInsights: fallbackInsight,
+  };
+}
 
 // Helper to extract image metadata using Google Vision API
 async function extractImageMetadata(imageData: string) {
@@ -168,6 +464,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
     // Run metadata, OCR, deepfake detection, and reverse image search concurrently
     const metadataPromise = extractImageMetadata(input.imageData);
     const ocrPromise = performOcr(input.imageData);
+    const understandingPromise = geminiImageUnderstanding(input.imageData, input.mimeType);
     const deepfakePromise = (async () => {
       try {
         const deepfakeResult = await detectDeepfake({ media: input.imageData, contentType: 'image' });
@@ -179,9 +476,10 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       }
     })();
 
-    const [metadata, ocrText, deepfakeInfo] = await Promise.all([
+    const [metadata, ocrText, understanding, deepfakeInfo] = await Promise.all([
       metadataPromise,
       ocrPromise,
+      understandingPromise,
       deepfakePromise,
     ]);
 
@@ -203,6 +501,23 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       } catch (error) {
         console.error('Web analysis failed:', error);
       }
+    }
+
+    try {
+      const guidedQueries = await buildGeminiGuidedSearchQueries(understanding, ocrText);
+      const reverseQueries = buildReverseImageQueries(understanding, ocrText);
+      const combinedQueries = Array.from(new Set([...reverseQueries, ...guidedQueries]));
+      if (combinedQueries.length > 0) {
+        const reverseSources = await reverseImageGrounding(combinedQueries, options?.searchEngineId);
+        if (reverseSources.length > 0) {
+          const byUrl = new Map<string, any>();
+          for (const s of webSources) if (s?.url) byUrl.set(s.url, s);
+          for (const s of reverseSources) if (s?.url && !byUrl.has(s.url)) byUrl.set(s.url, s);
+          webSources = Array.from(byUrl.values());
+        }
+      }
+    } catch (error) {
+      console.warn('[WARN] Guided reverse image search failed:', error);
     }
 
     // Step 6: Determine analysis label
@@ -231,9 +546,21 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
         isManipulated,
         manipulationConfidence,
         ocrText,
-        metadata
+        metadata,
+        geminiUnderstanding: understanding
       },
       candidateSources
+    });
+
+    const deepAnalysis = await generateDeepAnalysisNarrative({
+      understanding,
+      ocrText,
+      analysisLabel,
+      existingEducationalInsight: presentation.educationalInsight,
+      sources: (presentation.sources || []).map((source: any) => ({
+        url: source.url,
+        title: source.title,
+      })),
     });
 
     return {
@@ -249,8 +576,10 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
         location: metadata.location,
         ocrText,
         description: contentAnalysis.description,
-        isManipulated
-      }
+        isManipulated,
+        understandingDescription: understanding.description,
+      },
+      deepAnalysis,
     };
   } catch (error) {
     console.error('Error in image analysis:', error);
@@ -267,7 +596,16 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       sourceIntegrityScore: 0,
       contentAuthenticityScore: 0,
       trustExplainabilityScore: 0,
-      metadata: {}
+      metadata: {},
+      deepAnalysis: {
+        what: 'Image analysis unavailable due to an internal error.',
+        how: 'Processing failed before deep insights could be created.',
+        why: 'The system could not infer motivation or impact.',
+        when: 'Temporal context was not established.',
+        educationalInsights: [
+          'Retry the analysis later and corroborate with manual fact-checking resources.'
+        ],
+      }
     };
   }
 }
