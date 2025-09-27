@@ -25,7 +25,7 @@ export function Message({ children, isUser = false }: { children: ReactNode; isU
           "w-auto max-w-[85%] sm:max-w-[70%] md:max-w-[60%] lg:max-w-lg rounded-lg shadow-sm border transition-all duration-300",
           "bg-primary text-primary-foreground border-primary/20"
         )}>
-          <div className="px-2.5 py-2">
+          <div className="px-0.5 py-0.5">
             {children}
           </div>
         </Card>

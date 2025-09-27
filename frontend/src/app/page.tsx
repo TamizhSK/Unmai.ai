@@ -1,7 +1,8 @@
 'use client';
 
-import { LoginShowcase } from '@/components/auth/login-showcase';
+
+import { LandingPage } from '@/components/landing-page';
 
 export default function Home() {
-  return <LoginShowcase />;
+  return <LandingPage/>;
 }

@@ -410,7 +410,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
 
           {/* 3. Information Summary of the analysis */}
           <div className="space-y-2 border-b border-border pb-3">
-            <h3 className="text-sm font-medium text-foreground">{translate('card.heading.summary')}</h3>
+            <h3 className="text-sm font-medium text-foreground uppercase">{translate('card.heading.summary')}</h3>
             <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap break-words">
               {sanitizeText(data.informationSummary) || translate('card.placeholder.noSummary')}
             </p>
