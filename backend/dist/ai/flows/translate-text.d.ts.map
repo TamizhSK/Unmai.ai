@@ -1,0 +1,1 @@
+{"version":3,"file":"translate-text.d.ts","sourceRoot":"","sources":["../../../src/ai/flows/translate-text.ts"],"names":[],"mappings":"AAyBA,eAAO,MAAM,iBAAiB,GAAU,OAAO;IAAE,IAAI,EAAE,MAAM,CAAC;IAAC,cAAc,EAAE,MAAM,CAAA;CAAE,KAAG,OAAO,CAAC,MAAM,CAgBvG,CAAC;AAEF,eAAO,MAAM,kBAAkB,GAAU,MAAM,MAAM,KAAG,OAAO,CAAC;IAAE,QAAQ,EAAE,MAAM,CAAC;IAAC,UAAU,EAAE,MAAM,CAAA;CAAE,CAsBvG,CAAC"}

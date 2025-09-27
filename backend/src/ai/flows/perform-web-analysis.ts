@@ -152,13 +152,14 @@ async function customSearch(query: string, cx: string): Promise<Array<{ title: s
     }
     const data = await res.json();
     const items = Array.isArray(data.items) ? data.items : [];
-    return items.map((it: any, idx: number) => ({
+    const mapped: Array<{ title: string; url: string; snippet: string; date: string; relevance: number }> = items.map((it: any, idx: number) => ({
       title: String(it.title || ''),
       url: String(it.link || it.formattedUrl || ''),
       snippet: String(it.snippet || it.htmlSnippet || ''),
       date: String(it.pagemap?.metatags?.[0]?.['article:published_time'] || it.pagemap?.metatags?.[0]?.['og:updated_time'] || ''),
       relevance: Math.max(0, 100 - idx * 10)
-    })).filter(r => r.url);
+    }));
+    return mapped.filter((result) => Boolean(result.url));
   } catch (err) {
     console.warn('[WARN] CSE query error:', err);
     return [];
