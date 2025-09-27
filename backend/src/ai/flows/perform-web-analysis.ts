@@ -39,6 +39,64 @@ const PerformWebAnalysisOutputSchema = z.object({
 });
 export type PerformWebAnalysisOutput = z.infer<typeof PerformWebAnalysisOutputSchema>;
 
+function sanitizeCurrentInformation(rawItems: unknown): Array<{
+  title: string;
+  url: string;
+  snippet: string;
+  date: string;
+  relevance: number;
+}> {
+  if (!Array.isArray(rawItems)) {
+    return [];
+  }
+
+  return rawItems
+    .filter((item) => typeof item === 'object' && item !== null)
+    .map((item, index) => {
+      const record = item as Record<string, unknown>;
+
+      const url = typeof record.url === 'string' ? record.url : '';
+      const snippet = typeof record.snippet === 'string' ? record.snippet : '';
+      const date = typeof record.date === 'string' ? record.date : '';
+
+      const fallbackTitleFromUrl = (() => {
+        if (!url) return '';
+        try {
+          const { hostname } = new URL(url);
+          return hostname || '';
+        } catch {
+          return '';
+        }
+      })();
+
+      const title = (() => {
+        if (typeof record.title === 'string' && record.title.trim().length > 0) {
+          return record.title.trim();
+        }
+        if (fallbackTitleFromUrl) {
+          return fallbackTitleFromUrl;
+        }
+        if (snippet.trim().length > 0) {
+          return snippet.trim().slice(0, 80);
+        }
+        return `Untitled source ${index + 1}`;
+      })();
+
+      const relevanceRaw = record.relevance;
+      const relevance = typeof relevanceRaw === 'number' && Number.isFinite(relevanceRaw)
+        ? Math.max(0, Math.min(100, relevanceRaw))
+        : Math.max(0, 100 - index * 10);
+
+      return {
+        title,
+        url,
+        snippet,
+        date,
+        relevance,
+      };
+    });
+}
+
 type ScrapeResult = {
   content: string;
   status?: number;
@@ -290,7 +348,13 @@ export async function performWebAnalysis(
       .trim();                     // Remove any extra whitespace
 
     const parsedJson = JSON.parse(cleanJson);
-    return PerformWebAnalysisOutputSchema.parse(parsedJson);
+    const sanitized = {
+      ...parsedJson,
+      currentInformation: sanitizeCurrentInformation(
+        (parsedJson as Record<string, unknown> | null)?.currentInformation
+      )
+    };
+    return PerformWebAnalysisOutputSchema.parse(sanitized);
   } catch (error) {
     console.error('Error in real-time web analysis:', error);
     
