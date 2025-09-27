@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from '@/components/ui/button';
 import { ShineBorder } from '@/components/ui/shine-border';
 import { Link as LinkIcon, Globe, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield } from "lucide-react";
+import { useLanguage } from '@/context/language-context';
 
 export interface MultiModalTrustScores {
   sourceIntegrityScore: number;      // Source credibility & integrity
@@ -112,7 +113,7 @@ const CircularTrustScore = ({ score, label }: { score: number; label: string }) 
   return (
     <div className="flex flex-col items-center gap-1">
       <div className="relative">
-        <svg className="w-14 h-14 transform -rotate-90" viewBox="0 0 50 50">
+        <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 50 50">
           {/* Background circle */}
           <circle
             cx="25"
@@ -139,7 +140,7 @@ const CircularTrustScore = ({ score, label }: { score: number; label: string }) 
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center">
-            <div className={`text-xs font-bold`} style={{ color }}>{score}</div>
+            <div className={`text-lg font-bold`} style={{ color }}>{score}</div>
           </div>
         </div>
       </div>
@@ -151,6 +152,7 @@ const CircularTrustScore = ({ score, label }: { score: number; label: string }) 
 };
 
 export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
+  const { translate } = useLanguage();
   const getHostname = (url: string) => {
     try {
       return new URL(url).hostname;
@@ -220,7 +222,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
     
     return (
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-foreground">Educational Insights</h3>
+        <h3 className="text-sm font-medium text-foreground">{translate('card.heading.educationalSection')}</h3>
         <div className="grid gap-3">
           {cards.map((card, index) => (
             <div key={index} className={`p-3 rounded-lg border-l-4 ${
@@ -248,36 +250,36 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
       <div className="p-4 border rounded-lg bg-muted/50">
         <h3 className="font-medium mb-3 flex items-center gap-2">
           <Shield className="h-4 w-4" />
-          Source Information
+          {translate('card.heading.sourceInformation')}
         </h3>
         <div className="grid grid-cols-2 gap-3 text-sm">
           {sourceMetadata.domain && (
             <div>
-              <span className="text-muted-foreground">Domain:</span>
+              <span className="text-muted-foreground">{translate('card.label.domain')}</span>
               <p className="font-medium">{sourceMetadata.domain}</p>
             </div>
           )}
           {sourceMetadata.author && (
             <div>
-              <span className="text-muted-foreground">Author:</span>
+              <span className="text-muted-foreground">{translate('card.label.author')}</span>
               <p className="font-medium">{sourceMetadata.author}</p>
             </div>
           )}
           {sourceMetadata.publishDate && (
             <div>
-              <span className="text-muted-foreground">Published:</span>
+              <span className="text-muted-foreground">{translate('card.label.published')}</span>
               <p className="font-medium">{sourceMetadata.publishDate}</p>
             </div>
           )}
           {sourceMetadata.reputation && (
             <div>
-              <span className="text-muted-foreground">Reputation:</span>
+              <span className="text-muted-foreground">{translate('card.label.reputation')}</span>
               <p className="font-medium capitalize">{sourceMetadata.reputation}</p>
             </div>
           )}
           {sourceMetadata.verificationStatus && (
             <div>
-              <span className="text-muted-foreground">Status:</span>
+              <span className="text-muted-foreground">{translate('card.label.status')}</span>
               <span className={`ml-2 text-xs px-2 py-1 rounded-full ${getSourceStatusColor(sourceMetadata.verificationStatus)} inline-flex items-center gap-1`}>
                 {getSourceStatusIcon(sourceMetadata.verificationStatus)}
                 <span className="capitalize">{sourceMetadata.verificationStatus}</span>
@@ -286,8 +288,8 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
           )}
           {typeof sourceMetadata.ssl === 'boolean' && (
             <div>
-              <span className="text-muted-foreground">SSL:</span>
-              <p className="font-medium">{sourceMetadata.ssl ? 'Enabled' : 'Disabled'}</p>
+              <span className="text-muted-foreground">{translate('card.label.ssl')}</span>
+              <p className="font-medium">{sourceMetadata.ssl ? translate('card.text.sslEnabled') : translate('card.text.sslDisabled')}</p>
             </div>
           )}
         </div>
@@ -360,20 +362,19 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
   const data = response as UnifiedResponseData;
 
   return (
-    <div className="relative rounded-xl p-0.5 w-full max-w-3xl md:max-w-4xl mx-auto">
+    <div className="relative rounded-xl p-0.5 w-full max-w-7xl md:max-w-4xl mx-auto">
       <ShineBorder 
         duration={10}
         borderWidth={1.5}
         className="rounded-xl"
       />
       <Card className="relative bg-card text-card-foreground shadow-lg rounded-xl transition-all duration-300 hover:shadow-xl overflow-hidden border-0 z-10">
-        <CardContent className="p-6 space-y-4">
+        <CardContent className="p-4 space-y-4">
           {/* 1. Analysis Label - Shows risk level prominently */}
           <div className="flex items-center gap-3">
             <Badge className={`text-sm px-3 py-1 text-white w-fit ${getLabelVariant(data.verificationLevel)}`}>
               {data.mainLabel}
             </Badge>
-            <span className="text-xs text-muted-foreground">Risk Assessment</span>
           </div>
           {/* Prominent Deepfake Banner (if applicable) */}
           {data.deepfakeDetection && (
@@ -401,17 +402,17 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
           
           {/* 2. One-line description of the input */}
           <div className="space-y-1 border-b border-border pb-3">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</h3>
+            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{translate('card.heading.description')}</h3>
             <p className="text-foreground text-sm leading-relaxed break-words whitespace-pre-wrap">
-              {sanitizeText(data.oneLineDescription) || 'No description available'}
+              {sanitizeText(data.oneLineDescription) || translate('card.placeholder.noDescription')}
             </p>
           </div>
 
           {/* 3. Information Summary of the analysis */}
           <div className="space-y-2 border-b border-border pb-3">
-            <h3 className="text-sm font-medium text-foreground">Information Summary</h3>
+            <h3 className="text-sm font-medium text-foreground">{translate('card.heading.summary')}</h3>
             <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap break-words">
-              {sanitizeText(data.informationSummary) || 'No summary available'}
+              {sanitizeText(data.informationSummary) || translate('card.placeholder.noSummary')}
             </p>
           </div>
 
@@ -422,7 +423,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
               onClick={() => setIsEducationalExpanded(!isEducationalExpanded)}
               className="h-auto p-0 text-sm font-medium text-foreground hover:bg-transparent justify-start flex items-center gap-2"
             >
-              Educational Insight: Manipulation Techniques & Protection Measures
+              {translate('card.heading.educational')}
               {isEducationalExpanded ? (
                 <ChevronUp className="ml-1 h-4 w-4" />
               ) : (
@@ -436,7 +437,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                 {/* Misleading Indicators */}
                 {data.misleadingIndicators && data.misleadingIndicators.length > 0 && (
                   <div className="mt-4 space-y-2">
-                    <h4 className="text-xs font-medium text-foreground">Misleading Indicators:</h4>
+                    <h4 className="text-xs font-medium text-foreground">{translate('card.heading.misleadingIndicators')}</h4>
                     {data.misleadingIndicators.map((indicator, index) => (
                       <div key={index} className="flex items-center justify-between p-2 bg-background rounded border">
                         <span className="text-xs">{indicator.indicator}</span>
@@ -468,14 +469,14 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                 {data.deepfakeDetection && (
                   <div className="mt-4 p-3 bg-background rounded border">
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-xs font-medium text-foreground">Deepfake Detection:</h4>
+                      <h4 className="text-xs font-medium text-foreground">{translate('card.heading.deepfakeDetection')}</h4>
                       <Badge variant={data.deepfakeDetection.isDeepfake ? ("destructive" as const) : ("default" as const)} className="text-xs">
-                        {data.deepfakeDetection.isDeepfake ? "Detected" : "Not Detected"}
+                        {data.deepfakeDetection.isDeepfake ? translate('card.badge.detected') : translate('card.badge.notDetected')}
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mb-2 text-justify">{data.deepfakeDetection.details}</p>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs">Confidence:</span>
+                      <span className="text-xs">{translate('card.text.deepfakeConfidence')}</span>
                       <div className="w-20 bg-muted rounded-full h-1.5">
                         <div 
                           className="h-1.5 bg-blue-500 rounded-full"
@@ -486,7 +487,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                     </div>
                     {data.deepfakeDetection.technicalDetails && (
                       <details className="mt-2">
-                        <summary className="text-xs text-muted-foreground cursor-pointer">Technical details</summary>
+                        <summary className="text-xs text-muted-foreground cursor-pointer">{translate('card.details.technical')}</summary>
                         <pre className="mt-1 text-[10px] leading-snug whitespace-pre-wrap text-muted-foreground bg-muted/50 p-2 rounded">{sanitizeText(data.deepfakeDetection.technicalDetails)}</pre>
                       </details>
                     )}
@@ -498,20 +499,20 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
 
           {/* 5. Sources, Scores, and Overall Verdict */}
           <div className="space-y-3">
-            <h3 className="text-sm font-medium text-foreground">Sources, Trust Scores & Verdict</h3>
+            <h3 className="text-sm font-medium text-foreground">{translate('card.heading.sources')}</h3>
             {/* Trust Scores */}
             <div className="flex flex-wrap items-center gap-6 justify-center">
               <CircularTrustScore 
                 score={data.trustScores?.sourceIntegrityScore || 0} 
-                label="Source Integrity"
+                label={translate('card.trust.sourceIntegrity')}
               />
               <CircularTrustScore 
                 score={data.trustScores?.contentAuthenticityScore || 0} 
-                label="Content Authenticity"
+                label={translate('card.trust.contentAuthenticity')}
               />
               <CircularTrustScore 
                 score={(data.trustScores?.trustExplainabilityScore ?? compositeScore) ?? 0} 
-                label="Trust Explainability"
+                label={translate('card.trust.trustExplainability')}
               />
             </div>
             
@@ -525,13 +526,13 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                     size="sm"
                     className="rounded-full bg-muted hover:bg-muted/80 border-0 text-foreground"
                   >
-                    Sources
+                    {translate('card.heading.sourcesButton')}
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto flex flex-col">
                   <DialogHeader className="flex-shrink-0">
-                    <DialogTitle>Sources & Verification Details</DialogTitle>
-                    <DialogDescription>Source information and verification results</DialogDescription>
+                    <DialogTitle>{translate('card.dialog.title')}</DialogTitle>
+                    <DialogDescription>{translate('card.dialog.description')}</DialogDescription>
                   </DialogHeader>
                   <div className="flex-1 overflow-y-auto space-y-4 pr-2">
                     {/* Source Metadata */}
@@ -541,7 +542,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                     
                     {/* Sources List */}
                     <div className="space-y-2">
-                      <h3 className="font-medium mb-2">Referenced Sources ({data.sources?.length || 0})</h3>
+                      <h3 className="font-medium mb-2">{translate('card.dialog.referenced', { count: data.sources?.length || 0 })}</h3>
                       {data.sources && data.sources.length > 0 ? (
                         data.sources.map((source, index) => {
                           const fav = source.favicon || getFavicon(source.url);
@@ -581,7 +582,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                                     )}
                                     {typeof source.credibility === 'number' && (
                                       <div className="px-2 py-0.5 bg-muted rounded text-xs text-muted-foreground border border-border/10 flex-shrink-0">
-                                        Cred {Math.round(source.credibility * 100)}%
+                                        {translate('card.label.credibility', { value: Math.round(source.credibility * 100) })}
                                       </div>
                                     )}
                                   </div>
@@ -595,7 +596,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
                         })
                       ) : (
                         <div className="text-sm text-muted-foreground p-4 bg-muted/50 rounded-lg text-center">
-                          No sources available for this analysis
+                          {translate('card.dialog.noSources')}
                         </div>
                       )}
                     </div>
@@ -605,7 +606,7 @@ export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
 
               {/* Overall Verdict (right) */}
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-foreground">Overall Verdict:</span>
+                <span className="text-sm font-medium text-foreground">{translate('card.label.overallVerdict')}</span>
                 <Badge className={`${getLabelVariant(data.verificationLevel)} text-white px-4 py-1`}>
                   {data.verdict}
                 </Badge>

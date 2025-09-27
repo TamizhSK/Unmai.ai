@@ -99,18 +99,42 @@ export function useAnalysis() {
         }
       }
 
-      if (originalLanguage !== 'en-US' && result) {
-        const fieldsToTranslate = ['summary', 'explanation', 'claim', 'evidence'];
-        for (const field of fieldsToTranslate) {
-          if (result[field] && typeof result[field] === 'string') {
+      const translateUnifiedFields = async (targetLang: string, payload: any) => {
+        const unifiedKeys = [
+          'oneLineDescription',
+          'summary',
+          'informationSummary',
+          'educationalInsight',
+          'inputDescription',
+          'explanation',
+          'claim',
+          'evidence'
+        ];
+        for (const key of unifiedKeys) {
+          if (payload && typeof payload[key] === 'string' && payload[key].trim()) {
             try {
-              result[field] = await translateText(result[field], originalLanguage);
+              payload[key] = await translateText(payload[key], targetLang);
             } catch (translationError) {
-              console.error(`Translation failed for field ${field}:`, translationError);
-              // Keep original text if translation fails
+              console.error(`Translation failed for key ${key}:`, translationError);
             }
           }
         }
+        if (Array.isArray(payload?.sources)) {
+          payload.sources = await Promise.all(payload.sources.map(async (source: any) => {
+            if (source && typeof source.title === 'string' && source.title.trim()) {
+              try {
+                source.title = await translateText(source.title, targetLang);
+              } catch (translationError) {
+                console.error('Source title translation failed:', translationError);
+              }
+            }
+            return source;
+          }));
+        }
+      };
+
+      if (originalLanguage !== 'en-US' && result) {
+        await translateUnifiedFields(originalLanguage, result);
       }
 
       const aiMessage: AiMessage = { type: 'ai', task, result, sourceResult };

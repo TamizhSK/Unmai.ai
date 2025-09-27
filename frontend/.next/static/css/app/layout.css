@@ -978,6 +978,9 @@ video {
 .max-w-6xl {
   max-width: 72rem;
 }
+.max-w-7xl {
+  max-width: 80rem;
+}
 .max-w-\[7\.5rem\] {
   max-width: 7.5rem;
 }
@@ -1154,6 +1157,9 @@ video {
 }
 .gap-4 {
   gap: 1rem;
+}
+.gap-6 {
+  gap: 1.5rem;
 }
 .space-x-2 > :not([hidden]) ~ :not([hidden]) {
   --tw-space-x-reverse: 0;
@@ -2725,16 +2731,16 @@ video {
 
 @media (min-width: 768px) {
 
+  .md\:max-w-4xl {
+    max-width: 56rem;
+  }
+
   .md\:max-w-\[420px\] {
     max-width: 420px;
   }
 
   .md\:max-w-\[60\%\] {
     max-width: 60%;
-  }
-
-  .md\:justify-end {
-    justify-content: flex-end;
   }
 
   .md\:px-6 {

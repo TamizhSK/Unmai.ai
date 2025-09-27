@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, ChangeEvent, FormEvent, DragEvent, ClipboardEvent, SyntheticEvent } from 'react';
+import { useState, useRef, ChangeEvent, DragEvent, ClipboardEvent, SyntheticEvent, useEffect } from 'react';
 import { Textarea } from './ui/textarea';
 import { Button } from './ui/button';
 import { RainbowButton } from './ui/rainbow-button';
-import { Paperclip, Send, X, Mic, UploadCloud, Languages, ArrowUp, FileVideo, FileAudio } from 'lucide-react';
+import { Paperclip, Send, X, Mic, UploadCloud, ArrowUp, FileVideo, FileAudio } from 'lucide-react';
 import Image from 'next/image';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import {
@@ -13,6 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useLanguage } from '@/context/language-context';
 
 interface InputBarProps {
   addMessage: (message: any) => void;
@@ -28,11 +29,16 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState('en-US');
+  const { language: contextLanguage, setLanguage: setContextLanguage, translate } = useLanguage();
+  const [selectedLanguage, setSelectedLanguage] = useState(contextLanguage);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    setSelectedLanguage(contextLanguage);
+  }, [contextLanguage]);
 
   // Helper function to get language code
   const getLanguageCode = (lang: string) => {
@@ -51,15 +57,15 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
 
   // Dynamic placeholder based on current state
   const getPlaceholder = () => {
-    if (isRecording) return "Recording audio...";
-    if (isRecognizing) return "Listening...";
+    if (isRecording) return translate('input.placeholder.recording');
+    if (isRecognizing) return translate('input.placeholder.listening');
     if (file) {
-      if (file.type.startsWith('image/')) return "Add your question or analysis request";
-      if (file.type.startsWith('video/')) return "Add your question or analysis request";
-      if (file.type.startsWith('audio/')) return "Add your question or analysis request";
+      if (file.type.startsWith('image/')) return translate('input.placeholder.file');
+      if (file.type.startsWith('video/')) return translate('input.placeholder.file');
+      if (file.type.startsWith('audio/')) return translate('input.placeholder.file');
     }
-    if (input.trim()) return "Ready to analyze your content";
-    return "Analyze text, URL, or paste/drop an image, video, or audio file...";
+    if (input.trim()) return translate('input.placeholder.ready');
+    return translate('input.placeholder.default');
   };
 
   const handleFileSelect = (selectedFile: File | null) => {
@@ -269,7 +275,7 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
             aria-describedby="drop-area-description"
           >
             <UploadCloud className="h-12 w-12 text-primary" />
-            <p id="drop-area-description" className="text-primary font-medium">Drop your file here</p>
+            <p id="drop-area-description" className="text-primary font-medium">{translate('input.dropHere')}</p>
           </div>
         )}
         {file && (
@@ -364,7 +370,7 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Attach file</p>
+                  <p>{translate('input.attachFile')}</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -397,14 +403,20 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>
-                    {isRecording ? 'Stop Recording' : 
-                     isRecognizing ? 'Stop Recognition' : 
-                     'Start Voice Input'}
+                    {isRecording ? translate('input.stopRecording') : 
+                     isRecognizing ? translate('input.stopRecognition') : 
+                     translate('input.startVoice')}
                   </p>
                 </TooltipContent>
               </Tooltip>
 
-              <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+              <Select
+                value={selectedLanguage}
+                onValueChange={(value) => {
+                  setSelectedLanguage(value);
+                  setContextLanguage(value);
+                }}
+              >
                 <SelectTrigger className="h-8 w-8 p-0 [&>svg:last-child]:hidden flex items-center justify-center border bg-primary text-primary-foreground hover:bg-primary/90 rounded-full text-xs font-bold" aria-label="Change language">
                   <span>{getLanguageCode(selectedLanguage)}</span>
                 </SelectTrigger>
