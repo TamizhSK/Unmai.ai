@@ -49,6 +49,14 @@ const UrlAnalysisOutputSchema = z.object({
     isSafe: z.boolean().optional(),
     reputationScore: z.number().optional(),
     ageDays: z.number().optional(),
+    status: z.number().optional(),
+    finalUrl: z.string().optional(),
+    usesHttps: z.boolean().optional(),
+    securityHeaders: z.array(z.string()).optional(),
+    missingSecurityHeaders: z.array(z.string()).optional(),
+    detectedFrameworks: z.array(z.string()).optional(),
+    hasLoginForm: z.boolean().optional(),
+    wordCount: z.number().optional(),
   }).optional(),
 });
 export type UrlAnalysisOutput = z.infer<typeof UrlAnalysisOutputSchema>;
@@ -121,7 +129,54 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+// Block private/internal IP ranges
+function isPrivateOrLocalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname;
+    
+    // Check for localhost
+    if (['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(hostname)) {
+      return true;
+    }
+    
+    // Check for private IP ranges (IPv4)
+    const privateRanges = [
+      /^10\./,
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+      /^192\.168\./,
+      /^169\.254\./  // link-local
+    ];
+    
+    if (privateRanges.some(range => range.test(hostname))) {
+      return true;
+    }
+    
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchUrlMetadata(targetUrl: string): Promise<UrlMetadata> {
+  // SSRF protection
+  if (isPrivateOrLocalUrl(targetUrl)) {
+    return {
+      status: 0,
+      finalUrl: targetUrl,
+      usesHttps: targetUrl.startsWith('https://'),
+      securityHeaders: [],
+      missingSecurityHeaders: SECURITY_HEADERS,
+      meta: {},
+      headings: [],
+      trackingScripts: [],
+      hasLoginForm: false,
+      wordCount: 0,
+      detectedFrameworks: [],
+      fetchError: 'Private or internal URL not allowed',
+    };
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {

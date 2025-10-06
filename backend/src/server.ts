@@ -19,13 +19,19 @@ config();
 const requiredEnvVars = ['GCP_PROJECT_ID', 'GEMINI_API_KEY'];
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
-    console.error(`[ERROR] Missing required environment variable: ${envVar}`);
-    console.error('Please check your .env file and ensure all required variables are set.');
+    console.error(`Missing required environment variable: ${envVar}`);
     process.exit(1);
   }
 }
 
-console.log('[INFO] Environment variables loaded successfully');
+// Validate optional Custom Search configuration
+const customSearchKey = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
+const customSearchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
+if (customSearchKey && customSearchEngineId) {
+  console.log('Google Custom Search API configured');
+} else if (customSearchKey || customSearchEngineId) {
+  console.warn('Partial Custom Search configuration - both API key and Search Engine ID are needed');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -46,7 +52,8 @@ app.post('/api/analyze', async (req: Request, res: Response) => {
     const result = await analyzeUnified({ type, payload } as any, { searchEngineId });
     res.json(result);
   } catch (error) {
-    console.error('[ERROR] Unified analyze API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Unified analyze failed: ${errorMessage}`);
     res.status(500).json({ 
       error: 'Unified analysis service unavailable',
       message: 'Unable to analyze content at this time',
@@ -73,7 +80,8 @@ app.post('/api/educational-insights', async (req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('[ERROR] Educational insights API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Educational insights failed: ${errorMessage}`);
     return res.status(500).json({
       error: 'Educational insights service unavailable',
       message: 'Unable to provide insights at this time',
@@ -84,7 +92,46 @@ app.post('/api/educational-insights', async (req: Request, res: Response) => {
 
 // Health check
 app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    customSearch: {
+      configured: !!(customSearchKey && customSearchEngineId),
+      hasApiKey: !!customSearchKey,
+      hasEngineId: !!customSearchEngineId
+    }
+  });
+});
+
+// Custom Search test endpoint
+app.get('/api/test-search', async (req: Request, res: Response) => {
+  try {
+    const query = req.query.q as string || 'test search';
+    const { performWebAnalysis } = await import('./ai/flows/perform-web-analysis.js');
+    
+    const result = await performWebAnalysis({
+      query,
+      contentType: 'text',
+      mediaType: 'text'
+    });
+    
+    res.json({
+      success: true,
+      query,
+      resultsCount: result.currentInformation?.length || 0,
+      results: result.currentInformation?.slice(0, 3) || [],
+      summary: result.analysisSummary
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Custom Search test failed: ${errorMessage}`);
+    res.status(500).json({
+      success: false,
+      error: 'Custom Search test failed',
+      message: errorMessage,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // API Routes
@@ -97,7 +144,8 @@ app.post('/api/fact-check', async (req: Request, res: Response) => {
     const result = await factCheckClaim({ claim });
     res.json(result);
   } catch (error) {
-    console.error('[ERROR] Fact-checking API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Fact-checking failed: ${errorMessage}`);
     res.status(500).json({ 
       error: 'Fact-checking service unavailable',
       message: 'Unable to process fact-check request at this time',
@@ -117,7 +165,8 @@ app.post('/api/credibility-score', async (req: Request, res: Response) => {
     const result = await getCredibilityScore({ content: text, contentType: 'text' });
     res.json(result);
   } catch (error) {
-    console.error('[ERROR] Credibility scoring API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Credibility scoring failed: ${errorMessage}`);
     res.status(500).json({ 
       error: 'Credibility scoring service unavailable',
       message: 'Unable to calculate credibility score at this time',
@@ -138,7 +187,8 @@ app.post('/api/detect-deepfake', async (req: Request, res: Response) => {
     }, sourceCredibility);
     res.json(result);
   } catch (error) {
-    console.error('[ERROR] Deepfake detection API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Deepfake detection failed: ${errorMessage}`);
     res.status(500).json({ 
       error: 'Deepfake detection service unavailable',
       message: 'Unable to analyze media for deepfakes at this time',
@@ -159,7 +209,8 @@ app.post('/api/safety-assessment', async (req: Request, res: Response) => {
     });
     res.json(result);
   } catch (error) {
-    console.error('[ERROR] Safety assessment API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Safety assessment failed: ${errorMessage}`);
     res.status(500).json({ 
       error: 'Safety assessment service unavailable',
       message: 'Unable to assess content safety at this time',
@@ -180,7 +231,8 @@ app.post('/api/verify-source', async (req: Request, res: Response) => {
     });
     res.json(result);
   } catch (error) {
-    console.error('[ERROR] Source verification API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Source verification failed: ${errorMessage}`);
     res.status(500).json({ 
       error: 'Source verification service unavailable',
       message: 'Unable to verify source credibility at this time',
@@ -202,7 +254,8 @@ app.post('/api/web-analysis', async (req: Request, res: Response) => {
     });
     res.json(result);
   } catch (error) {
-    console.error('[ERROR] Web analysis API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Web analysis failed: ${errorMessage}`);
     res.status(500).json({ 
       error: 'Web analysis service unavailable',
       message: 'Unable to analyze web content at this time',
@@ -221,7 +274,8 @@ app.post('/api/safe-search', async (req: Request, res: Response) => {
     const result = await safeSearchUrl({ url });
     res.json(result);
   } catch (error) {
-    console.error('[ERROR] Safe search API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Safe search failed: ${errorMessage}`);
     res.status(500).json({ 
       error: 'Safe search service unavailable',
       message: 'Unable to verify URL safety at this time',
@@ -238,7 +292,8 @@ app.post('/api/translate-text', async (req: Request, res: Response) => {
     const result = await translateTextFlow({ text, targetLanguage });
     res.json(result);
   } catch (error) {
-    console.error('[ERROR] Text translation API failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Translation failed: ${errorMessage}`);
     res.status(500).json({ 
       error: 'Translation service unavailable',
       message: 'Unable to translate text at this time',
@@ -275,7 +330,8 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
       timestamp: new Date().toISOString(),
     });
   }
-  console.error('[ERROR] Unhandled application error:', err);
+  const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+  console.error(`Unhandled error: ${errorMessage}`);
   return res.status(500).json({
     error: 'Internal Server Error',
     message: 'An unexpected error occurred',
@@ -285,49 +341,46 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 
 // Start server with error handling
 const server = app.listen(PORT, () => {
-  console.log(`[INFO] unmai.ai Backend server running on port ${PORT}`);
-  console.log(`[INFO] Health check available at: http://localhost:${PORT}/health`);
-  console.log(`[INFO] CORS enabled for all origins`);
-  console.log(`[INFO] Request size limit: ${REQUEST_SIZE_LIMIT}`);
-  console.log(`[INFO] Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log('[INFO] Server started successfully!\n');
+  console.log(`✅ unmai.ai backend running on port ${PORT}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`   Health: http://localhost:${PORT}/health`);
+    console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+  }
 });
 
 // Handle server startup errors
 server.on('error', (error: any) => {
   if (error.code === 'EADDRINUSE') {
-    console.error(`[ERROR] Port ${PORT} is already in use`);
-    console.error('[TIP] Try using a different port or kill the process using this port:');
-    console.error(`   lsof -ti:${PORT} | xargs kill -9`);
+    console.error(`Port ${PORT} is already in use`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error(`Try: lsof -ti:${PORT} | xargs kill -9`);
+    }
     process.exit(1);
   } else if (error.code === 'EACCES') {
-    console.error(`[ERROR] Permission denied to bind to port ${PORT}`);
-    console.error('[TIP] Try using a port number above 1024 or run with sudo');
+    console.error(`Permission denied for port ${PORT}`);
     process.exit(1);
   } else {
-    console.error('[ERROR] Server startup error:', error);
+    console.error(`Server startup error: ${error.message || error}`);
     process.exit(1);
   }
 });
 
 // Graceful shutdown handling
 const shutdown = (signal: string) => {
-  console.log(`\n[INFO] Received ${signal}. Starting graceful shutdown...`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`\nShutting down (${signal})...`);
+  }
   
   server.close((err?: Error) => {
     if (err) {
-      console.error('[ERROR] Error during server shutdown:', err);
+      console.error(`Shutdown error: ${err.message}`);
       process.exit(1);
     }
-    
-    console.log('[INFO] Server closed successfully');
-    console.log('[INFO] unmai.ai Backend shutdown complete');
     process.exit(0);
   });
   
   // Force shutdown after 10 seconds
   setTimeout(() => {
-    console.log('[WARN] Forcing server shutdown after timeout');
     process.exit(1);
   }, 10000);
 };
@@ -338,11 +391,13 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Handle uncaught exceptions and unhandled rejections
 process.on('uncaughtException', (error: unknown) => {
-  console.error('[ERROR] Uncaught Exception:', error);
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  console.error(`Fatal error: ${errorMessage}`);
   shutdown('UNCAUGHT_EXCEPTION');
 });
 
-process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
-  console.error('[ERROR] Unhandled Rejection at:', promise, 'reason:', reason);
+process.on('unhandledRejection', (reason: unknown) => {
+  const errorMessage = reason instanceof Error ? reason.message : String(reason);
+  console.error(`Unhandled rejection: ${errorMessage}`);
   shutdown('UNHANDLED_REJECTION');
 });

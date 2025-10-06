@@ -330,7 +330,7 @@ async function reverseWebGrounding(
   const results: Array<{ title: string; url: string; snippet: string; date: string; relevance: number }> = [];
   for (const q of queries) {
     try {
-      const r = await performWebAnalysis({ query: q, contentType: 'text', searchEngineId });
+      const r = await performWebAnalysis({ query: q, contentType: 'text', mediaType: 'video', searchEngineId });
       if (Array.isArray(r?.currentInformation)) {
         results.push(...r.currentInformation);
       }
@@ -506,6 +506,7 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
         const webAnalysis = await performWebAnalysis({
           query: intelligenceAnalysis.transcription.substring(0, 500),
           contentType: 'text',
+          mediaType: 'video',
           searchEngineId: options?.searchEngineId
         });
         webSources = webAnalysis.currentInformation || [];

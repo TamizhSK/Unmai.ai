@@ -3,7 +3,7 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
-import { groundedModel } from '../genkit.js';
+import { getPreferredVisionModel, getPreferredTextModel } from '../genkit.js';
 
 const ImageAnalysisInputSchema = z.object({
   imageData: z.string().min(1, 'Image data is required'), // Base64 or URL
@@ -41,30 +41,572 @@ const ImageAnalysisOutputSchema = z.object({
     ocrText: z.string().optional(),
     description: z.string().optional(),
     isManipulated: z.boolean().optional(),
+    safeSearch: z.object({
+      adult: z.string().optional(),
+      spoof: z.string().optional(),
+      medical: z.string().optional(),
+      violence: z.string().optional(),
+      racy: z.string().optional(),
+    }).optional(),
+    watermarkFindings: z.object({
+      hasWatermark: z.boolean(),
+      confidence: z.number().min(0).max(1),
+      indicators: z.array(z.string())
+    }).optional(),
+    suspectedAIGenerated: z.boolean().optional(),
+    aiIndicators: z.array(z.string()).optional(),
+    webMatches: z.array(z.object({
+      url: z.string().url(),
+      title: z.string().optional(),
+      score: z.number().min(0).max(1).optional(),
+    })).optional(),
+    vertexInsights: z.object({
+      hasWatermark: z.boolean(),
+      watermarkConfidence: z.number().min(0).max(1),
+      suspectedAIGenerated: z.boolean(),
+      aiConfidence: z.number().min(0).max(1),
+      watermarkIndicators: z.array(z.string()),
+      aiIndicators: z.array(z.string()),
+      authenticityNotes: z.array(z.string()),
+      forensicFindings: z.array(z.string()),
+      reverseSearchHints: z.array(z.string()),
+    }).optional(),
+    vertexTextInsights: z.object({
+      summary: z.string().optional(),
+      keyTopics: z.array(z.string()).optional(),
+      riskIndicators: z.array(z.string()).optional(),
+      detectedTextSample: z.string().optional(),
+      rawClaims: z.array(z.object({
+        claim: z.string(),
+        verdict: z.enum(['VERIFIED', 'DISPUTED', 'UNVERIFIED']),
+        confidence: z.number().min(0).max(1),
+      })).optional(),
+    }).optional(),
   }).optional(),
 });
 export type ImageAnalysisOutput = z.infer<typeof ImageAnalysisOutputSchema>;
 
+type ReverseImageSource = {
+  url: string;
+  title?: string;
+  score?: number;
+};
+
+type VertexImageInsights = {
+  hasWatermark: boolean;
+  watermarkConfidence: number;
+  watermarkIndicators: string[];
+  suspectedAIGenerated: boolean;
+  aiConfidence: number;
+  aiIndicators: string[];
+  authenticityNotes: string[];
+  forensicFindings: string[];
+  reverseSearchHints: string[];
+};
+
+type SafeSearchLikelihood = {
+  adult: string;
+  spoof: string;
+  medical: string;
+  violence: string;
+  racy: string;
+};
+
+type ExtractedImageSignals = {
+  location: string;
+  safeSearch?: SafeSearchLikelihood;
+  logos: Array<{ description: string; score?: number }>;
+  labels: Array<{ description: string; score?: number }>;
+  webDetection: {
+    bestGuessLabels: string[];
+    webEntities: Array<{ description: string; score?: number }>;
+  };
+  watermarkFindings: {
+    hasWatermark: boolean;
+    confidence: number;
+    indicators: string[];
+  };
+  suspectedAIGenerated: boolean;
+  aiIndicators: string[];
+  possibleSources: ReverseImageSource[];
+};
+
+type VertexTextClaim = {
+  claim: string;
+  verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED';
+  confidence: number;
+};
+
+type VertexTextInsights = {
+  summary?: string;
+  keyTopics?: string[];
+  riskIndicators?: string[];
+  detectedTextSample?: string;
+  rawClaims?: VertexTextClaim[];
+};
+
+const WATERMARK_TERMS = [
+  /watermark/i,
+  /stock\s+(photo|image)/i,
+  /getty/i,
+  /istock/i,
+  /shutterstock/i,
+  /alamy/i,
+  /depositphotos/i,
+  /dreamstime/i,
+  /123rf/i,
+];
+
+const AI_INDICATOR_TERMS = [
+  /ai[-\s]?generated/i,
+  /artificial intelligence/i,
+  /generative/i,
+  /synthetic/i,
+  /digital art/i,
+  /concept art/i,
+  /3d render/i,
+  /cg(i)?/i,
+  /gan/i,
+  /midjourney/i,
+  /stable diffusion/i,
+  /dall[ -]?e/i,
+];
+
+const LIKELIHOOD_MAP = ['UNKNOWN', 'VERY_UNLIKELY', 'UNLIKELY', 'POSSIBLE', 'LIKELY', 'VERY_LIKELY'] as const;
+
+function likelihoodToString(value: unknown): string {
+  if (typeof value === 'string' && value) {
+    return value;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return LIKELIHOOD_MAP[value as number] ?? 'UNKNOWN';
+  }
+  return 'UNKNOWN';
+}
+
+async function analyzeImageTextWithVertex(ocrText: string): Promise<VertexTextInsights | null> {
+  const trimmed = (ocrText || '').replace(/\s+/g, ' ').trim();
+  if (trimmed.length < 20) {
+    return null;
+  }
+
+  try {
+    const model = getPreferredTextModel();
+    const prompt = `You are an investigative analyst specializing in misinformation.
+Analyze the text extracted from an image and respond ONLY with valid JSON matching this schema:
+{
+  "summary": string,              // concise synopsis of the text (≤ 200 chars)
+  "keyTopics": string[],          // major topics or entities referenced
+  "riskIndicators": string[],     // phrases suggesting misinformation, manipulation, or safety concerns
+  "detectedTextSample": string,   // short representative sample (<150 chars)
+  "claims": [
+    {
+      "claim": string,            // factual statement from the text
+      "verdict": "VERIFIED" | "DISPUTED" | "UNVERIFIED",
+      "confidence": number        // 0.0 - 1.0 confidence in the verdict
+    }
+  ]
+}
+Rules:
+- Base conclusions solely on the provided text.
+- If unsure about verification, use "UNVERIFIED".
+- Limit to at most 5 claims.
+- No markdown fences, comments, or trailing text.
+
+Text to analyze (may be truncated): ${JSON.stringify(trimmed.slice(0, 4000))}`;
+
+    const generationResult = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.15, maxOutputTokens: 1200 },
+    });
+
+    const responseText = generationResult.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!responseText.trim()) {
+      return null;
+    }
+
+    const cleanJson = responseText
+      .replace(/^```json\s*/i, '')
+      .replace(/^```/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+
+    const attemptParse = (raw: string): any | null => {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    };
+
+    let parsed = attemptParse(cleanJson);
+    if (!parsed) {
+      parsed = attemptParse(
+        cleanJson
+          .replace(/[\r\n]+/g, ' ')
+          .replace(/,\s*([}\]])/g, '$1')
+      );
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    const parsedRecord = parsed as Record<string, unknown>;
+
+    const normalizeArray = (input: unknown): string[] => {
+      if (Array.isArray(input)) {
+        return input.map((item) => String(item ?? '').trim()).filter(Boolean);
+      }
+      if (typeof input === 'string' && input.trim()) {
+        return [input.trim()];
+      }
+      return [];
+    };
+
+    const normalizeClaims = (input: unknown): VertexTextClaim[] => {
+      if (!Array.isArray(input)) return [];
+      return input
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const record = entry as Record<string, unknown>;
+          const claim = typeof record.claim === 'string' ? record.claim.trim() : '';
+          if (!claim) return null;
+          const verdictRaw = typeof record.verdict === 'string' ? record.verdict.toUpperCase() : 'UNVERIFIED';
+          const verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED' =
+            verdictRaw === 'VERIFIED' || verdictRaw === 'DISPUTED' ? (verdictRaw as any) : 'UNVERIFIED';
+          const confidence = (() => {
+            const value = record.confidence;
+            if (typeof value === 'number' && Number.isFinite(value)) {
+              return Math.max(0, Math.min(1, value));
+            }
+            return verdict === 'UNVERIFIED' ? 0.4 : 0.65;
+          })();
+          return { claim, verdict, confidence };
+        })
+        .filter(Boolean) as VertexTextClaim[];
+    };
+
+    const summaryRaw = parsedRecord.summary;
+    let summary: string | undefined;
+    if (typeof summaryRaw === 'string') {
+      summary = summaryRaw.trim();
+    }
+
+    const detectedSampleRaw = parsedRecord.detectedTextSample;
+    let detectedTextSample: string | undefined;
+    if (typeof detectedSampleRaw === 'string') {
+      detectedTextSample = detectedSampleRaw.trim().slice(0, 180);
+    }
+
+    const keyTopicsRaw = parsedRecord.keyTopics;
+    const riskIndicatorsRaw = parsedRecord.riskIndicators;
+    const claimsRaw = parsedRecord.claims;
+
+    const normalizedClaims = normalizeClaims(claimsRaw ?? []);
+
+    const vertexTextResult: VertexTextInsights = {
+      summary,
+      keyTopics: normalizeArray(keyTopicsRaw).slice(0, 8),
+      riskIndicators: normalizeArray(riskIndicatorsRaw).slice(0, 8),
+      detectedTextSample,
+      rawClaims: normalizedClaims.slice(0, 5),
+    };
+
+    return vertexTextResult;
+  } catch (error) {
+    console.error('Vertex text analysis failed:', error);
+    return null;
+  }
+}
+
+function toVisionImagePayload(imageData: string) {
+  if (!imageData) {
+    throw new Error('Image data is required');
+  }
+
+  if (imageData.startsWith('data:image/')) {
+    const [, base64Part = ''] = imageData.split(',');
+    return { content: Buffer.from(base64Part, 'base64') };
+  }
+
+  if (/^https?:\/\//i.test(imageData)) {
+    return { source: { imageUri: imageData } };
+  }
+
+  try {
+    return { content: Buffer.from(imageData, 'base64') };
+  } catch (error) {
+    console.warn('Unable to decode image data as base64, passing raw content to Vision API');
+    return { content: imageData };
+  }
+}
+
+async function toInlineVisionInput(imageData: string, mimeTypeHint?: string): Promise<{ mimeType: string; data: string } | null> {
+  if (!imageData) {
+    return null;
+  }
+
+  if (imageData.startsWith('data:image/')) {
+    const [header, base64Part] = imageData.split(',', 2);
+    if (!base64Part) return null;
+    const mimeType = header.replace('data:', '').replace(';base64', '') || mimeTypeHint || 'image/png';
+    return { mimeType, data: base64Part };
+  }
+
+  if (/^https?:\/\//i.test(imageData)) {
+    try {
+      const response = await fetch(imageData, { redirect: 'follow' });
+      if (!response.ok) {
+        console.warn('Failed to fetch image URL for Vertex analysis:', response.status, response.statusText);
+        return null;
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      const base64Data = Buffer.from(arrayBuffer).toString('base64');
+      const contentType = response.headers.get('content-type')?.split(';')[0] || mimeTypeHint || 'image/jpeg';
+      return { mimeType: contentType, data: base64Data };
+    } catch (error) {
+      console.error('Error fetching image for Vertex analysis:', error);
+      return null;
+    }
+  }
+
+  try {
+    Buffer.from(imageData, 'base64');
+    return { mimeType: mimeTypeHint || 'image/png', data: imageData };
+  } catch {
+    return null;
+  }
+}
+
+async function analyzeWithVertexVision(imageData: string, mimeTypeHint?: string): Promise<VertexImageInsights | null> {
+  try {
+    const inlineData = await toInlineVisionInput(imageData, mimeTypeHint);
+    if (!inlineData) {
+      return null;
+    }
+
+    const model = getPreferredVisionModel();
+    const structuredPrompt = `You are a forensic imaging specialist. Inspect the provided image and respond with STRICT JSON using this schema:
+{
+  "hasWatermark": boolean,
+  "watermarkConfidence": number,  // 0.0 to 1.0
+  "watermarkIndicators": string[], // precise phrases, logos, or regions suggesting watermarks
+  "suspectedAIGenerated": boolean,
+  "aiConfidence": number, // 0.0 to 1.0 confidence the image is AI-generated or manipulated
+  "aiIndicators": string[], // concrete cues indicating synthetic or manipulated content
+  "authenticityNotes": string[], // short bullet-style notes about authenticity signals
+  "forensicFindings": string[], // notable forensic observations (lighting, anatomy, compression, etc.)
+  "reverseSearchHints": string[] // concise phrases to use for reverse image search
+}
+
+Rules:
+- Output ONLY the JSON object.
+- Use double quotes for all strings.
+- Avoid markdown fences or commentary.
+- Base findings strictly on visible evidence.
+`;
+
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData },
+            { text: structuredPrompt },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+    });
+
+    const responseText = result.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!responseText.trim()) {
+      return null;
+    }
+
+    const cleanJson = responseText
+      .replace(/^```json\s*/i, '')
+      .replace(/^```/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+
+    const tryParse = (raw: string): any | null => {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    };
+
+    let parsed = tryParse(cleanJson);
+    if (!parsed) {
+      const relaxed = cleanJson
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/,\s*([}\]])/g, '$1');
+      parsed = tryParse(relaxed);
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    const normalizeArray = (value: unknown): string[] => {
+      if (Array.isArray(value)) {
+        return value.map((item) => String(item ?? '').trim()).filter(Boolean);
+      }
+      if (typeof value === 'string' && value.trim()) {
+        return [value.trim()];
+      }
+      return [];
+    };
+
+    const clamp01 = (value: unknown, fallback = 0): number => {
+      const num = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+      return Math.max(0, Math.min(1, num));
+    };
+
+    const hasWatermark = Boolean(parsed.hasWatermark);
+    const watermarkConfidence = clamp01(parsed.watermarkConfidence, hasWatermark ? 0.6 : 0);
+    const suspectedAIGenerated = Boolean(parsed.suspectedAIGenerated);
+    const aiConfidence = clamp01(parsed.aiConfidence, suspectedAIGenerated ? 0.6 : 0);
+
+    return {
+      hasWatermark,
+      watermarkConfidence,
+      watermarkIndicators: normalizeArray(parsed.watermarkIndicators),
+      suspectedAIGenerated,
+      aiConfidence,
+      aiIndicators: normalizeArray(parsed.aiIndicators),
+      authenticityNotes: normalizeArray(parsed.authenticityNotes),
+      forensicFindings: normalizeArray(parsed.forensicFindings),
+      reverseSearchHints: normalizeArray(parsed.reverseSearchHints),
+    };
+  } catch (error) {
+    console.error('Vertex vision analysis failed:', error);
+    return null;
+  }
+}
+
 // Helper to extract image metadata using Google Vision API
-async function extractImageMetadata(imageData: string) {
+async function extractImageMetadata(imageData: string): Promise<ExtractedImageSignals> {
   const client = new ImageAnnotatorClient();
   const request = {
-    image: { content: imageData.includes('base64') ? Buffer.from(imageData.split(',')[1], 'base64') : imageData },
-    features: [{ type: 'IMAGE_PROPERTIES' }],
+    image: toVisionImagePayload(imageData),
+    features: [
+      { type: 'SAFE_SEARCH_DETECTION' },
+      { type: 'WEB_DETECTION' },
+      { type: 'LOGO_DETECTION', maxResults: 10 },
+      { type: 'LABEL_DETECTION', maxResults: 50 },
+      { type: 'IMAGE_PROPERTIES' },
+      { type: 'LANDMARK_DETECTION', maxResults: 5 },
+    ],
   };
 
   try {
     const [result] = await client.annotateImage(request);
-    return {
-      location: result.landmarkAnnotations?.[0]?.description || 'Unknown',
-      other: result.imagePropertiesAnnotation || {},
+    const safeSearch = result.safeSearchAnnotation
+      ? {
+          adult: likelihoodToString(result.safeSearchAnnotation.adult),
+          spoof: likelihoodToString(result.safeSearchAnnotation.spoof),
+          medical: likelihoodToString(result.safeSearchAnnotation.medical),
+          violence: likelihoodToString(result.safeSearchAnnotation.violence),
+          racy: likelihoodToString(result.safeSearchAnnotation.racy),
+        }
+      : undefined;
+
+    const logos = (result.logoAnnotations || []).map((logo) => ({
+      description: logo.description ?? 'Unknown logo',
+      score: logo.score ?? undefined,
+    }));
+
+    const labels = (result.labelAnnotations || []).map((label) => ({
+      description: label.description ?? 'Unknown label',
+      score: label.score ?? undefined,
+    }));
+
+    const webDetection = {
+      bestGuessLabels: (result.webDetection?.bestGuessLabels || [])
+        .map((guess) => guess.label)
+        .filter(Boolean) as string[],
+      webEntities: (result.webDetection?.webEntities || [])
+        .filter((entity) => entity.description)
+        .map((entity) => ({
+          description: entity.description as string,
+          score: entity.score ?? undefined,
+        })),
     };
+
+    const possibleSources: ReverseImageSource[] = (result.webDetection?.pagesWithMatchingImages || [])
+      .filter((page) => typeof page.url === 'string' && page.url.startsWith('http'))
+      .map((page) => ({
+        url: page.url as string,
+        title: page.pageTitle ?? undefined,
+        score: typeof page.score === 'number' ? Math.min(1, Math.max(0, page.score)) : undefined,
+      }));
+
+    const watermarkIndicators: string[] = [];
+    const allDescriptors = [
+      ...logos.map((item) => item.description),
+      ...labels.map((item) => item.description),
+      ...webDetection.webEntities.map((item) => item.description),
+    ];
+
+    for (const descriptor of allDescriptors) {
+      if (!descriptor) continue;
+      if (WATERMARK_TERMS.some((term) => term.test(descriptor))) {
+        watermarkIndicators.push(descriptor);
+      }
+    }
+
+    const aiIndicators: string[] = [];
+    for (const descriptor of [...allDescriptors, ...webDetection.bestGuessLabels]) {
+      if (!descriptor) continue;
+      if (AI_INDICATOR_TERMS.some((term) => term.test(descriptor))) {
+        aiIndicators.push(descriptor);
+      }
+    }
+
+    const hasWatermark = watermarkIndicators.length > 0;
+    const watermarkConfidence = hasWatermark
+      ? Math.min(1, 0.35 + watermarkIndicators.length * 0.15)
+      : 0;
+
+    const suspectedAIGenerated = aiIndicators.length > 0;
+
+    const location = result.landmarkAnnotations?.[0]?.description || 'Unknown';
+
+    const signals: ExtractedImageSignals = {
+      location,
+      safeSearch,
+      logos,
+      labels,
+      webDetection,
+      watermarkFindings: {
+        hasWatermark,
+        confidence: watermarkConfidence,
+        indicators: watermarkIndicators,
+      },
+      suspectedAIGenerated,
+      aiIndicators,
+      possibleSources,
+    };
+
+    return signals;
   } catch (error) {
     console.error('Vision API error:', error);
     return {
       location: 'Unknown',
-      other: { error: 'Metadata extraction failed' },
-    };
+      safeSearch: undefined,
+      logos: [],
+      labels: [],
+      webDetection: { bestGuessLabels: [], webEntities: [] },
+      watermarkFindings: { hasWatermark: false, confidence: 0, indicators: [] },
+      suspectedAIGenerated: false,
+      aiIndicators: [],
+      possibleSources: [],
+    } as ExtractedImageSignals;
   }
 }
 
@@ -72,7 +614,7 @@ async function extractImageMetadata(imageData: string) {
 async function performOcr(imageData: string) {
   const client = new ImageAnnotatorClient();
   const request = {
-    image: { content: imageData.includes('base64') ? Buffer.from(imageData.split(',')[1], 'base64') : imageData },
+    image: toVisionImagePayload(imageData),
     features: [{ type: 'TEXT_DETECTION' }],
   };
 
@@ -85,52 +627,280 @@ async function performOcr(imageData: string) {
   }
 }
 
+function deriveReverseImageQueries({
+  metadata,
+  ocrText,
+  vertexInsights,
+}: {
+  metadata: ExtractedImageSignals;
+  ocrText: string;
+  vertexInsights?: VertexImageInsights | null;
+}): string[] {
+  const queries = new Set<string>();
+
+  const addQuery = (raw: string | undefined) => {
+    if (!raw) return;
+    const cleaned = raw.replace(/\s+/g, ' ').trim();
+    if (cleaned.length < 4) return;
+    queries.add(cleaned.slice(0, 200));
+  };
+
+  if (ocrText) {
+    const lines = ocrText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    addQuery(lines.slice(0, 2).join(' '));
+    if (lines.length > 2) {
+      addQuery(lines.slice(0, 3).join(' '));
+    }
+    addQuery(ocrText.slice(0, 180));
+  }
+
+  metadata.webDetection.bestGuessLabels.forEach((label) => addQuery(label));
+  metadata.aiIndicators.forEach((indicator) => addQuery(indicator));
+  metadata.watermarkFindings.indicators.forEach((indicator) => addQuery(indicator));
+  metadata.logos.slice(0, 3).forEach((logo) => addQuery(logo.description));
+  metadata.labels.slice(0, 3).forEach((label) => addQuery(label.description));
+  if (metadata.location && metadata.location !== 'Unknown') {
+    addQuery(`${metadata.location} image`);
+  }
+
+  if (vertexInsights) {
+    vertexInsights.reverseSearchHints.forEach((hint) => addQuery(hint));
+    vertexInsights.watermarkIndicators.forEach((indicator) => addQuery(indicator));
+    vertexInsights.aiIndicators.forEach((indicator) => addQuery(indicator));
+    if (vertexInsights.suspectedAIGenerated && vertexInsights.aiConfidence >= 0.6) {
+      addQuery('AI generated image verification');
+    }
+  }
+
+  const queriesArray = Array.from(queries).filter((query) => query.length >= 4);
+  if (queriesArray.length === 0) {
+    queriesArray.push('reverse image search authenticity verification');
+  }
+  return queriesArray;
+}
+
 // Helper to analyze image content and extract claims from OCR (heuristic; no LLM)
 async function analyzeImageContentAndFactCheck(
   imageData: string,
   ocrText: string
-): Promise<{ description: string; factualClaims: Array<{ claim: string; verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED'; confidence: number; }> }> {
-  const description = ocrText ? `Image with readable text (~${Math.min(ocrText.length, 500)} chars).` : 'Image content analyzed (no readable text detected).';
-  const sentences = (ocrText || '')
-    .replace(/\s+/g, ' ')
-    .split(/(?<=[\.!\?])\s+/)
-    .map(s => s.trim())
-    .filter(Boolean);
-  const factualRegex = /(\bis\b|\bare\b|\bwas\b|\bwere\b|\bhas\b|\bhave\b|\bclaims?\b|\breports?\b|\baccording to\b|\bpercent|\b\d{4}\b)/i;
-  const candidateClaims = Array.from(new Set(sentences.filter(s => s.length > 20 && factualRegex.test(s)))).slice(0, 5);
-  const factualClaims: Array<{ claim: string; verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED'; confidence: number; }> = [];
-  // We defer fact-checking to text/video/audio analyzers; image analyzer will present claims context via presentation
-  // to avoid over-calling fact-check API on noisy OCR. Keep empty or minimal claims.
-  for (const c of candidateClaims) {
-    factualClaims.push({ claim: c, verdict: 'UNVERIFIED', confidence: 0.4 });
-  }
-  return { description, factualClaims };
+): Promise<{ description: string; factualClaims: Array<{ claim: string; verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED'; confidence: number; }>; vertexTextInsights?: VertexTextInsights | null; }> {
+  const vertexTextInsights = await analyzeImageTextWithVertex(ocrText);
+
+  const baseDescription = ocrText
+    ? `Image with readable text (~${Math.min(ocrText.length, 500)} chars).`
+    : 'Image content analyzed (no readable text detected).';
+
+  const description = vertexTextInsights?.summary
+    ? `Image text summary: ${vertexTextInsights.summary}`
+    : baseDescription;
+
+  const heuristicExtractClaims = (): Array<{ claim: string; verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED'; confidence: number; }> => {
+    const sentences = (ocrText || '')
+      .replace(/\s+/g, ' ')
+      .split(/(?<=[\.\!\?])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const factualRegex = /(\bis\b|\bare\b|\bwas\b|\bwere\b|\bhas\b|\bhave\b|\bclaims?\b|\breports?\b|\baccording to\b|\bpercent|\b\d{4}\b)/i;
+    const candidateClaims = Array.from(new Set(sentences.filter((s) => s.length > 20 && factualRegex.test(s)))).slice(0, 5);
+    return candidateClaims.map((claim) => ({ claim, verdict: 'UNVERIFIED', confidence: 0.4 }));
+  };
+
+  const factualClaims = vertexTextInsights?.rawClaims?.length
+    ? vertexTextInsights.rawClaims
+    : heuristicExtractClaims();
+
+  return { description, factualClaims, vertexTextInsights };
 }
 
 // Basic placeholder when dedicated deepfake API is unavailable (no LLM)
 async function detectImageDeepfake(imageData: string) {
-    const prompt = `Analyze this image for signs of deepfake or manipulation. Provide a boolean (true/false) if manipulated, a confidence score (0-1), and a detailed explanation.`;
-  
-    const result = await groundedModel.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1 },
-    });
-    
-    const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  
-    const confidenceRegex = /Confidence: (\d\.\d+)/;
-    const confidenceMatch = responseText.match(confidenceRegex);
-    const confidence = confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5;
-  
-    return {
-      isManipulated: responseText.includes('Manipulated: true'),
-      confidence: confidence,
-      explanation: responseText.split('Explanation:')[1] || 'Analysis not conclusive.',
+    // Validate image data first
+    if (!imageData || !imageData.startsWith('data:image/')) {
+        console.warn('Invalid image data for deepfake analysis');
+        return {
+            isManipulated: false,
+            confidence: 0.0,
+            explanation: 'Image data is invalid or not provided. Common manipulation techniques include: 1) Photoshop editing for altering content, 2) AI-generated images that look realistic but lack natural details, 3) Deepfakes using facial swapping technology. To protect yourself: verify sources, check metadata, use reverse image search, and consult multiple reliable sources.',
+        };
+    }
+
+    const parts = imageData.split(';base64,');
+    if (parts.length !== 2) {
+        console.warn('Invalid image data encoding for deepfake analysis');
+        return {
+            isManipulated: false,
+            confidence: 0.0,
+            explanation: 'Image encoding appears malformed. Ensure the image is a valid Base64 data URL before analysis.',
+        };
+    }
+
+    const header = parts[0];
+    const base64Data = parts[1];
+    const mimeType = header.replace('data:', '') || 'image/png';
+
+    const structuredPrompt = `You are a senior digital forensics analyst. Inspect the provided image and produce a strict JSON object with this schema:
+{
+  "isManipulated": boolean,           // true if digitally altered or AI-generated
+  "confidence": number,               // confidence 0.0-1.0
+  "authenticitySummary": string,      // concise summary of authenticity findings referencing visible cues
+  "suspectedTechniques": string[],    // manipulation or generation techniques observed (deepfake, GAN, photoshop, splicing, color grading, compression tampering, etc.)
+  "visualIndicators": string[],       // concrete visual clues seen in the image (lighting mismatch, edge halos, warped anatomy, compression noise patterns, etc.)
+  "protectionAdvice": string[],       // actionable steps for users to verify or defend against this manipulation
+  "metadataNotes": string             // mention metadata limitations if applicable
+}
+
+Base your assessment only on the provided pixels. Mention if OCR or metadata was unavailable.`;
+
+    const { geminiVisionModel, geminiTextModel } = await import('../genkit.js');
+
+    const attemptVisionAnalysis = async () => {
+        try {
+            const result = await geminiVisionModel.generateContent({
+                contents: [
+                    {
+                        role: 'user',
+                        parts: [
+                            {
+                                inlineData: {
+                                    mimeType,
+                                    data: base64Data,
+                                },
+                            },
+                            { text: structuredPrompt },
+                        ],
+                    },
+                ],
+            });
+
+            const responseText = result.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (!responseText.trim()) {
+                throw new Error('Empty response from Gemini vision model');
+            }
+
+            const cleanJson = responseText
+                .replace(/^```json\s*/i, '')
+                .replace(/^```/i, '')
+                .replace(/```\s*$/i, '')
+                .trim();
+
+            let parsed: any;
+            try {
+                parsed = JSON.parse(cleanJson);
+            } catch (parseErr) {
+                console.warn('Failed to parse Gemini vision JSON, attempting relaxed parse:', parseErr);
+                const relaxed = cleanJson
+                    .replace(/[\r\n]+/g, '\n')
+                    .replace(/,\s*([}\]])/g, (match, p1) => {
+                        if (p1 === '{' || p1 === '[') {
+                            return match.replace(',', '');
+                        }
+                        return match;
+                    });
+                parsed = JSON.parse(relaxed);
+            }
+
+            if (!parsed || typeof parsed !== 'object') {
+                throw new Error('Invalid response structure from Gemini vision model');
+            }
+
+            const {
+                isManipulated = false,
+                confidence: rawConfidence = 0.5,
+                authenticitySummary = '',
+                suspectedTechniques,
+                visualIndicators,
+                protectionAdvice,
+                metadataNotes = '',
+            } = parsed as {
+                isManipulated?: boolean;
+                confidence?: number;
+                authenticitySummary?: string;
+                suspectedTechniques?: unknown;
+                visualIndicators?: unknown;
+                protectionAdvice?: unknown;
+                metadataNotes?: string;
+            };
+
+            const normalizeArray = (value: unknown): string[] => {
+                if (Array.isArray(value)) {
+                    return value.map(item => String(item).trim()).filter(Boolean);
+                }
+                if (typeof value === 'string' && value.trim()) {
+                    return [value.trim()];
+                }
+                return [];
+            };
+
+            const suspectedList = normalizeArray(suspectedTechniques);
+            const indicatorList = normalizeArray(visualIndicators);
+            const adviceList = normalizeArray(protectionAdvice);
+            const summaryText = typeof authenticitySummary === 'string' ? authenticitySummary.trim() : '';
+            const metadataNotesText = typeof metadataNotes === 'string' ? metadataNotes.trim() : '';
+            const confidence = typeof rawConfidence === 'number' ? rawConfidence : 0.5;
+
+            const explanationSections = [
+                summaryText,
+                suspectedList.length ? `Suspected manipulation techniques: ${suspectedList.join(', ')}.` : null,
+                indicatorList.length ? `Key visual indicators: ${indicatorList.join('; ')}.` : null,
+                adviceList.length ? `Protection advice: ${adviceList.join('; ')}.` : null,
+                metadataNotesText ? `Metadata notes: ${metadataNotesText}` : null,
+            ].filter(Boolean);
+
+            return {
+                isManipulated: Boolean(isManipulated),
+                confidence: Math.max(0, Math.min(1, confidence)),
+                explanation: explanationSections.join('\n\n') || 'Analysis completed, no specific indicators provided.',
+            };
+        } catch (visionError) {
+            console.error('Gemini vision deepfake analysis failed:', visionError);
+            return null;
+        }
     };
+
+    const visionResult = await attemptVisionAnalysis();
+    if (visionResult) {
+        return visionResult;
+    }
+
+    // Fallback: text-only guidance (no image inference)
+    const fallbackPrompt = `Analyze potential manipulation in an image where automated vision inspection failed. Provide a concise paragraph covering:
+- Whether manipulation is suspected based on context (default to uncertain)
+- Typical manipulation techniques to watch for
+- Advice for verifying authenticity
+Return prose only.`;
+
+    try {
+        const fallbackResult = await geminiTextModel.generateContent({
+            contents: [{ role: 'user', parts: [{ text: fallbackPrompt }] }],
+            generationConfig: { temperature: 0.2 },
+        });
+
+        const responseText = fallbackResult.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        return {
+            isManipulated: false,
+            confidence: 0.0,
+            explanation: `${responseText.trim() || 'Manual review recommended.'}\n\nProtection advice: Verify the image with reverse search tools, cross-check reputable news outlets, and inspect EXIF metadata when available.`,
+        };
+    } catch (error) {
+        console.error('Gemini text fallback failed for deepfake:', error);
+        return {
+            isManipulated: false,
+            confidence: 0.0,
+            explanation: 'Deepfake analysis failed due to API error. Verify the image manually by checking trusted sources, using reverse image search, and inspecting metadata when possible.',
+        };
+    }
 }
 
 // Helper to calculate scores
-function calculateScores(contentAnalysis: any, manipulationAnalysis: { isManipulated: boolean; confidence: number }): {
+type ManipulationSignals = {
+  isManipulated: boolean;
+  confidence: number;
+  watermarkConfidence?: number;
+  suspectedAIGenerated?: boolean;
+  aiConfidence?: number;
+};
+
+function calculateScores(contentAnalysis: any, manipulationAnalysis: ManipulationSignals): {
   sourceIntegrityScore: number;
   contentAuthenticityScore: number;
   trustExplainabilityScore: number;
@@ -144,10 +914,16 @@ function calculateScores(contentAnalysis: any, manipulationAnalysis: { isManipul
   const sourceIntegrityScore = Math.round(verificationRate * 100);
   
   // Content Authenticity Score
-  const baseAuthenticity = manipulationAnalysis.isManipulated ? 20 : 80;
+  const baseAuthenticity = manipulationAnalysis.isManipulated ? 30 : 85;
   const confidenceBoost = manipulationAnalysis.confidence * 20;
+  const watermarkPenalty = (manipulationAnalysis.watermarkConfidence ?? 0) * 25;
+  const aiPenalty = manipulationAnalysis.suspectedAIGenerated
+    ? 15 + (manipulationAnalysis.aiConfidence ?? manipulationAnalysis.confidence) * 20
+    : 0;
   const disputePenalty = (disputedClaims / totalClaims) * 30;
-  const contentAuthenticityScore = Math.round(Math.max(0, baseAuthenticity + confidenceBoost - disputePenalty));
+  const contentAuthenticityScore = Math.round(
+    Math.max(0, baseAuthenticity + confidenceBoost - disputePenalty - watermarkPenalty - aiPenalty)
+  );
   
   // Trust Explainability Score
   const avgConfidence = contentAnalysis.factualClaims.reduce((sum: number, c: any) => sum + c.confidence, 0) / totalClaims;
@@ -168,6 +944,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
     // Run metadata, OCR, deepfake detection, and reverse image search concurrently
     const metadataPromise = extractImageMetadata(input.imageData);
     const ocrPromise = performOcr(input.imageData);
+    const vertexInsightPromise = analyzeWithVertexVision(input.imageData, input.mimeType);
     const deepfakePromise = (async () => {
       try {
         const deepfakeResult = await detectDeepfake({ media: input.imageData, contentType: 'image' });
@@ -179,48 +956,143 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       }
     })();
 
-    const [metadata, ocrText, deepfakeInfo] = await Promise.all([
+    const [visionMetadata, ocrText, deepfakeInfo, vertexInsights] = await Promise.all([
       metadataPromise,
       ocrPromise,
       deepfakePromise,
+      vertexInsightPromise,
     ]);
 
     // Analyze content and fact-check (requires OCR text if any)
     const contentAnalysis = await analyzeImageContentAndFactCheck(input.imageData, ocrText);
-    const isManipulated = deepfakeInfo.isManipulated;
-    const manipulationConfidence = deepfakeInfo.manipulationConfidence;
+    const vertexTextInsights = contentAnalysis.vertexTextInsights;
+    const vertexSuggestsManipulation = Boolean(vertexInsights?.suspectedAIGenerated && (vertexInsights.aiConfidence ?? 0) >= 0.6);
+    const combinedIsManipulated = deepfakeInfo.isManipulated || vertexSuggestsManipulation;
+    const combinedManipulationConfidence = Math.max(
+      deepfakeInfo.manipulationConfidence,
+      vertexInsights?.aiConfidence ?? 0
+    );
 
     // Step 5: Web analysis for context
-    let webSources: any[] = [];
-    if (ocrText) {
-      try {
-        const webAnalysis = await performWebAnalysis({
-          query: ocrText.substring(0, 500),
+    const enrichedWatermarkIndicators = Array.from(new Set([
+      ...(visionMetadata.watermarkFindings?.indicators ?? []),
+      ...(vertexInsights?.watermarkIndicators ?? []),
+    ]));
+
+    const combinedWatermarkConfidence = Math.max(
+      visionMetadata.watermarkFindings?.confidence ?? 0,
+      vertexInsights?.watermarkConfidence ?? 0
+    );
+
+    const combinedHasWatermark = (visionMetadata.watermarkFindings?.hasWatermark ?? false)
+      || Boolean(vertexInsights?.hasWatermark && combinedWatermarkConfidence >= 0.5);
+
+    const combinedAiIndicators = Array.from(new Set([
+      ...visionMetadata.aiIndicators,
+      ...(vertexInsights?.aiIndicators ?? []),
+    ]));
+
+    const combinedSuspectedAIGenerated = Boolean(
+      vertexInsights?.suspectedAIGenerated || visionMetadata.suspectedAIGenerated
+    );
+
+    const enrichedMetadata: ExtractedImageSignals & {
+      vertexInsights?: VertexImageInsights;
+    } = {
+      ...visionMetadata,
+      watermarkFindings: {
+        hasWatermark: combinedHasWatermark,
+        confidence: combinedWatermarkConfidence,
+        indicators: enrichedWatermarkIndicators,
+      },
+      suspectedAIGenerated: combinedSuspectedAIGenerated,
+      aiIndicators: combinedAiIndicators,
+      ...(vertexInsights
+        ? { vertexInsights: vertexInsights }
+        : {}),
+    };
+
+    const reverseSearchQueries = deriveReverseImageQueries({ metadata: enrichedMetadata, ocrText, vertexInsights });
+    const webSourcesMap = new Map<string, any>();
+
+    const searchResults = await Promise.allSettled(
+      reverseSearchQueries.slice(0, 3).map((query: string) =>
+        performWebAnalysis({
+          query,
           contentType: 'text',
-          searchEngineId: options?.searchEngineId
-        });
-        webSources = webAnalysis.currentInformation || [];
-      } catch (error) {
-        console.error('Web analysis failed:', error);
+          mediaType: 'image',
+          searchEngineId: options?.searchEngineId,
+        })
+      )
+    );
+
+    for (const result of searchResults) {
+      if (result.status === 'fulfilled') {
+        for (const source of result.value.currentInformation || []) {
+          if (source?.url && !webSourcesMap.has(source.url)) {
+            webSourcesMap.set(source.url, source);
+          }
+        }
+      } else {
+        console.error('Web analysis failed:', result.reason);
       }
     }
 
+    const webSources = Array.from(webSourcesMap.values());
+
     // Step 6: Determine analysis label
+    const watermarkConfidence = enrichedMetadata.watermarkFindings?.confidence ?? 0;
+    const watermarkConcern = enrichedMetadata.watermarkFindings?.hasWatermark && watermarkConfidence >= 0.6;
+    const suspectedAIGenerated = Boolean(enrichedMetadata.suspectedAIGenerated);
+    const safeSearchFlags = enrichedMetadata.safeSearch || {};
+    const safeSearchConcern = ['adult', 'violence', 'racy'].some((field) => {
+      const value = (safeSearchFlags as Record<string, string>)[field];
+      return value === 'LIKELY' || value === 'VERY_LIKELY';
+    });
+
+    const vertexWatermarkConcern = Boolean(vertexInsights?.hasWatermark && (vertexInsights.watermarkConfidence ?? 0) >= 0.6);
+    const vertexAIGeneratedConcern = Boolean(vertexInsights?.suspectedAIGenerated && (vertexInsights.aiConfidence ?? 0) >= 0.7);
+    const textRiskConcern = Boolean(
+      vertexTextInsights?.riskIndicators?.some((indicator) => /fake|misinfo|misleading|scam|warning|propaganda|deceptive/i.test(indicator))
+    );
+
     let analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN' = 'YELLOW';
-    if (isManipulated && manipulationConfidence > 0.7) {
+    if (combinedIsManipulated && combinedManipulationConfidence >= 0.7) {
       analysisLabel = 'RED';
-    } else if (!isManipulated && contentAnalysis.factualClaims.every((c: any) => c.verdict === 'VERIFIED')) {
-      analysisLabel = 'GREEN';
-    } else if (contentAnalysis.factualClaims.some((c: any) => c.verdict === 'DISPUTED')) {
+    } else if (
+      safeSearchConcern ||
+      watermarkConcern ||
+      vertexWatermarkConcern ||
+      vertexAIGeneratedConcern ||
+      textRiskConcern ||
+      suspectedAIGenerated ||
+      contentAnalysis.factualClaims.some((c: any) => c.verdict === 'DISPUTED')
+    ) {
       analysisLabel = 'ORANGE';
+    } else if (
+      !combinedIsManipulated &&
+      !watermarkConcern &&
+      !vertexWatermarkConcern &&
+      !suspectedAIGenerated &&
+      contentAnalysis.factualClaims.length > 0 &&
+      contentAnalysis.factualClaims.every((c: any) => c.verdict === 'VERIFIED')
+    ) {
+      analysisLabel = 'GREEN';
     }
 
     // Step 7: Calculate scores
-    const scores = calculateScores(contentAnalysis, { isManipulated, confidence: manipulationConfidence });
+    const scores = calculateScores(contentAnalysis, {
+      isManipulated: combinedIsManipulated,
+      confidence: combinedManipulationConfidence,
+      watermarkConfidence,
+      suspectedAIGenerated,
+      aiConfidence: vertexInsights?.aiConfidence,
+    });
 
     // Step 8: Gemini-driven formatting of presentation fields and sources
     const candidateSources = [
-      ...(webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }))
+      ...(webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance })),
+      ...(enrichedMetadata.possibleSources || []).map((s) => ({ url: s.url, title: s.title, relevance: typeof s.score === 'number' ? s.score * 100 : undefined })),
     ];
     const presentation = await formatUnifiedPresentation({
       contentType: 'image',
@@ -228,10 +1100,12 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       rawSignals: {
         description: contentAnalysis.description,
         factualClaims: contentAnalysis.factualClaims,
-        isManipulated,
-        manipulationConfidence,
+        isManipulated: combinedIsManipulated,
+        manipulationConfidence: combinedManipulationConfidence,
         ocrText,
-        metadata
+        metadata: enrichedMetadata,
+        vertexInsights,
+        vertexTextInsights,
       },
       candidateSources
     });
@@ -246,10 +1120,41 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       contentAuthenticityScore: scores.contentAuthenticityScore,
       trustExplainabilityScore: scores.trustExplainabilityScore,
       metadata: {
-        location: metadata.location,
+        location: enrichedMetadata.location,
         ocrText,
         description: contentAnalysis.description,
-        isManipulated
+        isManipulated: combinedIsManipulated,
+        safeSearch: enrichedMetadata.safeSearch,
+        watermarkFindings: enrichedMetadata.watermarkFindings,
+        suspectedAIGenerated,
+        aiIndicators: enrichedMetadata.aiIndicators,
+        webMatches: enrichedMetadata.possibleSources,
+        ...(vertexInsights
+          ? {
+              vertexInsights: {
+                hasWatermark: vertexInsights.hasWatermark,
+                watermarkConfidence: vertexInsights.watermarkConfidence,
+                suspectedAIGenerated: vertexInsights.suspectedAIGenerated,
+                aiConfidence: vertexInsights.aiConfidence,
+                watermarkIndicators: vertexInsights.watermarkIndicators,
+                aiIndicators: vertexInsights.aiIndicators,
+                authenticityNotes: vertexInsights.authenticityNotes,
+                forensicFindings: vertexInsights.forensicFindings,
+                reverseSearchHints: vertexInsights.reverseSearchHints,
+              },
+            }
+          : {}),
+        ...(vertexTextInsights
+          ? {
+              vertexTextInsights: {
+                summary: vertexTextInsights.summary,
+                keyTopics: vertexTextInsights.keyTopics,
+                riskIndicators: vertexTextInsights.riskIndicators,
+                detectedTextSample: vertexTextInsights.detectedTextSample,
+                rawClaims: vertexTextInsights.rawClaims,
+              },
+            }
+          : {}),
       }
     };
   } catch (error) {

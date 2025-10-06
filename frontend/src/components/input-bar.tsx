@@ -2,11 +2,10 @@
 
 import { useState, useRef, ChangeEvent, DragEvent, ClipboardEvent, SyntheticEvent, useEffect } from 'react';
 import { Textarea } from './ui/textarea';
-import { Button } from './ui/button';
 import { RainbowButton } from './ui/rainbow-button';
-import { Paperclip, Send, X, Mic, UploadCloud, ArrowUp, FileVideo, FileAudio } from 'lucide-react';
+import { Paperclip, X, Mic, UploadCloud, ArrowUp, FileVideo, FileAudio } from 'lucide-react';
 import Image from 'next/image';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger} from './ui/select';
 import {
   Tooltip,
   TooltipContent,
@@ -17,13 +16,12 @@ import { useLanguage } from '@/context/language-context';
 
 interface InputBarProps {
   addMessage: (message: any) => void;
-  removeLastMessage: () => void;
   setShowChat: (show: boolean) => void;
   showChat: boolean;
   isLoading: boolean;
 }
 
-export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat, isLoading }: InputBarProps) {
+export function InputBar({ addMessage, setShowChat, showChat, isLoading }: InputBarProps) {
   const [input, setInput] = useState('');
   const [file, setFile] = useState<{ dataUrl: string, name: string, type: string } | null>(null);
   const [isRecognizing, setIsRecognizing] = useState(false);
@@ -128,7 +126,6 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
         // Convert to base64 for backend processing
         const reader = new FileReader();
         reader.onloadend = () => {
-          const base64Audio = (reader.result as string).split(',')[1];
           
           // Set as file for processing
           setFile({
@@ -312,15 +309,13 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
                 </>
               )}
             </div>
-            <Button
+            <RainbowButton
               type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 rounded-full hover:bg-destructive hover:text-destructive-foreground opacity-70 hover:opacity-100 transition-all"
+              className="h-6 w-6 rounded-full p-0 min-w-0 opacity-70 hover:opacity-100 transition-all"
               onClick={() => setFile(null)}
             >
               <X className="h-3 w-3" />
-            </Button>
+            </RainbowButton>
           </div>
         )}
         
@@ -360,15 +355,14 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
             <div className="flex items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button 
-                    variant="default" 
-                    size="icon" 
-                    className="h-8 w-8 rounded-full" 
+                  <RainbowButton 
+                    type="button"
+                    className="h-8 w-8 rounded-full p-0 min-w-8" 
                     disabled={isLoading || isRecognizing} 
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Paperclip className="h-4 w-4" />
-                  </Button>
+                  </RainbowButton>
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>{translate('input.attachFile')}</p>
@@ -377,10 +371,9 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button 
-                    variant="default" 
-                    size="icon" 
-                    className={`h-8 w-8 rounded-full relative overflow-hidden ${(isRecording || isRecognizing) ? 'bg-[#DB4437] text-white hover:bg-[#DB4437]/90' : ''}`}
+                  <RainbowButton 
+                    type="button"
+                    className={`h-8 w-8 rounded-full p-0 min-w-8 relative overflow-hidden ${(isRecording || isRecognizing) ? '!bg-[#DB4437] !text-white hover:!bg-[#DB4437]/90' : ''}`}
                     disabled={isLoading}
                     onClick={handleMicClick}
                   >
@@ -400,7 +393,7 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
                         </div>
                       </>
                     )}
-                  </Button>
+                  </RainbowButton>
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>
@@ -438,14 +431,10 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
             {/* Send button - right corner */}
             <RainbowButton 
               type="submit"
-              className="h-8 w-8 rounded-full p-0 min-w-8"
-              disabled={isRecognizing || (!input.trim() && !file && !isLoading)}
+              className={`h-8 w-8 rounded-full p-0 min-w-8 ${isLoading ? 'opacity-50' : ''}`}
+              disabled={isRecognizing || (!input.trim() && !file) || isLoading}
             >
-              {isLoading ? (
-                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-              ) : (
-                <ArrowUp className="h-4 w-4" />
-              )}
+              <ArrowUp className="h-4 w-4" />
             </RainbowButton>
           </div>
         </div>
