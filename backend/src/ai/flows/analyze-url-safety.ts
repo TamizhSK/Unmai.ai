@@ -3,6 +3,7 @@ import { WebRiskServiceClient } from '@google-cloud/web-risk';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { verifySource } from './verify-source.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
+import { getAuthConfig, getProjectId } from '../auth.js';
 
 const SECURITY_HEADERS = [
   'strict-transport-security',
@@ -63,7 +64,7 @@ export type UrlAnalysisOutput = z.infer<typeof UrlAnalysisOutputSchema>;
 
 // Helper to check URL safety using Google Web Risk API
 async function checkUrlSafety(url: string) {
-  const client = new WebRiskServiceClient();
+  const client = new WebRiskServiceClient(getAuthConfig());
   // Use string threat types to avoid importing protos namespace
   const request = {
     uri: url,

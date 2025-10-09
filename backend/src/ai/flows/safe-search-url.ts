@@ -11,12 +11,15 @@
 import {z} from 'zod';
 import {WebRiskServiceClient, protos} from '@google-cloud/web-risk';
 import { config } from 'dotenv';
+import { getAuthConfig, getProjectId } from '../auth.js';
 
 // Load environment variables
 config();
 
-// Initialize Web Risk client with error handling
-const client = new WebRiskServiceClient();
+// Create Web Risk client with modern authentication
+function getWebRiskClient() {
+  return new WebRiskServiceClient(getAuthConfig());
+}
 
 // API validation removed - runs silently
 
@@ -36,6 +39,7 @@ export async function safeSearchUrl(
   input: SafeSearchUrlInput
 ): Promise<SafeSearchUrlOutput> {
   try {
+    const client = getWebRiskClient();
     const request: protos.google.cloud.webrisk.v1.ISearchUrisRequest = {
       uri: input.url,
       threatTypes: [

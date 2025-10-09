@@ -4,6 +4,7 @@ import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { factCheckClaim } from './fact-check-claim.js';
 import { generativeModel } from '../genkit.js';
+import { getAuthConfig, getProjectId } from '../auth.js';
 
 const AudioAnalysisInputSchema = z.object({
   audioData: z.string().min(1, 'Audio data is required'),
@@ -232,7 +233,7 @@ ${JSON.stringify({
 
 // Helper to transcribe audio using Google Speech-to-Text
 async function transcribeAudio(audioData: string, mimeType?: string) {
-  const client = new SpeechClient();
+  const client = new SpeechClient(getAuthConfig());
   const audio = {
     content: audioData.includes('base64') ? Buffer.from(audioData.split(',')[1], 'base64') : audioData,
   };
