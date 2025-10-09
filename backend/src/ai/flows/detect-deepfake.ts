@@ -14,23 +14,10 @@ import { VideoIntelligenceServiceClient } from '@google-cloud/video-intelligence
 import { config } from 'dotenv';
 
 // Load environment variables
-config();
 
 // Initialize Google Cloud clients with error handling
 const visionClient = new ImageAnnotatorClient();
 const videoClient = new VideoIntelligenceServiceClient();
-
-// Validate API availability
-const validateVisionAPIs = async () => {
-  try {
-    console.log('[INFO] Vision and Video Intelligence APIs initialized');
-  } catch (error) {
-    console.warn('[WARN] Vision API initialization warning:', error);
-  }
-};
-
-// Initialize validation (non-blocking)
-validateVisionAPIs();
 
 const DetectDeepfakeInputSchema = z.object({
   media: z
@@ -79,6 +66,45 @@ export async function detectDeepfake(
   input: DetectDeepfakeInput,
   sourceCredibility?: number
 ): Promise<DetectDeepfakeOutput> {
+  // Validate image data for images
+  if (input.contentType === 'image') {
+    console.log('[INFO] Validating image data for deepfake analysis');
+    const parts = input.media.split(';base64,');
+    if (parts.length !== 2) {
+      console.warn('[WARN] Invalid image data format');
+      return {
+        isDeepfake: false,
+        confidenceScore: 0,
+        analysis: 'Invalid image data format provided. Unable to perform deepfake analysis.',
+        visionApiAnalysis: { safeSearchResult: 'Invalid image data' },
+      };
+    }
+    const base64Data = parts[1];
+    console.log(`[INFO] Base64 data length: ${base64Data.length}`);
+    if (!base64Data || base64Data.length < 100) { // Very small images are likely invalid/test data
+      console.warn('[WARN] Image data too small or invalid');
+      return {
+        isDeepfake: false,
+        confidenceScore: 0,
+        analysis: 'Image data appears to be invalid or too small for deepfake analysis. Common signs of manipulation include unusual file sizes, but this image is too minimal to analyze properly.',
+        visionApiAnalysis: { safeSearchResult: 'Invalid image data' },
+      };
+    }
+    // Try to decode to check if valid base64
+    try {
+      Buffer.from(base64Data, 'base64');
+      console.log('[INFO] Base64 decoding successful');
+    } catch (error) {
+      console.warn('[WARN] Invalid base64 image data:', error);
+      return {
+        isDeepfake: false,
+        confidenceScore: 0,
+        analysis: 'Invalid base64 encoding in image data. This could indicate tampering or corruption.',
+        visionApiAnalysis: { safeSearchResult: 'Invalid base64 data' },
+      };
+    }
+  }
+
   let visionApiResult;
   let visionApiAnalysis;
   let videoIntelligenceAnalysis;
@@ -226,54 +252,64 @@ Incorporate these capabilities into your overall assessment.`
     ],
   };
 
-  const result = await generativeVisionModel.generateContent(request);
-  const response = result.response;
-  
-  if (!response?.candidates?.[0]?.content?.parts?.[0]?.text) {
-    throw new Error('Invalid or empty response received from the model');
-  }
-
-  const responseText = response.candidates[0].content.parts[0].text.trim();
-  
-  function safeJsonParse(raw: string): any | null {
-    // Remove markdown fences
-    let txt = raw.replace(/^```json\s*/i, '').replace(/^```/i, '').replace(/```\s*$/i, '').trim();
-    // Quick first attempt
-    try {
-      return JSON.parse(txt);
-    } catch { /* ignore */ }
-    // Minimal fixes: collapse double quotes and remove control chars
-    txt = txt
-      .replace(/"{2,}/g, '"')
-      .replace(/[\x00-\x1F\x7F]/g, '')
-      .replace(/,\s*([}\]])/g, '$1');
-    // Second attempt
-    try {
-      return JSON.parse(txt);
-    } catch {
-      return null;
-    }
-  }
-
   try {
-    const parsed = safeJsonParse(responseText);
-    if (!parsed) throw new Error('Parsing failed');
-    const validated = DetectDeepfakeOutputSchema.parse(parsed as any);
-    validated.visionApiAnalysis = visionApiAnalysis;
-    validated.videoIntelligenceAnalysis = videoIntelligenceAnalysis;
-    validated.synthIdAnalysis = synthIdAnalysis;
-    return validated;
-  } catch (error) {
-    console.error('[ERROR] Error parsing or validating model output:', error);
+    const result = await generativeVisionModel.generateContent(request);
+    const response = result.response;
+    
+    if (!response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+      throw new Error('Invalid or empty response received from the model');
+    }
+
+    const responseText = response.candidates[0].content.parts[0].text.trim();
+  
+    function safeJsonParse(raw: string): any | null {
+      // Remove markdown fences
+      let txt = raw.replace(/^```json\s*/i, '').replace(/^```/i, '').replace(/```\s*$/i, '').trim();
+      // Quick first attempt
+      try {
+        return JSON.parse(txt);
+      } catch { /* ignore */ }
+      // Minimal fixes: collapse double quotes and remove control chars
+      txt = txt
+        .replace(/"{2,}/g, '"')
+        .replace(/[\x00-\x1F\x7F]/g, '')
+        .replace(/,\s*([}\]])/g, '$1');
+      // Second attempt
+      try {
+        return JSON.parse(txt);
+      } catch {
+        return null;
+      }
+    }
+
+    try {
+      const parsed = safeJsonParse(responseText);
+      if (!parsed) throw new Error('Parsing failed');
+      const validated = DetectDeepfakeOutputSchema.parse(parsed as any);
+      validated.visionApiAnalysis = visionApiAnalysis;
+      validated.videoIntelligenceAnalysis = videoIntelligenceAnalysis;
+      validated.synthIdAnalysis = synthIdAnalysis;
+      return validated;
+    } catch (error) {
+      console.error('[ERROR] Error parsing or validating model output:', error);
+      return {
+        isDeepfake: false,
+        confidenceScore: 0,
+        analysis: 'The model returned a response that was not valid JSON.',
+        visionApiAnalysis,
+        videoIntelligenceAnalysis,
+        synthIdAnalysis,
+      };
+    }
+  } catch (modelError) {
+    console.error('[ERROR] Vertex AI model call failed:', modelError);
     return {
       isDeepfake: false,
       confidenceScore: 0,
-      analysis: 'The model returned a response that was not valid JSON.',
+      analysis: 'Deepfake analysis unavailable due to API error.',
       visionApiAnalysis,
       videoIntelligenceAnalysis,
       synthIdAnalysis,
     };
   }
-
-
 }

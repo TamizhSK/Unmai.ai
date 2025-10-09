@@ -18,17 +18,7 @@ config();
 // Initialize Web Risk client with error handling
 const client = new WebRiskServiceClient();
 
-// Validate Web Risk API availability
-const validateWebRiskAPI = async () => {
-  try {
-    console.log('[INFO] Web Risk API client initialized');
-  } catch (error) {
-    console.warn('[WARN] Web Risk API initialization warning:', error);
-  }
-};
-
-// Initialize validation (non-blocking)
-validateWebRiskAPI();
+// API validation removed - runs silently
 
 const SafeSearchUrlInputSchema = z.object({
   url: z.string().url().describe('The URL to check.'),

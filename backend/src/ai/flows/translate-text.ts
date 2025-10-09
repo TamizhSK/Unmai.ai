@@ -9,19 +9,7 @@ config();
 // Instantiates a client with proper error handling
 const translate = new v2.Translate();
 
-// Validate API availability
-const validateTranslateAPI = async () => {
-  try {
-    // Test connection with a simple detection
-    await translate.detect('test');
-    console.log('[INFO] Translation API connection validated');
-  } catch (error) {
-    console.warn('[WARN] Translation API validation failed:', error);
-  }
-};
-
-// Initialize validation (non-blocking)
-validateTranslateAPI();
+// API validation removed - runs silently
 
 export const translateTextFlow = async (input: { text: string; targetLanguage: string }): Promise<string> => {
   const { text, targetLanguage } = input;

@@ -395,6 +395,7 @@ export async function analyzeAudioContent(input: AudioAnalysisInput, options?: {
       const webAnalysis = await performWebAnalysis({
         query: transcription.substring(0, 500),
         contentType: 'text',
+        mediaType: 'audio',
         searchEngineId: options?.searchEngineId
       });
       webSources = webAnalysis.currentInformation || [];

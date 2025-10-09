@@ -50,7 +50,7 @@ export function LandingPage() {
             )}
             width={16}
             height={16}
-            cr={0.8}
+            cr={2}
           />
           
           <div className="relative z-10 text-center max-w-5xl mx-auto">
