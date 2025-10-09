@@ -3,11 +3,7 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
-<<<<<<< HEAD
-import { getPreferredVisionModel, getPreferredTextModel } from '../genkit.js';
-=======
 import { groundedModel, generativeModel, generativeVisionModel } from '../genkit.js';
->>>>>>> 7f3dd9f0045b951b37d56080609ac577b0bcc2f7
 
 const ImageAnalysisInputSchema = z.object({
   imageData: z.string().min(1, 'Image data is required'), // Base64 or URL
@@ -45,49 +41,6 @@ const ImageAnalysisOutputSchema = z.object({
     ocrText: z.string().optional(),
     description: z.string().optional(),
     isManipulated: z.boolean().optional(),
-<<<<<<< HEAD
-    safeSearch: z.object({
-      adult: z.string().optional(),
-      spoof: z.string().optional(),
-      medical: z.string().optional(),
-      violence: z.string().optional(),
-      racy: z.string().optional(),
-    }).optional(),
-    watermarkFindings: z.object({
-      hasWatermark: z.boolean(),
-      confidence: z.number().min(0).max(1),
-      indicators: z.array(z.string())
-    }).optional(),
-    suspectedAIGenerated: z.boolean().optional(),
-    aiIndicators: z.array(z.string()).optional(),
-    webMatches: z.array(z.object({
-      url: z.string().url(),
-      title: z.string().optional(),
-      score: z.number().min(0).max(1).optional(),
-    })).optional(),
-    vertexInsights: z.object({
-      hasWatermark: z.boolean(),
-      watermarkConfidence: z.number().min(0).max(1),
-      suspectedAIGenerated: z.boolean(),
-      aiConfidence: z.number().min(0).max(1),
-      watermarkIndicators: z.array(z.string()),
-      aiIndicators: z.array(z.string()),
-      authenticityNotes: z.array(z.string()),
-      forensicFindings: z.array(z.string()),
-      reverseSearchHints: z.array(z.string()),
-    }).optional(),
-    vertexTextInsights: z.object({
-      summary: z.string().optional(),
-      keyTopics: z.array(z.string()).optional(),
-      riskIndicators: z.array(z.string()).optional(),
-      detectedTextSample: z.string().optional(),
-      rawClaims: z.array(z.object({
-        claim: z.string(),
-        verdict: z.enum(['VERIFIED', 'DISPUTED', 'UNVERIFIED']),
-        confidence: z.number().min(0).max(1),
-      })).optional(),
-    }).optional(),
-=======
     understandingDescription: z.string().optional(),
   }).optional(),
   deepAnalysis: z.object({
@@ -96,302 +49,10 @@ const ImageAnalysisOutputSchema = z.object({
     why: z.string(),
     when: z.string(),
     educationalInsights: z.array(z.string()),
->>>>>>> 7f3dd9f0045b951b37d56080609ac577b0bcc2f7
   }).optional(),
 });
 export type ImageAnalysisOutput = z.infer<typeof ImageAnalysisOutputSchema>;
 
-<<<<<<< HEAD
-type ReverseImageSource = {
-  url: string;
-  title?: string;
-  score?: number;
-};
-
-type VertexImageInsights = {
-  hasWatermark: boolean;
-  watermarkConfidence: number;
-  watermarkIndicators: string[];
-  suspectedAIGenerated: boolean;
-  aiConfidence: number;
-  aiIndicators: string[];
-  authenticityNotes: string[];
-  forensicFindings: string[];
-  reverseSearchHints: string[];
-};
-
-type SafeSearchLikelihood = {
-  adult: string;
-  spoof: string;
-  medical: string;
-  violence: string;
-  racy: string;
-};
-
-type ExtractedImageSignals = {
-  location: string;
-  safeSearch?: SafeSearchLikelihood;
-  logos: Array<{ description: string; score?: number }>;
-  labels: Array<{ description: string; score?: number }>;
-  webDetection: {
-    bestGuessLabels: string[];
-    webEntities: Array<{ description: string; score?: number }>;
-  };
-  watermarkFindings: {
-    hasWatermark: boolean;
-    confidence: number;
-    indicators: string[];
-  };
-  suspectedAIGenerated: boolean;
-  aiIndicators: string[];
-  possibleSources: ReverseImageSource[];
-};
-
-type VertexTextClaim = {
-  claim: string;
-  verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED';
-  confidence: number;
-};
-
-type VertexTextInsights = {
-  summary?: string;
-  keyTopics?: string[];
-  riskIndicators?: string[];
-  detectedTextSample?: string;
-  rawClaims?: VertexTextClaim[];
-};
-
-const WATERMARK_TERMS = [
-  /watermark/i,
-  /stock\s+(photo|image)/i,
-  /getty/i,
-  /istock/i,
-  /shutterstock/i,
-  /alamy/i,
-  /depositphotos/i,
-  /dreamstime/i,
-  /123rf/i,
-];
-
-const AI_INDICATOR_TERMS = [
-  /ai[-\s]?generated/i,
-  /artificial intelligence/i,
-  /generative/i,
-  /synthetic/i,
-  /digital art/i,
-  /concept art/i,
-  /3d render/i,
-  /cg(i)?/i,
-  /gan/i,
-  /midjourney/i,
-  /stable diffusion/i,
-  /dall[ -]?e/i,
-];
-
-const LIKELIHOOD_MAP = ['UNKNOWN', 'VERY_UNLIKELY', 'UNLIKELY', 'POSSIBLE', 'LIKELY', 'VERY_LIKELY'] as const;
-
-function likelihoodToString(value: unknown): string {
-  if (typeof value === 'string' && value) {
-    return value;
-  }
-
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return LIKELIHOOD_MAP[value as number] ?? 'UNKNOWN';
-  }
-  return 'UNKNOWN';
-}
-
-async function analyzeImageTextWithVertex(ocrText: string): Promise<VertexTextInsights | null> {
-  const trimmed = (ocrText || '').replace(/\s+/g, ' ').trim();
-  if (trimmed.length < 20) {
-    return null;
-  }
-
-  try {
-    const model = getPreferredTextModel();
-    const prompt = `You are an investigative analyst specializing in misinformation.
-Analyze the text extracted from an image and respond ONLY with valid JSON matching this schema:
-{
-  "summary": string,              // concise synopsis of the text (≤ 200 chars)
-  "keyTopics": string[],          // major topics or entities referenced
-  "riskIndicators": string[],     // phrases suggesting misinformation, manipulation, or safety concerns
-  "detectedTextSample": string,   // short representative sample (<150 chars)
-  "claims": [
-    {
-      "claim": string,            // factual statement from the text
-      "verdict": "VERIFIED" | "DISPUTED" | "UNVERIFIED",
-      "confidence": number        // 0.0 - 1.0 confidence in the verdict
-    }
-  ]
-}
-Rules:
-- Base conclusions solely on the provided text.
-- If unsure about verification, use "UNVERIFIED".
-- Limit to at most 5 claims.
-- No markdown fences, comments, or trailing text.
-
-Text to analyze (may be truncated): ${JSON.stringify(trimmed.slice(0, 4000))}`;
-
-    const generationResult = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.15, maxOutputTokens: 1200 },
-    });
-
-    const responseText = generationResult.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!responseText.trim()) {
-      return null;
-    }
-
-    const cleanJson = responseText
-      .replace(/^```json\s*/i, '')
-      .replace(/^```/i, '')
-      .replace(/```\s*$/i, '')
-      .trim();
-
-    const attemptParse = (raw: string): any | null => {
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return null;
-      }
-    };
-
-    let parsed = attemptParse(cleanJson);
-    if (!parsed) {
-      parsed = attemptParse(
-        cleanJson
-          .replace(/[\r\n]+/g, ' ')
-          .replace(/,\s*([}\]])/g, '$1')
-      );
-    }
-
-    if (!parsed || typeof parsed !== 'object') {
-      return null;
-    }
-
-    const parsedRecord = parsed as Record<string, unknown>;
-
-    const normalizeArray = (input: unknown): string[] => {
-      if (Array.isArray(input)) {
-        return input.map((item) => String(item ?? '').trim()).filter(Boolean);
-      }
-      if (typeof input === 'string' && input.trim()) {
-        return [input.trim()];
-      }
-      return [];
-    };
-
-    const normalizeClaims = (input: unknown): VertexTextClaim[] => {
-      if (!Array.isArray(input)) return [];
-      return input
-        .map((entry) => {
-          if (!entry || typeof entry !== 'object') return null;
-          const record = entry as Record<string, unknown>;
-          const claim = typeof record.claim === 'string' ? record.claim.trim() : '';
-          if (!claim) return null;
-          const verdictRaw = typeof record.verdict === 'string' ? record.verdict.toUpperCase() : 'UNVERIFIED';
-          const verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED' =
-            verdictRaw === 'VERIFIED' || verdictRaw === 'DISPUTED' ? (verdictRaw as any) : 'UNVERIFIED';
-          const confidence = (() => {
-            const value = record.confidence;
-            if (typeof value === 'number' && Number.isFinite(value)) {
-              return Math.max(0, Math.min(1, value));
-            }
-            return verdict === 'UNVERIFIED' ? 0.4 : 0.65;
-          })();
-          return { claim, verdict, confidence };
-        })
-        .filter(Boolean) as VertexTextClaim[];
-    };
-
-    const summaryRaw = parsedRecord.summary;
-    let summary: string | undefined;
-    if (typeof summaryRaw === 'string') {
-      summary = summaryRaw.trim();
-    }
-
-    const detectedSampleRaw = parsedRecord.detectedTextSample;
-    let detectedTextSample: string | undefined;
-    if (typeof detectedSampleRaw === 'string') {
-      detectedTextSample = detectedSampleRaw.trim().slice(0, 180);
-    }
-
-    const keyTopicsRaw = parsedRecord.keyTopics;
-    const riskIndicatorsRaw = parsedRecord.riskIndicators;
-    const claimsRaw = parsedRecord.claims;
-
-    const normalizedClaims = normalizeClaims(claimsRaw ?? []);
-
-    const vertexTextResult: VertexTextInsights = {
-      summary,
-      keyTopics: normalizeArray(keyTopicsRaw).slice(0, 8),
-      riskIndicators: normalizeArray(riskIndicatorsRaw).slice(0, 8),
-      detectedTextSample,
-      rawClaims: normalizedClaims.slice(0, 5),
-    };
-
-    return vertexTextResult;
-  } catch (error) {
-    console.error('Vertex text analysis failed:', error);
-    return null;
-  }
-}
-
-function toVisionImagePayload(imageData: string) {
-  if (!imageData) {
-    throw new Error('Image data is required');
-  }
-
-  if (imageData.startsWith('data:image/')) {
-    const [, base64Part = ''] = imageData.split(',');
-    return { content: Buffer.from(base64Part, 'base64') };
-  }
-
-  if (/^https?:\/\//i.test(imageData)) {
-    return { source: { imageUri: imageData } };
-  }
-
-  try {
-    return { content: Buffer.from(imageData, 'base64') };
-  } catch (error) {
-    console.warn('Unable to decode image data as base64, passing raw content to Vision API');
-    return { content: imageData };
-  }
-}
-
-async function toInlineVisionInput(imageData: string, mimeTypeHint?: string): Promise<{ mimeType: string; data: string } | null> {
-  if (!imageData) {
-    return null;
-  }
-
-  if (imageData.startsWith('data:image/')) {
-    const [header, base64Part] = imageData.split(',', 2);
-    if (!base64Part) return null;
-    const mimeType = header.replace('data:', '').replace(';base64', '') || mimeTypeHint || 'image/png';
-    return { mimeType, data: base64Part };
-  }
-
-  if (/^https?:\/\//i.test(imageData)) {
-    try {
-      const response = await fetch(imageData, { redirect: 'follow' });
-      if (!response.ok) {
-        console.warn('Failed to fetch image URL for Vertex analysis:', response.status, response.statusText);
-        return null;
-      }
-      const arrayBuffer = await response.arrayBuffer();
-      const base64Data = Buffer.from(arrayBuffer).toString('base64');
-      const contentType = response.headers.get('content-type')?.split(';')[0] || mimeTypeHint || 'image/jpeg';
-      return { mimeType: contentType, data: base64Data };
-    } catch (error) {
-      console.error('Error fetching image for Vertex analysis:', error);
-      return null;
-    }
-  }
-
-  try {
-    Buffer.from(imageData, 'base64');
-    return { mimeType: mimeTypeHint || 'image/png', data: imageData };
-=======
 function buildImagePart(imageData: string, mimeType?: string): any {
   if (imageData.startsWith('data:')) {
     const commaIdx = imageData.indexOf(',');
@@ -437,121 +98,11 @@ function tryParseJsonLoose(text: string): any {
       const noTrailingCommas = candidate.replace(/,(\s*[}\]])/g, '$1');
       return JSON.parse(noTrailingCommas);
     }
->>>>>>> 7f3dd9f0045b951b37d56080609ac577b0bcc2f7
   } catch {
     return null;
   }
 }
 
-<<<<<<< HEAD
-async function analyzeWithVertexVision(imageData: string, mimeTypeHint?: string): Promise<VertexImageInsights | null> {
-  try {
-    const inlineData = await toInlineVisionInput(imageData, mimeTypeHint);
-    if (!inlineData) {
-      return null;
-    }
-
-    const model = getPreferredVisionModel();
-    const structuredPrompt = `You are a forensic imaging specialist. Inspect the provided image and respond with STRICT JSON using this schema:
-{
-  "hasWatermark": boolean,
-  "watermarkConfidence": number,  // 0.0 to 1.0
-  "watermarkIndicators": string[], // precise phrases, logos, or regions suggesting watermarks
-  "suspectedAIGenerated": boolean,
-  "aiConfidence": number, // 0.0 to 1.0 confidence the image is AI-generated or manipulated
-  "aiIndicators": string[], // concrete cues indicating synthetic or manipulated content
-  "authenticityNotes": string[], // short bullet-style notes about authenticity signals
-  "forensicFindings": string[], // notable forensic observations (lighting, anatomy, compression, etc.)
-  "reverseSearchHints": string[] // concise phrases to use for reverse image search
-}
-
-Rules:
-- Output ONLY the JSON object.
-- Use double quotes for all strings.
-- Avoid markdown fences or commentary.
-- Base findings strictly on visible evidence.
-`;
-
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { inlineData },
-            { text: structuredPrompt },
-          ],
-        },
-      ],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
-    });
-
-    const responseText = result.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!responseText.trim()) {
-      return null;
-    }
-
-    const cleanJson = responseText
-      .replace(/^```json\s*/i, '')
-      .replace(/^```/i, '')
-      .replace(/```\s*$/i, '')
-      .trim();
-
-    const tryParse = (raw: string): any | null => {
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return null;
-      }
-    };
-
-    let parsed = tryParse(cleanJson);
-    if (!parsed) {
-      const relaxed = cleanJson
-        .replace(/[\r\n]+/g, ' ')
-        .replace(/,\s*([}\]])/g, '$1');
-      parsed = tryParse(relaxed);
-    }
-
-    if (!parsed || typeof parsed !== 'object') {
-      return null;
-    }
-
-    const normalizeArray = (value: unknown): string[] => {
-      if (Array.isArray(value)) {
-        return value.map((item) => String(item ?? '').trim()).filter(Boolean);
-      }
-      if (typeof value === 'string' && value.trim()) {
-        return [value.trim()];
-      }
-      return [];
-    };
-
-    const clamp01 = (value: unknown, fallback = 0): number => {
-      const num = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-      return Math.max(0, Math.min(1, num));
-    };
-
-    const hasWatermark = Boolean(parsed.hasWatermark);
-    const watermarkConfidence = clamp01(parsed.watermarkConfidence, hasWatermark ? 0.6 : 0);
-    const suspectedAIGenerated = Boolean(parsed.suspectedAIGenerated);
-    const aiConfidence = clamp01(parsed.aiConfidence, suspectedAIGenerated ? 0.6 : 0);
-
-    return {
-      hasWatermark,
-      watermarkConfidence,
-      watermarkIndicators: normalizeArray(parsed.watermarkIndicators),
-      suspectedAIGenerated,
-      aiConfidence,
-      aiIndicators: normalizeArray(parsed.aiIndicators),
-      authenticityNotes: normalizeArray(parsed.authenticityNotes),
-      forensicFindings: normalizeArray(parsed.forensicFindings),
-      reverseSearchHints: normalizeArray(parsed.reverseSearchHints),
-    };
-  } catch (error) {
-    console.error('Vertex vision analysis failed:', error);
-    return null;
-  }
-=======
 type GeminiImageUnderstanding = {
   description: string;
   detectedObjects: string[];
@@ -788,7 +339,6 @@ ${JSON.stringify({
     when: 'Temporal information could not be determined.',
     educationalInsights: fallbackInsight,
   };
->>>>>>> 7f3dd9f0045b951b37d56080609ac577b0bcc2f7
 }
 
 // Helper to extract image metadata using Google Vision API
@@ -1246,11 +796,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
     // Run metadata, OCR, deepfake detection, and reverse image search concurrently
     const metadataPromise = extractImageMetadata(input.imageData);
     const ocrPromise = performOcr(input.imageData);
-<<<<<<< HEAD
-    const vertexInsightPromise = analyzeWithVertexVision(input.imageData, input.mimeType);
-=======
     const understandingPromise = geminiImageUnderstanding(input.imageData, input.mimeType);
->>>>>>> 7f3dd9f0045b951b37d56080609ac577b0bcc2f7
     const deepfakePromise = (async () => {
       try {
         const deepfakeResult = await detectDeepfake({ media: input.imageData, contentType: 'image' });
@@ -1262,11 +808,8 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       }
     })();
 
-<<<<<<< HEAD
     const [visionMetadata, ocrText, deepfakeInfo, vertexInsights] = await Promise.all([
-=======
     const [metadata, ocrText, understanding, deepfakeInfo] = await Promise.all([
->>>>>>> 7f3dd9f0045b951b37d56080609ac577b0bcc2f7
       metadataPromise,
       ocrPromise,
       understandingPromise,
@@ -1349,9 +892,6 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       }
     }
 
-<<<<<<< HEAD
-    const webSources = Array.from(webSourcesMap.values());
-=======
     try {
       const guidedQueries = await buildGeminiGuidedSearchQueries(understanding, ocrText);
       const reverseQueries = buildReverseImageQueries(understanding, ocrText);
@@ -1368,7 +908,6 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
     } catch (error) {
       console.warn('[WARN] Guided reverse image search failed:', error);
     }
->>>>>>> 7f3dd9f0045b951b37d56080609ac577b0bcc2f7
 
     // Step 6: Determine analysis label
     const watermarkConfidence = enrichedMetadata.watermarkFindings?.confidence ?? 0;
@@ -1433,14 +972,8 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
         isManipulated: combinedIsManipulated,
         manipulationConfidence: combinedManipulationConfidence,
         ocrText,
-<<<<<<< HEAD
-        metadata: enrichedMetadata,
-        vertexInsights,
-        vertexTextInsights,
-=======
         metadata,
         geminiUnderstanding: understanding
->>>>>>> 7f3dd9f0045b951b37d56080609ac577b0bcc2f7
       },
       candidateSources
     });
@@ -1469,46 +1002,10 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
         location: enrichedMetadata.location,
         ocrText,
         description: contentAnalysis.description,
-<<<<<<< HEAD
-        isManipulated: combinedIsManipulated,
-        safeSearch: enrichedMetadata.safeSearch,
-        watermarkFindings: enrichedMetadata.watermarkFindings,
-        suspectedAIGenerated,
-        aiIndicators: enrichedMetadata.aiIndicators,
-        webMatches: enrichedMetadata.possibleSources,
-        ...(vertexInsights
-          ? {
-              vertexInsights: {
-                hasWatermark: vertexInsights.hasWatermark,
-                watermarkConfidence: vertexInsights.watermarkConfidence,
-                suspectedAIGenerated: vertexInsights.suspectedAIGenerated,
-                aiConfidence: vertexInsights.aiConfidence,
-                watermarkIndicators: vertexInsights.watermarkIndicators,
-                aiIndicators: vertexInsights.aiIndicators,
-                authenticityNotes: vertexInsights.authenticityNotes,
-                forensicFindings: vertexInsights.forensicFindings,
-                reverseSearchHints: vertexInsights.reverseSearchHints,
-              },
-            }
-          : {}),
-        ...(vertexTextInsights
-          ? {
-              vertexTextInsights: {
-                summary: vertexTextInsights.summary,
-                keyTopics: vertexTextInsights.keyTopics,
-                riskIndicators: vertexTextInsights.riskIndicators,
-                detectedTextSample: vertexTextInsights.detectedTextSample,
-                rawClaims: vertexTextInsights.rawClaims,
-              },
-            }
-          : {}),
-      }
-=======
         isManipulated,
         understandingDescription: understanding.description,
       },
       deepAnalysis,
->>>>>>> 7f3dd9f0045b951b37d56080609ac577b0bcc2f7
     };
   } catch (error) {
     console.error('Error in image analysis:', error);
