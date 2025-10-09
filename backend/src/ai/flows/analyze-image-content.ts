@@ -501,7 +501,7 @@ Rules:
           verdict: normalizeVerdict(item?.verdict),
           confidence: Math.max(0, Math.min(1, typeof item?.confidence === 'number' ? item.confidence : Number(item?.confidence ?? 0.5))),
         }))
-        .filter((entry: any): entry is {
+        .filter((entry): entry is {
           claim: string;
           verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED';
           confidence: number;
@@ -769,7 +769,7 @@ function deriveReverseImageQueries({
     vertexInsights.reverseSearchHints.forEach((hint) => addQuery(hint));
     vertexInsights.watermarkIndicators.forEach((indicator) => addQuery(indicator));
     vertexInsights.aiIndicators.forEach((indicator) => addQuery(indicator));
-    if (vertexInsights.suspectedAIGenerated && vertexInsights.aiConfidence >= 0.6) {
+    if (vertexInsights.suspectedAIGenerated && (vertexInsights.aiConfidence ?? 0) >= 0.6) {
       addQuery('AI generated image verification');
     }
   }
@@ -812,6 +812,61 @@ async function analyzeImageContentAndFactCheck(
     : heuristicExtractClaims();
 
   return { description, factualClaims, vertexTextInsights };
+}
+
+async function getVertexImageInsights(imageData: string, mimeType?: string): Promise<VertexImageInsights | null> {
+  try {
+    const prompt = `You provide supplemental authenticity signals for an image. Return strict JSON with fields:
+{
+  "reverseSearchHints": string[],
+  "watermarkIndicators": string[],
+  "aiIndicators": string[],
+  "suspectedAIGenerated": boolean,
+  "aiConfidence": number,
+  "hasWatermark": boolean,
+  "watermarkConfidence": number
+}
+- Arrays must contain short descriptive phrases (<=80 characters).
+- Confidence numbers must be 0-1.
+- Respond with JSON only.`;
+
+    const filePart = buildImagePart(imageData, mimeType);
+    const result = await generativeVisionModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [{ text: prompt }, filePart as any],
+      }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+    });
+
+    const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parsed = tryParseJsonLoose(text);
+    if (parsed && typeof parsed === 'object') {
+      const normalizeArray = (value: unknown) =>
+        Array.isArray(value)
+          ? value.map((entry: unknown) => String(entry || '').trim()).filter(Boolean).slice(0, 10)
+          : [];
+
+      const clamp = (num: unknown) => {
+        const parsedNumber = typeof num === 'number' ? num : Number(num ?? 0);
+        return Math.max(0, Math.min(1, Number.isFinite(parsedNumber) ? parsedNumber : 0));
+      };
+
+      return {
+        reverseSearchHints: normalizeArray(parsed.reverseSearchHints),
+        watermarkIndicators: normalizeArray(parsed.watermarkIndicators),
+        aiIndicators: normalizeArray(parsed.aiIndicators),
+        suspectedAIGenerated: Boolean(parsed.suspectedAIGenerated),
+        aiConfidence: clamp(parsed.aiConfidence),
+        hasWatermark: Boolean(parsed.hasWatermark),
+        watermarkConfidence: clamp(parsed.watermarkConfidence),
+      };
+    }
+  } catch (error) {
+    console.warn('[WARN] Gemini supplemental image insight generation failed:', error);
+  }
+
+  return null;
 }
 
 // Basic placeholder when dedicated deepfake API is unavailable (no LLM)
@@ -1047,6 +1102,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
     const metadataPromise = extractImageMetadata(input.imageData);
     const ocrPromise = performOcr(input.imageData);
     const understandingPromise = geminiImageUnderstanding(input.imageData, input.mimeType);
+    const vertexInsightPromise = getVertexImageInsights(input.imageData, input.mimeType);
     const deepfakePromise = (async () => {
       try {
         const deepfakeResult = await detectDeepfake({ media: input.imageData, contentType: 'image' });
@@ -1058,9 +1114,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       }
     })();
 
-    const vertexInsightPromise = getVertexImageInsights(input.imageData, input.mimeType);
-
-    const [metadata, ocrText, understanding, deepfakeInfo, vertexInsights] = await Promise.all([
+    const [visionMetadata, ocrText, understanding, deepfakeInfo, vertexInsights] = await Promise.all([
       metadataPromise,
       ocrPromise,
       understandingPromise,
@@ -1102,7 +1156,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
     );
 
     const enrichedMetadata: ExtractedImageSignals & {
-      vertexInsights?: VertexImageInsights;
+      vertexInsights?: VertexImageInsights | null;
     } = {
       ...metadata,
       watermarkFindings: {
@@ -1143,7 +1197,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       }
     }
 
-    const webSources = Array.from(webSourcesMap.values());
+    let webSources = Array.from(webSourcesMap.values());
 
     try {
       const guidedQueries = await buildGeminiGuidedSearchQueries(understanding, ocrText);
@@ -1162,8 +1216,6 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
     } catch (error) {
       console.warn('[WARN] Guided reverse image search failed:', error);
     }
-
-    const finalWebSources = Array.from(webSourcesMap.values());
 
     // Step 6: Determine analysis label
     const watermarkConfidence = enrichedMetadata.watermarkFindings?.confidence ?? 0;
@@ -1228,10 +1280,10 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
         isManipulated: combinedIsManipulated,
         manipulationConfidence: combinedManipulationConfidence,
         ocrText,
-        metadata: enrichedMetadata,
-        geminiUnderstanding: understanding
+        metadata: visionMetadata,
+        geminiUnderstanding: understanding,
       },
-      candidateSources
+      candidateSources,
     });
 
     const deepAnalysis = await generateDeepAnalysisNarrative({
@@ -1250,7 +1302,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       oneLineDescription: presentation.oneLineDescription,
       summary: presentation.summary,
       educationalInsight: presentation.educationalInsight,
-      sources: presentation.sources,
+      sources: presentation.sources || [],
       sourceIntegrityScore: scores.sourceIntegrityScore,
       contentAuthenticityScore: scores.contentAuthenticityScore,
       trustExplainabilityScore: scores.trustExplainabilityScore,

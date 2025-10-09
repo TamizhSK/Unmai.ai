@@ -12,12 +12,18 @@ import { generativeVisionModel } from '../genkit.js';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { VideoIntelligenceServiceClient } from '@google-cloud/video-intelligence';
 import { config } from 'dotenv';
+import { getAuthConfig, getProjectId } from '../auth.js';
 
 // Load environment variables
 
-// Initialize Google Cloud clients with error handling
-const visionClient = new ImageAnnotatorClient();
-const videoClient = new VideoIntelligenceServiceClient();
+// Create Google Cloud clients with modern authentication
+function getVisionClient() {
+  return new ImageAnnotatorClient(getAuthConfig());
+}
+
+function getVideoClient() {
+  return new VideoIntelligenceServiceClient(getAuthConfig());
+}
 
 const DetectDeepfakeInputSchema = z.object({
   media: z
@@ -117,6 +123,7 @@ export async function detectDeepfake(
         throw new Error('Invalid base64 image data');
       }
 
+      const visionClient = getVisionClient();
       const [response] = await visionClient.safeSearchDetection({
         image: {content: imageContent},
       });

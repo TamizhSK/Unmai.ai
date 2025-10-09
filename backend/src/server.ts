@@ -54,7 +54,7 @@ app.post('/api/analyze', async (req: Request, res: Response) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Unified analyze failed: ${errorMessage}`);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Unified analysis service unavailable',
       message: 'Unable to analyze content at this time',
       timestamp: new Date().toISOString()
@@ -92,8 +92,8 @@ app.post('/api/educational-insights', async (req: Request, res: Response) => {
 
 // Health check
 app.get('/health', (req: Request, res: Response) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     customSearch: {
       configured: !!(customSearchKey && customSearchEngineId),
@@ -108,13 +108,13 @@ app.get('/api/test-search', async (req: Request, res: Response) => {
   try {
     const query = req.query.q as string || 'test search';
     const { performWebAnalysis } = await import('./ai/flows/perform-web-analysis.js');
-    
+
     const result = await performWebAnalysis({
       query,
       contentType: 'text',
       mediaType: 'text'
     });
-    
+
     res.json({
       success: true,
       query,
@@ -146,7 +146,7 @@ app.post('/api/fact-check', async (req: Request, res: Response) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Fact-checking failed: ${errorMessage}`);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Fact-checking service unavailable',
       message: 'Unable to process fact-check request at this time',
       timestamp: new Date().toISOString()
@@ -167,7 +167,7 @@ app.post('/api/credibility-score', async (req: Request, res: Response) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Credibility scoring failed: ${errorMessage}`);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Credibility scoring service unavailable',
       message: 'Unable to calculate credibility score at this time',
       timestamp: new Date().toISOString()
@@ -181,15 +181,15 @@ app.post('/api/detect-deepfake', async (req: Request, res: Response) => {
     if (!media || !contentType) {
       return res.status(400).json({ error: 'Media and contentType are required' });
     }
-    const result = await detectDeepfake({ 
-      media, 
-      contentType: contentType as 'image' | 'video' 
+    const result = await detectDeepfake({
+      media,
+      contentType: contentType as 'image' | 'video'
     }, sourceCredibility);
     res.json(result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Deepfake detection failed: ${errorMessage}`);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Deepfake detection service unavailable',
       message: 'Unable to analyze media for deepfakes at this time',
       timestamp: new Date().toISOString()
@@ -203,15 +203,15 @@ app.post('/api/safety-assessment', async (req: Request, res: Response) => {
     if (!content || !contentType) {
       return res.status(400).json({ error: 'Content and contentType are required' });
     }
-    const result = await assessSafety({ 
-      content, 
-      contentType: contentType as 'text' | 'url' | 'image' 
+    const result = await assessSafety({
+      content,
+      contentType: contentType as 'text' | 'url' | 'image'
     });
     res.json(result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Safety assessment failed: ${errorMessage}`);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Safety assessment service unavailable',
       message: 'Unable to assess content safety at this time',
       timestamp: new Date().toISOString()
@@ -225,15 +225,15 @@ app.post('/api/verify-source', async (req: Request, res: Response) => {
     if (!content || !contentType) {
       return res.status(400).json({ error: 'Content and contentType are required' });
     }
-    const result = await verifySource({ 
-      content, 
-      contentType: contentType as 'text' | 'url' 
+    const result = await verifySource({
+      content,
+      contentType: contentType as 'text' | 'url'
     });
     res.json(result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Source verification failed: ${errorMessage}`);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Source verification service unavailable',
       message: 'Unable to verify source credibility at this time',
       timestamp: new Date().toISOString()
@@ -247,8 +247,8 @@ app.post('/api/web-analysis', async (req: Request, res: Response) => {
     if (!query || !contentType) {
       return res.status(400).json({ error: 'Query and contentType are required' });
     }
-    const result = await performWebAnalysis({ 
-      query, 
+    const result = await performWebAnalysis({
+      query,
       contentType: contentType as 'text' | 'url',
       searchEngineId
     });
@@ -256,7 +256,7 @@ app.post('/api/web-analysis', async (req: Request, res: Response) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Web analysis failed: ${errorMessage}`);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Web analysis service unavailable',
       message: 'Unable to analyze web content at this time',
       timestamp: new Date().toISOString()
@@ -276,7 +276,7 @@ app.post('/api/safe-search', async (req: Request, res: Response) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Safe search failed: ${errorMessage}`);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Safe search service unavailable',
       message: 'Unable to verify URL safety at this time',
       timestamp: new Date().toISOString()
@@ -294,7 +294,7 @@ app.post('/api/translate-text', async (req: Request, res: Response) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Translation failed: ${errorMessage}`);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Translation service unavailable',
       message: 'Unable to translate text at this time',
       timestamp: new Date().toISOString()
@@ -370,7 +370,7 @@ const shutdown = (signal: string) => {
   if (process.env.NODE_ENV !== 'production') {
     console.log(`\nShutting down (${signal})...`);
   }
-  
+
   server.close((err?: Error) => {
     if (err) {
       console.error(`Shutdown error: ${err.message}`);
@@ -378,7 +378,7 @@ const shutdown = (signal: string) => {
     }
     process.exit(0);
   });
-  
+
   // Force shutdown after 10 seconds
   setTimeout(() => {
     process.exit(1);

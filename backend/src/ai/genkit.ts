@@ -1,5 +1,4 @@
-
-import {VertexAI} from '@google-cloud/vertexai';
+import { VertexAI } from '@google-cloud/vertexai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from 'dotenv';
 
@@ -21,7 +20,7 @@ if (!geminiApiKey) {
   throw new Error('GEMINI_API_KEY environment variable is required');
 }
 
-export const vertexAI = new VertexAI({project: project, location: location});
+export const vertexAI = new VertexAI({ project: project, location: location });
 
 // Instantiate Gemini models
 export const generativeModel = vertexAI.getGenerativeModel({
@@ -34,12 +33,12 @@ export const generativeVisionModel = vertexAI.getGenerativeModel({
 
 // Grounded model (no extra tools in config to avoid type issues)
 export const groundedModel = vertexAI.getGenerativeModel({
-    model: textModel,
+  model: textModel,
 });
 
 // Model with custom search engine configuration
 export const customSearchModel = (_searchEngineId: string) => vertexAI.getGenerativeModel({
-    model: textModel,
+  model: textModel,
 });
 
 // Initialize direct Gemini API client

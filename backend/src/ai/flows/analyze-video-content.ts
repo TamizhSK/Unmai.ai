@@ -4,6 +4,7 @@ import { v1 as videoIntelligence, protos as viProtos } from '@google-cloud/video
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
+import { getAuthConfig, getProjectId } from '../auth.js';
 
 const VideoAnalysisInputSchema = z.object({
   videoData: z.string().min(1, 'Video data is required'), // Base64 or GCS URL
@@ -55,7 +56,7 @@ export type VideoAnalysisOutput = z.infer<typeof VideoAnalysisOutputSchema>;
 
 // Helper to extract video metadata using Video Intelligence API (kept as primary metadata source)
 async function extractVideoMetadata(videoData: string) {
-  const client = new videoIntelligence.VideoIntelligenceServiceClient();
+  const client = new videoIntelligence.VideoIntelligenceServiceClient(getAuthConfig());
   const request = {
     inputUri: videoData.startsWith('gs://') ? videoData : undefined,
     inputContent: videoData.startsWith('data:') ? Buffer.from(videoData.split(',')[1], 'base64') : undefined,
@@ -80,7 +81,7 @@ async function extractVideoMetadata(videoData: string) {
 
 // Helper for speech + labels using Video Intelligence API (primary for transcription/events)
 async function analyzeVideoIntelligence(videoData: string) {
-  const client = new videoIntelligence.VideoIntelligenceServiceClient();
+  const client = new videoIntelligence.VideoIntelligenceServiceClient(getAuthConfig());
   const request = {
     inputUri: videoData.startsWith('gs://') ? videoData : undefined,
     inputContent: videoData.startsWith('data:') ? Buffer.from(videoData.split(',')[1], 'base64') : undefined,
@@ -403,7 +404,7 @@ Guidelines:
 
 // VI shot change detection to derive representative timestamps (no frame extraction)
 async function getShotChangeTimestamps(videoData: string): Promise<Array<{ startSec: number; endSec: number }>> {
-  const client = new videoIntelligence.VideoIntelligenceServiceClient();
+  const client = new videoIntelligence.VideoIntelligenceServiceClient(getAuthConfig());
   const request = {
     inputUri: videoData.startsWith('gs://') ? videoData : undefined,
     inputContent: videoData.startsWith('data:') ? Buffer.from(videoData.split(',')[1], 'base64') : undefined,
