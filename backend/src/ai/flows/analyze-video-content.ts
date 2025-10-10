@@ -5,6 +5,10 @@ import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
 
+// Cache for storing analysis results (5 minute TTL)
+const analysisCache = new Map<string, { timestamp: number; result: any }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 const VideoAnalysisInputSchema = z.object({
   videoData: z.string().min(1, 'Video data is required'), // Base64 or GCS URL
   mimeType: z.string().optional(),
@@ -53,32 +57,7 @@ const VideoAnalysisOutputSchema = z.object({
 });
 export type VideoAnalysisOutput = z.infer<typeof VideoAnalysisOutputSchema>;
 
-// Helper to extract video metadata using Video Intelligence API (kept as primary metadata source)
-async function extractVideoMetadata(videoData: string) {
-  const client = new videoIntelligence.VideoIntelligenceServiceClient();
-  const request = {
-    inputUri: videoData.startsWith('gs://') ? videoData : undefined,
-    inputContent: videoData.startsWith('data:') ? Buffer.from(videoData.split(',')[1], 'base64') : undefined,
-    features: [viProtos.google.cloud.videointelligence.v1.Feature.LABEL_DETECTION],
-  } as any;
-
-  try {
-    const [operation] = await client.annotateVideo(request);
-    const [result] = await operation.promise();
-    return {
-      location: result.annotationResults?.[0]?.segmentLabelAnnotations?.[0]?.entity?.description || 'Unknown',
-      technicalData: { inputUri: result.annotationResults?.[0]?.inputUri || 'Unknown' },
-    };
-  } catch (error) {
-    console.error('Video Intelligence metadata error:', error);
-    return {
-      location: 'Unknown',
-      technicalData: { error: 'Metadata extraction failed' },
-    };
-  }
-}
-
-// Helper for speech + labels using Video Intelligence API (primary for transcription/events)
+// Consolidated Video Intelligence API analysis (metadata + transcription + events)
 async function analyzeVideoIntelligence(videoData: string) {
   const client = new videoIntelligence.VideoIntelligenceServiceClient();
   const request = {
@@ -99,20 +78,16 @@ async function analyzeVideoIntelligence(videoData: string) {
   try {
     const [operation] = await client.annotateVideo(request);
     const [result] = await operation.promise();
-    const transcription = result.annotationResults?.[0]?.speechTranscriptions?.[0]?.alternatives?.[0]?.transcript || '';
-    const events = result.annotationResults?.[0]?.segmentLabelAnnotations?.map(a => a.entity?.description || 'Unknown event') || [];
+    const annotations = result.annotationResults?.[0];
     return {
-      events,
-      transcription,
-      keyFrames: [],
+      transcription: annotations?.speechTranscriptions?.[0]?.alternatives?.[0]?.transcript || '',
+      events: annotations?.segmentLabelAnnotations?.map(a => a.entity?.description || '').filter(Boolean) || [],
+      location: annotations?.segmentLabelAnnotations?.[0]?.entity?.description || 'Unknown',
+      technicalData: { inputUri: annotations?.inputUri || 'Unknown' },
     };
   } catch (error) {
     console.error('Video Intelligence analysis error:', error);
-    return {
-      events: [],
-      transcription: '',
-      keyFrames: [],
-    };
+    return { transcription: '', events: [], location: 'Unknown', technicalData: { error: 'Analysis failed' } };
   }
 }
 
@@ -424,69 +399,57 @@ async function getShotChangeTimestamps(videoData: string): Promise<Array<{ start
   }
 }
 
-// Build reverse search queries from understanding + transcription + shot info
-function buildReverseSearchQueries(
+// Build targeted search queries from understanding + transcription
+function buildSearchQueries(
   understanding: GeminiVideoUnderstanding,
-  transcription: string,
-  shotSpans: Array<{ startSec: number; endSec: number }>
+  transcription: string
 ): string[] {
-  const queries: string[] = [];
-  const texts = (understanding?.contextualInfo?.recognizedText || []).slice(0, 3);
-  const brands = (understanding?.contextualInfo?.brands || []).slice(0, 2);
-  const logos = (understanding?.contextualInfo?.logos || []).slice(0, 2);
-  const locations = (understanding?.contextualInfo?.locations || []).slice(0, 2);
-  const events = (understanding?.events || []).slice(0, 2);
+  const queries = new Set<string>();
+  
+  // Add contextual info
+  [...(understanding?.contextualInfo?.recognizedText || []).slice(0, 2),
+   ...(understanding?.contextualInfo?.brands || []).slice(0, 2),
+   ...(understanding?.contextualInfo?.locations || []).slice(0, 2),
+   ...(understanding?.events || []).slice(0, 2)]
+    .filter(Boolean)
+    .forEach(item => queries.add(item));
 
-  if (texts.length) queries.push(texts.join(' '));
-  if (brands.length) queries.push(brands.join(' '));
-  if (logos.length) queries.push(logos.join(' '));
-  if (locations.length) queries.push(locations.join(' '));
-  if (events.length) queries.push(events.join(' '));
+  // Add transcription and description snippets
+  if (transcription) queries.add(transcription.slice(0, 100));
+  if (understanding?.contentDescription) queries.add(understanding.contentDescription.slice(0, 100));
 
-  if (transcription) {
-    queries.push(transcription.slice(0, 120));
-  }
-  if (understanding?.contentDescription) {
-    queries.push(understanding.contentDescription.slice(0, 120));
-  }
-  if (shotSpans.length) {
-    const s0 = shotSpans[0];
-    queries.push(`video scene ${s0.startSec}-${s0.endSec} analysis`);
-  }
-
-  // Deduplicate and return top few
-  const seen = new Set<string>();
-  const deduped = queries.filter(q => {
-    const key = q.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return q.trim().length > 0;
-  });
-  return deduped.slice(0, 4);
+  return Array.from(queries).slice(0, 4);
 }
 
-// Run performWebAnalysis for each query and aggregate currentInformation items
-async function reverseWebGrounding(
+// Perform web searches and deduplicate results
+async function performWebSearches(
   queries: string[],
   searchEngineId?: string
 ): Promise<Array<{ title: string; url: string; snippet: string; date: string; relevance: number }>> {
-  const results: Array<{ title: string; url: string; snippet: string; date: string; relevance: number }> = [];
-  for (const q of queries) {
-    try {
-      const r = await performWebAnalysis({ query: q, contentType: 'text', mediaType: 'video', searchEngineId });
-      if (Array.isArray(r?.currentInformation)) {
-        results.push(...r.currentInformation);
-      }
-    } catch (e) {
-      console.warn('[WARN] reverseWebGrounding query failed:', q, e);
-    }
-  }
-  // Deduplicate by URL
+  const results = await Promise.allSettled(
+    queries.map(q => performWebAnalysis({ query: q, contentType: 'text', mediaType: 'video', searchEngineId }))
+  );
+  
   const byUrl = new Map<string, { title: string; url: string; snippet: string; date: string; relevance: number }>();
-  for (const item of results) {
-    if (item?.url && !byUrl.has(item.url)) byUrl.set(item.url, item);
-  }
-  return Array.from(byUrl.values()).slice(0, 12);
+  results.forEach(result => {
+    if (result.status === 'fulfilled' && Array.isArray(result.value?.currentInformation)) {
+      result.value.currentInformation.forEach((item: any) => {
+        if (item?.url && !byUrl.has(item.url)) {
+          byUrl.set(item.url, {
+            title: item.title || 'Untitled',
+            url: item.url,
+            snippet: item.snippet || '',
+            date: item.date || '',
+            relevance: item.relevance || 0.5
+          });
+        }
+      });
+    }
+  });
+  
+  return Array.from(byUrl.values())
+    .sort((a, b) => b.relevance - a.relevance)
+    .slice(0, 10);
 }
 // Helper to fact-check video content
 async function analyzeVideoContentAndFactCheck(
@@ -601,83 +564,80 @@ function calculateScores(contentAnalysis: any, manipulationAnalysis: { isManipul
 
 // Main analysis function
 export async function analyzeVideoContent(input: VideoAnalysisInput, options?: { searchEngineId?: string }): Promise<VideoAnalysisOutput> {
+  // Generate cache key from video data and options
+  const cacheKey = `${input.videoData.substring(0, 100)}_${input.mimeType || ''}_${options?.searchEngineId || ''}`;
+  
+  // Check cache first
+  const cached = analysisCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+    return cached.result;
+  }
+
   try {
-    // Placeholder for GCS upload function
-    // if (!input.videoData.startsWith('gs://') && !input.videoData.startsWith('data:')) {
-    //   input.videoData = await uploadToGcs(input.videoData);
-    // }
-
-    // Run Video Intelligence (metadata + transcription), Gemini understanding, and deepfake detection concurrently
-    const metadataPromise = extractVideoMetadata(input.videoData);
-    const intelligencePromise = analyzeVideoIntelligence(input.videoData);
-    const understandingPromise = geminiVideoUnderstanding(input.videoData, input.mimeType);
-    const deepfakePromise = (async () => {
-      try {
-        const deepfakeResult = await detectDeepfake({ media: input.videoData, contentType: 'video' });
-        return { isManipulated: deepfakeResult.isDeepfake, manipulationConfidence: deepfakeResult.confidenceScore / 100 };
-      } catch (error) {
-        console.error('Deepfake detection failed:', error);
-        const basicResult = await detectVideoDeepfake(input.videoData, input.mimeType);
-        return { isManipulated: basicResult.isManipulated, manipulationConfidence: basicResult.confidence };
-      }
-    })();
-
-    const [metadataVI, intelligenceAnalysis, understanding, deepfakeInfo] = await Promise.all([
-      metadataPromise,
-      intelligencePromise,
-      understandingPromise,
-      deepfakePromise,
+    // Run core analysis operations in parallel
+    const [intelligenceAnalysis, understanding, deepfakeInfo] = await Promise.all([
+      analyzeVideoIntelligence(input.videoData),
+      geminiVideoUnderstanding(input.videoData, input.mimeType),
+      detectDeepfake({ media: input.videoData, contentType: 'video' })
+        .then(r => ({ isManipulated: r.isDeepfake, manipulationConfidence: r.confidenceScore / 100 }))
+        .catch(() => detectVideoDeepfake(input.videoData, input.mimeType)
+          .then(r => ({ isManipulated: r.isManipulated, manipulationConfidence: r.confidence })))
     ]);
 
-    // Use VI outputs as primary for transcription/events and metadata; augment only in rawSignals later
+    // Early exit if critical data is missing
+    if (!intelligenceAnalysis?.transcription) {
+      throw new Error('Could not process video content: No transcription available');
+    }
+
     const metadata = {
-      location: metadataVI?.location || 'Unknown',
-      transcription: intelligenceAnalysis?.transcription || '',
-      events: intelligenceAnalysis?.events || [],
+      location: intelligenceAnalysis.location,
+      transcription: intelligenceAnalysis.transcription,
+      events: intelligenceAnalysis.events,
       isManipulated: deepfakeInfo.isManipulated,
-      technicalData: metadataVI?.technicalData,
+      technicalData: intelligenceAnalysis.technicalData,
     };
-    // Fact-check after transcription is available
-    const contentAnalysis = await analyzeVideoContentAndFactCheck(input.videoData, intelligenceAnalysis.transcription);
+
+    // Run fact-checking and web analysis in parallel
+    const [contentAnalysis, webAnalysis] = await Promise.all([
+      analyzeVideoContentAndFactCheck(input.videoData, intelligenceAnalysis.transcription)
+        .catch(() => ({ factualClaims: [] })),
+      performWebAnalysis({
+        query: intelligenceAnalysis.transcription.substring(0, 500),
+        contentType: 'text',
+        mediaType: 'video',
+        searchEngineId: options?.searchEngineId
+      }).catch(() => ({ currentInformation: [] }))
+    ]);
+
     const isManipulated = deepfakeInfo.isManipulated;
     const manipulationConfidence = deepfakeInfo.manipulationConfidence;
 
-    // Step 5: Web analysis for context
-    let webSources: any[] = [];
-    if (intelligenceAnalysis.transcription) {
-      try {
-        const webAnalysis = await performWebAnalysis({
-          query: intelligenceAnalysis.transcription.substring(0, 500),
-          contentType: 'text',
-          mediaType: 'video',
-          searchEngineId: options?.searchEngineId
-        });
-        webSources = webAnalysis.currentInformation || [];
-      } catch (error) {
-        console.error('Web analysis failed:', error);
-      }
-    }
+    // Build targeted search queries and perform web searches
+    const [guidedQueries, searchQueries] = await Promise.all([
+      buildGeminiGuidedSearchQueries(understanding, intelligenceAnalysis.transcription).catch(() => []),
+      Promise.resolve(buildSearchQueries(understanding, intelligenceAnalysis.transcription))
+    ]);
+    
+    const allQueries = Array.from(new Set([...guidedQueries, ...searchQueries]));
+    const webSources = allQueries.length > 0
+      ? await performWebSearches(allQueries, options?.searchEngineId)
+      : [];
 
-    // Reverse source tracking via shot boundaries + semantic queries (Gemini & VI)
-    try {
-      const [shotSpans, guidedQueries] = await Promise.all([
-        getShotChangeTimestamps(input.videoData),
-        buildGeminiGuidedSearchQueries(understanding, intelligenceAnalysis.transcription),
-      ]);
-      const reverseQueries = buildReverseSearchQueries(understanding, intelligenceAnalysis.transcription, shotSpans);
-      const combinedQueries = Array.from(new Set([...reverseQueries, ...guidedQueries]));
-      if (combinedQueries.length > 0) {
-        const reverseSources = await reverseWebGrounding(combinedQueries, options?.searchEngineId);
-        if (Array.isArray(reverseSources) && reverseSources.length > 0) {
-          const byUrl = new Map<string, any>();
-          for (const s of webSources) if (s?.url) byUrl.set(s.url, s);
-          for (const s of reverseSources) if (s?.url && !byUrl.has(s.url)) byUrl.set(s.url, s);
-          webSources = Array.from(byUrl.values());
-        }
-      }
-    } catch (e) {
-      console.warn('[WARN] Reverse source tracking failed:', e);
-    }
+    // Combine with direct web analysis results
+    const directSources = webAnalysis.currentInformation || [];
+    const uniqueSources = Array.from(
+      new Map([...directSources, ...webSources]
+        .filter(s => s?.url)
+        .map(s => [s.url, {
+          url: s.url,
+          title: s.title || 'Untitled Source',
+          snippet: s.snippet || '',
+          relevance: s.relevance || 0.5
+        }])
+      ).values()
+    )
+    .sort((a, b) => b.relevance - a.relevance)
+    .slice(0, 8); // Top 8 most relevant sources
 
     // Step 6: Determine analysis label
     let analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN' = 'YELLOW';
@@ -693,11 +653,16 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
       analysisLabel = 'ORANGE';
     }
 
-    // Step 7: Calculate scores
+    // Calculate scores and prepare for presentation
     const scores = calculateScores(contentAnalysis, { isManipulated, confidence: manipulationConfidence });
-
-    // Step 8: Gemini-driven formatting of presentation fields and sources
-    const candidateSources = (webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }));
+    
+    // Prepare candidate sources with fallbacks
+    const candidateSources = uniqueSources.map((s: any) => ({
+      url: s.url || '',
+      title: s.title || 'Untitled Source',
+      snippet: s.snippet || '',
+      relevance: s.relevance || 0.5
+    }));
     const presentation = await formatUnifiedPresentation({
       contentType: 'video',
       analysisLabel,
@@ -725,24 +690,43 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
       })),
     });
 
-    return {
+    // Prepare the result
+    const result: VideoAnalysisOutput = {
       analysisLabel,
-      oneLineDescription: presentation.oneLineDescription,
-      summary: presentation.summary,
-      educationalInsight: presentation.educationalInsight,
-      sources: presentation.sources,
+      oneLineDescription: presentation.oneLineDescription || 'Video analysis completed',
+      summary: presentation.summary || 'No summary available',
+      educationalInsight: presentation.educationalInsight || 'No educational insight available',
+      sources: (presentation.sources || []).map((s: any) => ({
+        url: s.url || '',
+        title: s.title || 'Untitled Source',
+        credibility: s.credibility || 0.5
+      })),
       sourceIntegrityScore: scores.sourceIntegrityScore,
       contentAuthenticityScore: scores.contentAuthenticityScore,
       trustExplainabilityScore: scores.trustExplainabilityScore,
       metadata: {
         location: metadata.location,
-        transcription: intelligenceAnalysis.transcription,
-        events: intelligenceAnalysis.events,
-        isManipulated,
-        technicalData: metadata.technicalData,
+        transcription: metadata.transcription,
+        events: metadata.events || [],
+        isManipulated: metadata.isManipulated || false,
+        technicalData: metadata.technicalData || {}
       },
-      deepAnalysis,
+      deepAnalysis: deepAnalysis || {
+        what: 'Analysis incomplete',
+        how: 'Not available',
+        why: 'Not available',
+        when: 'Not available',
+        educationalInsights: ['Analysis could not be completed']
+      }
     };
+
+    // Cache the result
+    analysisCache.set(cacheKey, {
+      timestamp: Date.now(),
+      result
+    });
+
+    return result;
   } catch (error) {
     console.error('Error in video analysis:', error);
     
@@ -753,7 +737,11 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
       summary: 'The video analysis could not be completed due to technical issues. Please verify the video format and try again.',
       educationalInsight: 'When video analysis fails, use manual verification methods like checking the source, looking for visual inconsistencies, and using alternative deepfake detection tools.',
       sources: [
-        { url: 'https://deepware.ai/', title: 'Deepware AI Detection', credibility: 0.88 }
+        { 
+          url: 'https://deepware.ai/', 
+          title: 'Deepware AI Detection', 
+          credibility: 0.88 
+        }
       ],
       sourceIntegrityScore: 0,
       contentAuthenticityScore: 0,
