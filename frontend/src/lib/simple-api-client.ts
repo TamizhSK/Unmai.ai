@@ -1,28 +1,104 @@
-// Simplified API client for calling backend functions through Express server
+// Optimized API client with enhanced connectivity and error handling
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
-// Generic API call function
-async function apiCall<T>(endpoint: string, data: any): Promise<T> {
+// Connection health check
+let isBackendHealthy = true;
+let lastHealthCheck = 0;
+const HEALTH_CHECK_INTERVAL = 60000; // 1 minute
+
+async function checkBackendHealth(): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastHealthCheck < HEALTH_CHECK_INTERVAL && isBackendHealthy) {
+    return isBackendHealthy;
+  }
+
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(5000), // 5 second timeout
     });
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API call failed (${response.status}): ${errorText || response.statusText}`);
+    isBackendHealthy = response.ok;
+    lastHealthCheck = now;
+    
+    if (!isBackendHealthy) {
+      console.warn(`[WARN] Backend health check failed: ${response.status}`);
     }
     
-    const result = await response.json();
-    console.log(`API Response from ${endpoint}:`, result);
-    return result;
+    return isBackendHealthy;
   } catch (error) {
-    console.error(`API Error for ${endpoint}:`, error);
-    throw error;
+    console.error('[ERROR] Backend health check failed:', error);
+    isBackendHealthy = false;
+    lastHealthCheck = now;
+    return false;
   }
+}
+
+// Enhanced API call function with retry logic
+async function apiCall<T>(endpoint: string, data: any, retries = 2): Promise<T> {
+  // Check backend health first
+  const isHealthy = await checkBackendHealth();
+  if (!isHealthy) {
+    throw new Error('Backend service is currently unavailable. Please try again later.');
+  }
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Unmai-Frontend/1.0'
+        },
+        body: JSON.stringify(data),
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        
+        // Handle specific error cases
+        if (response.status === 413) {
+          throw new Error('Request too large. Please reduce the size of your content.');
+        } else if (response.status === 429) {
+          throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+        } else if (response.status >= 500) {
+          throw new Error(`Server error (${response.status}). Please try again later.`);
+        }
+        
+        throw new Error(`API call failed (${response.status}): ${errorText || response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      // Log successful API calls in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[API] ${endpoint} - Success`);
+      }
+      
+      return result;
+    } catch (error) {
+      if (attempt === retries) {
+        console.error(`[API ERROR] ${endpoint} failed after ${retries + 1} attempts:`, error);
+        throw error;
+      }
+      
+      // Wait before retry (exponential backoff)
+      const waitTime = Math.pow(2, attempt) * 1000;
+      console.warn(`[API RETRY] ${endpoint} attempt ${attempt + 1} failed, retrying in ${waitTime}ms...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+  }
+  
+  throw new Error('API call failed after all retry attempts');
 }
 
 // Simplified API functions
@@ -42,9 +118,7 @@ export async function detectDeepfake(media: string, contentType: 'image' | 'vide
   return apiCall('/api/detect-deepfake', { media, contentType, sourceCredibility });
 }
 
-export async function provideEducationalInsights(text: string) {
-  return apiCall('/api/educational-insights', { text });
-}
+
 
 export async function assessSafety(content: string, contentType: 'text' | 'url' | 'image') {
   return apiCall('/api/safety-assessment', { content, contentType });

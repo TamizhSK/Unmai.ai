@@ -1,0 +1,150 @@
+# Minimal Working Cloud Build for Unmai.ai
+# Focuses on core deployment without complex validation
+
+substitutions:
+  _REGION: us-central1
+  _FRONTEND_SERVICE: unmai-frontend
+  _BACKEND_SERVICE: unmai-backend
+  _ARTIFACT_REGISTRY: us-central1-docker.pkg.dev
+  _REPOSITORY: unmai-repo
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 100
+
+timeout: 1200s
+
+images:
+  - ${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend:$BUILD_ID
+  - ${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend:$BUILD_ID
+
+steps:
+  # Configure Docker
+  - id: setup-environment
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        echo "🚀 Unmai.ai Production Build Pipeline"
+        echo "Project: $$PROJECT_ID | Build: $$BUILD_ID | Region: ${_REGION}"
+        gcloud auth configure-docker ${_ARTIFACT_REGISTRY}
+        echo "✅ Environment setup completed"
+
+  # Build backend
+  - id: build-backend
+    name: gcr.io/cloud-builders/docker
+    dir: backend
+    args:
+      - build
+      - --cache-from=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend:latest
+      - -t=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend:$BUILD_ID
+      - -t=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend:latest
+      - .
+    waitFor: ['setup-environment']
+
+  # Push backend
+  - id: push-backend
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "--all-tags", "${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend"]
+    waitFor: ['build-backend']
+
+  # Deploy backend
+  - id: deploy-backend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        echo "🚀 Deploying backend..."
+        gcloud run deploy ${_BACKEND_SERVICE} \
+          --image ${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend:$BUILD_ID \
+          --region ${_REGION} \
+          --platform managed \
+          --port 3001 \
+          --memory=2Gi \
+          --cpu=2 \
+          --timeout=900 \
+          --min-instances=0 \
+          --max-instances=10 \
+          --set-env-vars NODE_ENV=production \
+          --set-env-vars GCP_PROJECT_ID=$$PROJECT_ID \
+          --set-secrets GEMINI_API_KEY=gemini-api-key:latest \
+          --set-secrets GOOGLE_CUSTOM_SEARCH_API_KEY=google-custom-search-api-key:latest \
+          --set-secrets GOOGLE_SEARCH_ENGINE_ID=google-search-engine-id:latest \
+          --allow-unauthenticated \
+          --quiet
+        echo "✅ Backend deployed"
+    waitFor: ['push-backend']
+
+  # Get backend URL and build frontend
+  - id: get-backend-url
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        BACKEND_URL=$$(gcloud run services describe ${_BACKEND_SERVICE} --region ${_REGION} --format='value(status.url)')
+        echo "Backend URL: $$BACKEND_URL"
+        echo "NEXT_PUBLIC_API_BASE_URL=$$BACKEND_URL" > frontend/.env.production
+        echo "NODE_ENV=production" >> frontend/.env.production
+        echo "NEXT_TELEMETRY_DISABLED=1" >> frontend/.env.production
+    waitFor: ['deploy-backend']
+
+  # Build frontend
+  - id: build-frontend
+    name: gcr.io/cloud-builders/docker
+    dir: frontend
+    args:
+      - build
+      - --cache-from=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend:latest
+      - -t=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend:$BUILD_ID
+      - -t=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend:latest
+      - .
+    waitFor: ['get-backend-url']
+
+  # Push frontend
+  - id: push-frontend
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "--all-tags", "${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend"]
+    waitFor: ['build-frontend']
+
+  # Deploy frontend
+  - id: deploy-frontend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        echo "🚀 Deploying frontend..."
+        gcloud run deploy ${_FRONTEND_SERVICE} \
+          --image ${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend:$BUILD_ID \
+          --region ${_REGION} \
+          --platform managed \
+          --port 3000 \
+          --memory=1Gi \
+          --cpu=1 \
+          --timeout=300 \
+          --min-instances=0 \
+          --max-instances=5 \
+          --set-env-vars NODE_ENV=production \
+          --allow-unauthenticated \
+          --quiet
+        echo "✅ Frontend deployed"
+    waitFor: ['push-frontend']
+
+  # Final summary
+  - id: deployment-summary
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        echo "🎉 Deployment completed successfully!"
+        BACKEND_URL=$$(gcloud run services describe ${_BACKEND_SERVICE} --region ${_REGION} --format='value(status.url)')
+        FRONTEND_URL=$$(gcloud run services describe ${_FRONTEND_SERVICE} --region ${_REGION} --format='value(status.url)')
+        echo "Frontend: $$FRONTEND_URL"
+        echo "Backend: $$BACKEND_URL"
+        echo "Health Check: $$BACKEND_URL/health"
+    waitFor: ['deploy-frontend']

@@ -501,7 +501,7 @@ Rules:
           verdict: normalizeVerdict(item?.verdict),
           confidence: Math.max(0, Math.min(1, typeof item?.confidence === 'number' ? item.confidence : Number(item?.confidence ?? 0.5))),
         }))
-        .filter((entry): entry is {
+        .filter((entry: any): entry is {
           claim: string;
           verdict: 'VERIFIED' | 'DISPUTED' | 'UNVERIFIED';
           confidence: number;
@@ -655,61 +655,6 @@ async function extractImageMetadata(imageData: string): Promise<ExtractedImageSi
       possibleSources: [],
     } as ExtractedImageSignals;
   }
-}
-
-async function getVertexImageInsights(imageData: string, mimeType?: string): Promise<VertexImageInsights | null> {
-  try {
-    const prompt = `You provide supplemental authenticity signals for an image. Return strict JSON with fields:
-{
-  "reverseSearchHints": string[],
-  "watermarkIndicators": string[],
-  "aiIndicators": string[],
-  "suspectedAIGenerated": boolean,
-  "aiConfidence": number,
-  "hasWatermark": boolean,
-  "watermarkConfidence": number
-}
-- Arrays must contain short descriptive phrases (<=80 characters).
-- Confidence numbers must be 0-1.
-- Respond with JSON only.`;
-
-    const filePart = buildImagePart(imageData, mimeType);
-    const result = await generativeVisionModel.generateContent({
-      contents: [{
-        role: 'user',
-        parts: [{ text: prompt }, filePart as any],
-      }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
-    });
-
-    const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const parsed = tryParseJsonLoose(text);
-    if (parsed && typeof parsed === 'object') {
-      const normalizeArray = (value: unknown) =>
-        Array.isArray(value)
-          ? value.map((entry: unknown) => String(entry || '').trim()).filter(Boolean).slice(0, 10)
-          : [];
-
-      const clamp = (num: unknown) => {
-        const parsedNumber = typeof num === 'number' ? num : Number(num ?? 0);
-        return Math.max(0, Math.min(1, Number.isFinite(parsedNumber) ? parsedNumber : 0));
-      };
-
-      return {
-        reverseSearchHints: normalizeArray(parsed.reverseSearchHints),
-        watermarkIndicators: normalizeArray(parsed.watermarkIndicators),
-        aiIndicators: normalizeArray(parsed.aiIndicators),
-        suspectedAIGenerated: Boolean(parsed.suspectedAIGenerated),
-        aiConfidence: clamp(parsed.aiConfidence),
-        hasWatermark: Boolean(parsed.hasWatermark),
-        watermarkConfidence: clamp(parsed.watermarkConfidence),
-      };
-    }
-  } catch (error) {
-    console.warn('[WARN] Gemini supplemental image insight generation failed:', error);
-  }
-
-  return null;
 }
 
 // Helper to perform OCR on image
@@ -1134,31 +1079,31 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
 
     // Step 5: Web analysis for context
     const enrichedWatermarkIndicators = Array.from(new Set([
-      ...(metadata.watermarkFindings?.indicators ?? []),
+      ...(visionMetadata.watermarkFindings?.indicators ?? []),
       ...(vertexInsights?.watermarkIndicators ?? []),
     ]));
 
     const combinedWatermarkConfidence = Math.max(
-      metadata.watermarkFindings?.confidence ?? 0,
+      visionMetadata.watermarkFindings?.confidence ?? 0,
       vertexInsights?.watermarkConfidence ?? 0
     );
 
-    const combinedHasWatermark = (metadata.watermarkFindings?.hasWatermark ?? false)
+    const combinedHasWatermark = (visionMetadata.watermarkFindings?.hasWatermark ?? false)
       || Boolean(vertexInsights?.hasWatermark && combinedWatermarkConfidence >= 0.5);
 
     const combinedAiIndicators = Array.from(new Set([
-      ...metadata.aiIndicators,
+      ...visionMetadata.aiIndicators,
       ...(vertexInsights?.aiIndicators ?? []),
     ]));
 
     const combinedSuspectedAIGenerated = Boolean(
-      vertexInsights?.suspectedAIGenerated || metadata.suspectedAIGenerated
+      vertexInsights?.suspectedAIGenerated || visionMetadata.suspectedAIGenerated
     );
 
     const enrichedMetadata: ExtractedImageSignals & {
       vertexInsights?: VertexImageInsights | null;
     } = {
-      ...metadata,
+      ...visionMetadata,
       watermarkFindings: {
         hasWatermark: combinedHasWatermark,
         confidence: combinedWatermarkConfidence,
@@ -1206,11 +1151,10 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       if (combinedQueries.length > 0) {
         const reverseSources = await reverseImageGrounding(combinedQueries, options?.searchEngineId);
         if (reverseSources.length > 0) {
-          for (const s of reverseSources) {
-            if (s?.url && !webSourcesMap.has(s.url)) {
-              webSourcesMap.set(s.url, s);
-            }
-          }
+          const byUrl = new Map<string, any>();
+          for (const s of webSources) if (s?.url) byUrl.set(s.url, s);
+          for (const s of reverseSources) if (s?.url && !byUrl.has(s.url)) byUrl.set(s.url, s);
+          webSources = Array.from(byUrl.values());
         }
       }
     } catch (error) {
@@ -1268,7 +1212,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
 
     // Step 8: Gemini-driven formatting of presentation fields and sources
     const candidateSources = [
-      ...(finalWebSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance })),
+      ...(webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance })),
       ...(enrichedMetadata.possibleSources || []).map((s) => ({ url: s.url, title: s.title, relevance: typeof s.score === 'number' ? s.score * 100 : undefined })),
     ];
     const presentation = await formatUnifiedPresentation({

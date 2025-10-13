@@ -58,6 +58,7 @@ function toUnified(
   const contentAuthenticityScore = Math.round(args.contentAuthenticityScore ?? 60);
   const trustExplainabilityScore = Math.round(args.trustExplainabilityScore ?? 60);
   const oneLineDescription = args.oneLineDescription ? toOneLine(args.oneLineDescription) : toOneLine(summary);
+  
   return UnifiedResponseSchema.parse({
     analysisLabel,
     oneLineDescription,
@@ -70,31 +71,116 @@ function toUnified(
   });
 }
 
+// OPTIMIZED UNIFIED ANALYSIS FUNCTION
 export async function analyzeUnified(input: UnifiedAnalyzeInput, options?: { searchEngineId?: string }): Promise<UnifiedResponse> {
-  switch (input.type) {
-    case 'text': {
-      const out = await analyzeTextContent({ text: input.payload.text }, options);
-      return toUnified(out, `Analysis of text with ${out.claims?.length ?? 0} claims.`);
+  console.log(`[INFO] Starting optimized ${input.type} analysis`);
+  const startTime = Date.now();
+
+  try {
+    switch (input.type) {
+      case 'text': {
+        console.log(`[INFO] Processing text analysis (${input.payload.text.length} chars)`);
+        const out = await analyzeTextContent({ text: input.payload.text }, options);
+        const result = toUnified(out, `Analysis of text with ${out.claims?.length ?? 0} claims.`);
+        console.log(`[INFO] Text analysis completed in ${Date.now() - startTime}ms`);
+        return result;
+      }
+      
+      case 'url': {
+        console.log(`[INFO] Processing URL analysis: ${input.payload.url}`);
+        const out = await analyzeUrlSafety({ url: input.payload.url }, options);
+        const result = toUnified(out, `URL analysis for ${input.payload.url}.`);
+        console.log(`[INFO] URL analysis completed in ${Date.now() - startTime}ms`);
+        return result;
+      }
+      
+      case 'image': {
+        console.log(`[INFO] Processing image analysis (${input.payload.mimeType || 'unknown format'})`);
+        const out = await analyzeImageContent({ 
+          imageData: input.payload.imageData, 
+          mimeType: input.payload.mimeType 
+        }, options);
+        const result = toUnified(out, 'Image analysis completed.');
+        console.log(`[INFO] Image analysis completed in ${Date.now() - startTime}ms`);
+        return result;
+      }
+      
+      case 'video': {
+        console.log(`[INFO] Processing video analysis (${input.payload.mimeType || 'unknown format'})`);
+        const out = await analyzeVideoContent({ 
+          videoData: input.payload.videoData, 
+          mimeType: input.payload.mimeType 
+        }, options);
+        const result = toUnified(out, 'Video analysis completed.');
+        console.log(`[INFO] Video analysis completed in ${Date.now() - startTime}ms`);
+        return result;
+      }
+      
+      case 'audio': {
+        console.log(`[INFO] Processing audio analysis (${input.payload.mimeType || 'unknown format'})`);
+        const out = await analyzeAudioContent({ 
+          audioData: input.payload.audioData, 
+          mimeType: input.payload.mimeType 
+        }, options);
+        const result = toUnified(out, 'Audio analysis completed.');
+        console.log(`[INFO] Audio analysis completed in ${Date.now() - startTime}ms`);
+        return result;
+      }
+      
+      default: {
+        // Exhaustive check with safe fallback
+        throw new Error(`Unsupported input type: ${String((input as any)?.type)}`);
+      }
     }
-    case 'url': {
-      const out = await analyzeUrlSafety({ url: input.payload.url }, options);
-      return toUnified(out, `URL analysis for ${input.payload.url}.`);
-    }
-    case 'image': {
-      const out = await analyzeImageContent({ imageData: input.payload.imageData, mimeType: input.payload.mimeType }, options);
-      return toUnified(out, 'Image analysis completed.');
-    }
-    case 'video': {
-      const out = await analyzeVideoContent({ videoData: input.payload.videoData, mimeType: input.payload.mimeType }, options);
-      return toUnified(out, 'Video analysis completed.');
-    }
-    case 'audio': {
-      const out = await analyzeAudioContent({ audioData: input.payload.audioData, mimeType: input.payload.mimeType }, options);
-      return toUnified(out, 'Audio analysis completed.');
-    }
-    default: {
-      // Exhaustive check with safe fallback
-      throw new Error(`Unsupported input type: ${String((input as any)?.type)}`);
-    }
+  } catch (error) {
+    console.error(`[ERROR] ${input.type} analysis failed after ${Date.now() - startTime}ms:`, error);
+    
+    // Return appropriate error response based on content type
+    const errorResponses = {
+      text: {
+        analysisLabel: 'RED' as const,
+        oneLineDescription: 'Text analysis failed due to technical issues',
+        summary: 'The text could not be analyzed. This may be due to processing limitations or invalid content format.',
+        educationalInsight: 'When automated analysis fails, manually verify claims using trusted fact-checking websites and cross-reference with multiple sources.',
+        sources: [{ url: 'https://www.snopes.com', title: 'Snopes Fact Checking', credibility: 0.95 }],
+      },
+      url: {
+        analysisLabel: 'RED' as const,
+        oneLineDescription: 'URL safety check failed due to technical issues',
+        summary: 'The URL could not be analyzed for safety. Exercise extreme caution before visiting this link.',
+        educationalInsight: 'When URL analysis fails, manually check the domain reputation, look for HTTPS, and verify through multiple URL scanners.',
+        sources: [{ url: 'https://www.virustotal.com/gui/home/url', title: 'VirusTotal URL Scanner', credibility: 0.93 }],
+      },
+      image: {
+        analysisLabel: 'RED' as const,
+        oneLineDescription: 'Image analysis failed due to technical issues',
+        summary: 'The image could not be processed. This may be due to unsupported format or corrupted data.',
+        educationalInsight: 'When image analysis fails, use reverse image search tools and manually inspect for signs of manipulation or editing.',
+        sources: [{ url: 'https://tineye.com', title: 'TinEye Reverse Image Search', credibility: 0.9 }],
+      },
+      video: {
+        analysisLabel: 'RED' as const,
+        oneLineDescription: 'Video analysis failed due to technical issues',
+        summary: 'The video could not be processed. This may be due to unsupported format or file corruption.',
+        educationalInsight: 'When video analysis fails, manually verify claims through reputable sources and look for signs of editing or deepfake manipulation.',
+        sources: [{ url: 'https://www.reuters.com/fact-check', title: 'Reuters Fact Check', credibility: 0.94 }],
+      },
+      audio: {
+        analysisLabel: 'RED' as const,
+        oneLineDescription: 'Audio analysis failed due to technical issues',
+        summary: 'The audio could not be processed. This may be due to unsupported format or transcription failure.',
+        educationalInsight: 'When audio analysis fails, manually transcribe key claims and verify through trusted news sources and fact-checkers.',
+        sources: [{ url: 'https://www.factcheck.org', title: 'FactCheck.org', credibility: 0.93 }],
+      },
+    };
+
+    const errorResponse = errorResponses[input.type] || errorResponses.text;
+    
+    return toUnified({
+      ...errorResponse,
+      sourceIntegrityScore: 0,
+      contentAuthenticityScore: 0,
+      trustExplainabilityScore: 0,
+    }, errorResponse.summary);
   }
 }
