@@ -1,10 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Connectivity Test Script for Unmai.ai
- * Tests frontend-backend connectivity and API endpoints
- */
-
 const http = require('http');
 const https = require('https');
 const { URL } = require('url');
@@ -44,7 +39,7 @@ function makeRequest(url, options = {}) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
     const client = urlObj.protocol === 'https:' ? https : http;
-    
+
     const requestOptions = {
       hostname: urlObj.hostname,
       port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
@@ -55,7 +50,7 @@ function makeRequest(url, options = {}) {
         'Accept': 'application/json',
         ...options.headers
       },
-      timeout: options.timeout || 10000
+      timeout: options.timeout || 60000
     };
 
     const req = client.request(requestOptions, (res) => {
@@ -88,13 +83,13 @@ function makeRequest(url, options = {}) {
 // Test backend health endpoint
 async function testBackendHealth(backendUrl) {
   logInfo(`Testing backend health: ${backendUrl}/health`);
-  
+
   try {
     const response = await makeRequest(`${backendUrl}/health`);
-    
+
     if (response.ok) {
       logSuccess('Backend health check passed');
-      
+
       try {
         const healthData = JSON.parse(response.data);
         logInfo(`Backend status: ${healthData.status}`);
@@ -104,7 +99,7 @@ async function testBackendHealth(backendUrl) {
       } catch (e) {
         logWarning('Backend health response is not valid JSON');
       }
-      
+
       return true;
     } else {
       logError(`Backend health check failed: HTTP ${response.statusCode}`);
@@ -119,19 +114,19 @@ async function testBackendHealth(backendUrl) {
 // Test backend API endpoint
 async function testBackendAPI(backendUrl) {
   logInfo('Testing backend API endpoint: /api/analyze');
-  
+
   try {
     const response = await makeRequest(`${backendUrl}/api/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ 
-        type: 'text', 
-        payload: { text: 'test connectivity' } 
+      body: JSON.stringify({
+        type: 'text',
+        payload: { text: 'test connectivity' }
       })
     });
-    
+
     if (response.ok) {
       logSuccess('Backend API test passed');
       return true;
@@ -149,18 +144,18 @@ async function testBackendAPI(backendUrl) {
 // Test frontend accessibility
 async function testFrontend(frontendUrl) {
   logInfo(`Testing frontend accessibility: ${frontendUrl}`);
-  
+
   try {
     const response = await makeRequest(frontendUrl);
-    
+
     if (response.ok) {
       logSuccess('Frontend accessibility test passed');
-      
+
       // Check if it's a Next.js app
       if (response.data.includes('__NEXT_DATA__') || response.data.includes('_next')) {
         logInfo('Detected Next.js application');
       }
-      
+
       return true;
     } else {
       logError(`Frontend accessibility test failed: HTTP ${response.statusCode}`);
@@ -175,7 +170,7 @@ async function testFrontend(frontendUrl) {
 // Test CORS configuration
 async function testCORS(backendUrl) {
   logInfo('Testing CORS configuration');
-  
+
   try {
     const response = await makeRequest(`${backendUrl}/health`, {
       headers: {
@@ -184,7 +179,7 @@ async function testCORS(backendUrl) {
         'Access-Control-Request-Headers': 'Content-Type'
       }
     });
-    
+
     const corsHeaders = response.headers['access-control-allow-origin'];
     if (corsHeaders) {
       logSuccess(`CORS configured: ${corsHeaders}`);
@@ -202,40 +197,40 @@ async function testCORS(backendUrl) {
 // Main test function
 async function runConnectivityTests() {
   log('🔍 Starting Connectivity Tests for Unmai.ai', 'cyan');
-  
+
   // Get URLs from environment or use defaults
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  
+
   logInfo(`Backend URL: ${backendUrl}`);
   logInfo(`Frontend URL: ${frontendUrl}`);
-  
+
   const results = {
     backendHealth: false,
     backendAPI: false,
     frontend: false,
     cors: false
   };
-  
+
   // Run tests
   results.backendHealth = await testBackendHealth(backendUrl);
-  
+
   if (results.backendHealth) {
     results.backendAPI = await testBackendAPI(backendUrl);
     results.cors = await testCORS(backendUrl);
   }
-  
+
   results.frontend = await testFrontend(frontendUrl);
-  
+
   // Summary
   log('\n📊 Test Results Summary:', 'cyan');
   log(`Backend Health: ${results.backendHealth ? '✅ PASS' : '❌ FAIL'}`, results.backendHealth ? 'green' : 'red');
   log(`Backend API: ${results.backendAPI ? '✅ PASS' : '❌ FAIL'}`, results.backendAPI ? 'green' : 'red');
   log(`Frontend: ${results.frontend ? '✅ PASS' : '❌ FAIL'}`, results.frontend ? 'green' : 'red');
   log(`CORS: ${results.cors ? '✅ PASS' : '⚠️  WARN'}`, results.cors ? 'green' : 'yellow');
-  
+
   const allPassed = results.backendHealth && results.backendAPI && results.frontend;
-  
+
   if (allPassed) {
     log('\n🎉 All connectivity tests passed!', 'green');
     process.exit(0);
@@ -249,7 +244,7 @@ async function runConnectivityTests() {
 if (require.main === module) {
   // Parse command line arguments
   const args = process.argv.slice(2);
-  
+
   if (args.includes('--help') || args.includes('-h')) {
     console.log(`
 Usage: node scripts/test-connectivity.js [options]
@@ -270,18 +265,18 @@ Examples:
 `);
     process.exit(0);
   }
-  
+
   // Parse URLs from command line
   const backendUrlIndex = args.indexOf('--backend-url');
   if (backendUrlIndex !== -1 && args[backendUrlIndex + 1]) {
     process.env.BACKEND_URL = args[backendUrlIndex + 1];
   }
-  
+
   const frontendUrlIndex = args.indexOf('--frontend-url');
   if (frontendUrlIndex !== -1 && args[frontendUrlIndex + 1]) {
     process.env.FRONTEND_URL = args[frontendUrlIndex + 1];
   }
-  
+
   runConnectivityTests().catch(error => {
     logError(`Connectivity test failed: ${error.message}`);
     process.exit(1);

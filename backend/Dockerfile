@@ -38,14 +38,9 @@ ENV GENERATE_SOURCEMAP=false
 RUN mkdir -p dist
 
 # Compile TypeScript to JavaScript
-RUN npx tsc --project tsconfig.json --declaration false --sourceMap false
+RUN npx tsc --project tsconfig.json
 
-# Create a simple server launcher
-RUN echo '#!/usr/bin/env node\n\
-import("./server.js").catch(console.error);' > dist/index.js
-
-# Make it executable
-RUN chmod +x dist/server.js
+# The compiled server.js will be in dist/server.js, so we can run it directly
 
 # --- Runner stage ---
 FROM node:20-slim AS runner
@@ -79,4 +74,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 EXPOSE 3001
 ENV PORT=3001
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/server.js"]

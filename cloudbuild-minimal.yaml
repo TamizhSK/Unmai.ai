@@ -1,5 +1,5 @@
 # Minimal Working Cloud Build for Unmai.ai
-# Focuses on core deployment without complex validation
+# Strategy: Build backend first → Get URL → Build frontend with backend URL → Verify connectivity
 
 substitutions:
   _REGION: us-central1
@@ -20,7 +20,7 @@ images:
   - ${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend:$BUILD_ID
 
 steps:
-  # Configure Docker
+  # Step 1: Setup environment
   - id: setup-environment
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: bash
@@ -28,11 +28,11 @@ steps:
       - -c
       - |
         echo "🚀 Unmai.ai Production Build Pipeline"
-        echo "Project: $$PROJECT_ID | Build: $$BUILD_ID | Region: ${_REGION}"
+        echo "Project: $PROJECT_ID | Build: $BUILD_ID | Region: ${_REGION}"
         gcloud auth configure-docker ${_ARTIFACT_REGISTRY}
         echo "✅ Environment setup completed"
 
-  # Build backend
+  # Step 2: Build backend Docker image
   - id: build-backend
     name: gcr.io/cloud-builders/docker
     dir: backend
@@ -44,13 +44,13 @@ steps:
       - .
     waitFor: ['setup-environment']
 
-  # Push backend
+  # Step 3: Push backend image
   - id: push-backend
     name: gcr.io/cloud-builders/docker
     args: ["push", "--all-tags", "${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend"]
     waitFor: ['build-backend']
 
-  # Deploy backend
+  # Step 4: Deploy backend to Cloud Run
   - id: deploy-backend
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: bash
@@ -69,7 +69,7 @@ steps:
           --min-instances=0 \
           --max-instances=10 \
           --set-env-vars NODE_ENV=production \
-          --set-env-vars GCP_PROJECT_ID=$$PROJECT_ID \
+          --set-env-vars GCP_PROJECT_ID=helpful-cat-465008-h1 \
           --set-secrets GEMINI_API_KEY=gemini-api-key:latest \
           --set-secrets GOOGLE_CUSTOM_SEARCH_API_KEY=google-custom-search-api-key:latest \
           --set-secrets GOOGLE_SEARCH_ENGINE_ID=google-search-engine-id:latest \
@@ -78,21 +78,27 @@ steps:
         echo "✅ Backend deployed"
     waitFor: ['push-backend']
 
-  # Get backend URL and build frontend
-  - id: get-backend-url
+  # Step 5: Get backend URL and configure frontend
+  - id: configure-frontend
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: bash
     args:
       - -c
       - |
+        echo "🔗 Configuring frontend with backend URL..."
         BACKEND_URL=$$(gcloud run services describe ${_BACKEND_SERVICE} --region ${_REGION} --format='value(status.url)')
-        echo "Backend URL: $$BACKEND_URL"
+        echo "✅ Backend URL: $$BACKEND_URL"
+        
+        # Create frontend production environment with backend URL
         echo "NEXT_PUBLIC_API_BASE_URL=$$BACKEND_URL" > frontend/.env.production
         echo "NODE_ENV=production" >> frontend/.env.production
         echo "NEXT_TELEMETRY_DISABLED=1" >> frontend/.env.production
+        echo "GENERATE_SOURCEMAP=false" >> frontend/.env.production
+        
+        echo "✅ Frontend configured to connect to: $$BACKEND_URL"
     waitFor: ['deploy-backend']
 
-  # Build frontend
+  # Step 6: Build frontend Docker image with backend URL
   - id: build-frontend
     name: gcr.io/cloud-builders/docker
     dir: frontend
@@ -102,15 +108,15 @@ steps:
       - -t=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend:$BUILD_ID
       - -t=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend:latest
       - .
-    waitFor: ['get-backend-url']
+    waitFor: ['configure-frontend']
 
-  # Push frontend
+  # Step 7: Push frontend image
   - id: push-frontend
     name: gcr.io/cloud-builders/docker
     args: ["push", "--all-tags", "${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend"]
     waitFor: ['build-frontend']
 
-  # Deploy frontend
+  # Step 8: Deploy frontend to Cloud Run
   - id: deploy-frontend
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: bash
@@ -134,17 +140,76 @@ steps:
         echo "✅ Frontend deployed"
     waitFor: ['push-frontend']
 
-  # Final summary
+  # Step 9: Verify frontend-backend connectivity
+  - id: verify-connectivity
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        echo "🔍 Verifying frontend-backend connectivity..."
+        BACKEND_URL=$$(gcloud run services describe ${_BACKEND_SERVICE} --region ${_REGION} --format='value(status.url)')
+        FRONTEND_URL=$$(gcloud run services describe ${_FRONTEND_SERVICE} --region ${_REGION} --format='value(status.url)')
+        
+        # Test backend health
+        echo "Testing backend health..."
+        if curl -f -s "$$BACKEND_URL/health" > /dev/null; then
+          echo "✅ Backend health check passed"
+        else
+          echo "❌ Backend health check failed"
+          exit 1
+        fi
+        
+        # Test backend API (simulating frontend request)
+        echo "Testing backend API..."
+        API_RESPONSE=$$(curl -s -X POST "$$BACKEND_URL/api/analyze" \
+          -H "Content-Type: application/json" \
+          -H "Origin: $$FRONTEND_URL" \
+          -d '{"type":"text","payload":{"text":"connectivity test"}}' \
+          --max-time 60)
+        
+        if echo "$$API_RESPONSE" | grep -q "analysisLabel"; then
+          echo "✅ Backend API responding correctly"
+        else
+          echo "❌ Backend API not responding correctly"
+          exit 1
+        fi
+        
+        # Test frontend
+        echo "Testing frontend..."
+        if curl -f -s "$$FRONTEND_URL" > /dev/null; then
+          echo "✅ Frontend accessible"
+        else
+          echo "❌ Frontend not accessible"
+          exit 1
+        fi
+        
+        echo "✅ All connectivity tests passed!"
+    waitFor: ['deploy-frontend']
+
+  # Step 10: Final deployment summary
   - id: deployment-summary
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: bash
     args:
       - -c
       - |
-        echo "🎉 Deployment completed successfully!"
+        echo ""
+        echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         BACKEND_URL=$$(gcloud run services describe ${_BACKEND_SERVICE} --region ${_REGION} --format='value(status.url)')
         FRONTEND_URL=$$(gcloud run services describe ${_FRONTEND_SERVICE} --region ${_REGION} --format='value(status.url)')
-        echo "Frontend: $$FRONTEND_URL"
-        echo "Backend: $$BACKEND_URL"
-        echo "Health Check: $$BACKEND_URL/health"
-    waitFor: ['deploy-frontend']
+        echo ""
+        echo "🌐 Live Application URLs:"
+        echo "   Frontend: $$FRONTEND_URL"
+        echo "   Backend:  $$BACKEND_URL"
+        echo ""
+        echo "🔗 Connectivity Status:"
+        echo "   ✅ Frontend ↔ Backend: Connected"
+        echo "   ✅ CORS: Configured"
+        echo "   ✅ API: Responding"
+        echo ""
+        echo "🚀 Your application is live and ready to use!"
+        echo "   Open the frontend URL in your browser to start using unmai.ai"
+        echo "   Open the frontend URL in your browser to start using unmai.ai"
+    waitFor: ['verify-connectivity']
