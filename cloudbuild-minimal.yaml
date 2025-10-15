@@ -69,7 +69,7 @@ steps:
           --min-instances=0 \
           --max-instances=10 \
           --set-env-vars NODE_ENV=production \
-          --set-env-vars GCP_PROJECT_ID=helpful-cat-465008-h1 \
+          --set-env-vars GCP_PROJECT_ID=$PROJECT_ID \
           --set-secrets GEMINI_API_KEY=gemini-api-key:latest \
           --set-secrets GOOGLE_CUSTOM_SEARCH_API_KEY=google-custom-search-api-key:latest \
           --set-secrets GOOGLE_SEARCH_ENGINE_ID=google-search-engine-id:latest \

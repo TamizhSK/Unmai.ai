@@ -77,7 +77,7 @@ jobs:
       - name: Submit to Cloud Build
         run: |
           gcloud builds submit \
-            --config cloudbuild.yaml \
+            --config cloudbuild-minimal.yaml \
             --project ${{ secrets.GCP_PROJECT_ID }} \
             --substitutions _REGION=${{ env.REGION }},_FRONTEND_SERVICE=${{ env.FRONTEND_SERVICE }},_BACKEND_SERVICE=${{ env.BACKEND_SERVICE }}
 

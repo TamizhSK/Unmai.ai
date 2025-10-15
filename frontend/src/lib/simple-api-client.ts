@@ -47,7 +47,8 @@ async function apiCall<T>(endpoint: string, data: any, retries = 2): Promise<T> 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      const REQUEST_TIMEOUT_MS = 120000; // 120 second timeout to accommodate cold starts and long AI runs
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',

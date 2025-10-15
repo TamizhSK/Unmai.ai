@@ -1040,36 +1040,59 @@ function calculateScores(contentAnalysis: any, manipulationAnalysis: Manipulatio
   };
 }
 
-// Main analysis function
+// Main analysis function with fully optimized parallel processing (CSE-free)
 export async function analyzeImageContent(input: ImageAnalysisInput, options?: { searchEngineId?: string }): Promise<ImageAnalysisOutput> {
+  const startTime = Date.now();
+  console.log(`[INFO] Starting optimized image analysis (CSE-free)`);
+  
   try {
-    // Run metadata, OCR, deepfake detection, and reverse image search concurrently
-    const metadataPromise = extractImageMetadata(input.imageData);
-    const ocrPromise = performOcr(input.imageData);
-    const understandingPromise = geminiImageUnderstanding(input.imageData, input.mimeType);
-    const vertexInsightPromise = getVertexImageInsights(input.imageData, input.mimeType);
-    const deepfakePromise = (async () => {
-      try {
-        const deepfakeResult = await detectDeepfake({ media: input.imageData, contentType: 'image' });
-        return { isManipulated: deepfakeResult.isDeepfake, manipulationConfidence: deepfakeResult.confidenceScore / 100 };
-      } catch (error) {
-        console.error('Deepfake detection failed:', error);
-        const basic = await detectImageDeepfake(input.imageData);
-        return { isManipulated: basic.isManipulated, manipulationConfidence: basic.confidence };
-      }
-    })();
+    // Step 1: Run ALL core analysis operations in parallel (no CSE calls)
+    const coreAnalysisOperations = {
+      // Vision API operations
+      visionMetadata: extractImageMetadata(input.imageData),
+      ocrText: performOcr(input.imageData),
+      
+      // Gemini vision analysis
+      understanding: geminiImageUnderstanding(input.imageData, input.mimeType),
+      vertexInsights: getVertexImageInsights(input.imageData, input.mimeType),
+      
+      // Deepfake detection
+      deepfakeInfo: (async () => {
+        const deepfakeStart = Date.now();
+        try {
+          const deepfakeResult = await detectDeepfake({ media: input.imageData, contentType: 'image' });
+          console.log(`[INFO] Deepfake detection completed in ${Date.now() - deepfakeStart}ms`);
+          return { isManipulated: deepfakeResult.isDeepfake, manipulationConfidence: deepfakeResult.confidenceScore / 100 };
+        } catch (error) {
+          console.warn(`[WARN] Dedicated deepfake API failed, using fallback in ${Date.now() - deepfakeStart}ms`);
+          const basic = await detectImageDeepfake(input.imageData);
+          return { isManipulated: basic.isManipulated, manipulationConfidence: basic.confidence };
+        }
+      })()
+    };
 
-    const [visionMetadata, ocrText, understanding, deepfakeInfo, vertexInsights] = await Promise.all([
-      metadataPromise,
-      ocrPromise,
-      understandingPromise,
-      deepfakePromise,
-      vertexInsightPromise,
+    // Wait for all core operations to complete
+    const [visionMetadata, ocrText, understanding, vertexInsights, deepfakeInfo] = await Promise.all([
+      coreAnalysisOperations.visionMetadata,
+      coreAnalysisOperations.ocrText,
+      coreAnalysisOperations.understanding,
+      coreAnalysisOperations.vertexInsights,
+      coreAnalysisOperations.deepfakeInfo,
     ]);
+    
+    const coreOperationsTime = Date.now() - startTime;
+    console.log(`[INFO] Core image operations completed in ${coreOperationsTime}ms`);
 
-    // Analyze content and fact-check (requires OCR text if any)
+    // Step 2: Quick content analysis (using OCR result)
+    const contentAnalysisStart = Date.now();
     const contentAnalysis = await analyzeImageContentAndFactCheck(input.imageData, ocrText);
+    console.log(`[INFO] Content analysis completed in ${Date.now() - contentAnalysisStart}ms`);
+
     const vertexTextInsights = contentAnalysis.vertexTextInsights;
+    
+    // Step 3: Fast signal consolidation (no web API calls)
+    const signalsStart = Date.now();
+    
     const vertexSuggestsManipulation = Boolean(vertexInsights?.suspectedAIGenerated && (vertexInsights.aiConfidence ?? 0) >= 0.6);
     const combinedIsManipulated = deepfakeInfo.isManipulated || vertexSuggestsManipulation;
     const combinedManipulationConfidence = Math.max(
@@ -1077,7 +1100,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       vertexInsights?.aiConfidence ?? 0
     );
 
-    // Step 5: Web analysis for context
+    // Combine watermark signals
     const enrichedWatermarkIndicators = Array.from(new Set([
       ...(visionMetadata.watermarkFindings?.indicators ?? []),
       ...(vertexInsights?.watermarkIndicators ?? []),
@@ -1091,6 +1114,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
     const combinedHasWatermark = (visionMetadata.watermarkFindings?.hasWatermark ?? false)
       || Boolean(vertexInsights?.hasWatermark && combinedWatermarkConfidence >= 0.5);
 
+    // Combine AI indicators
     const combinedAiIndicators = Array.from(new Set([
       ...visionMetadata.aiIndicators,
       ...(vertexInsights?.aiIndicators ?? []),
@@ -1100,6 +1124,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       vertexInsights?.suspectedAIGenerated || visionMetadata.suspectedAIGenerated
     );
 
+    // Create enriched metadata without expensive web lookups
     const enrichedMetadata: ExtractedImageSignals & {
       vertexInsights?: VertexImageInsights | null;
     } = {
@@ -1111,57 +1136,25 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       },
       suspectedAIGenerated: combinedSuspectedAIGenerated,
       aiIndicators: combinedAiIndicators,
-      ...(vertexInsights
-        ? { vertexInsights: vertexInsights }
-        : {}),
+      ...(vertexInsights ? { vertexInsights: vertexInsights } : {}),
     };
 
-    const reverseSearchQueries = deriveReverseImageQueries({ metadata: enrichedMetadata, ocrText, vertexInsights });
-    const webSourcesMap = new Map<string, any>();
+    // Fast source generation from Vision API results (no CSE calls)
+    const webSources = (visionMetadata.possibleSources || []).map(source => ({
+      url: source.url,
+      title: source.title || 'Reverse Image Match',
+      snippet: `Image found on this domain (confidence: ${source.score ? Math.round(source.score * 100) : 'unknown'}%)`,
+      date: source.date || '',
+      relevance: source.score ? source.score * 100 : 50
+    }));
+    
+    console.log(`[INFO] Signal consolidation completed in ${Date.now() - signalsStart}ms (${webSources.length} sources from Vision API)`);
+    
+    // Skip expensive CSE web analysis completely for faster processing
 
-    const searchResults = await Promise.allSettled(
-      reverseSearchQueries.slice(0, 3).map((query: string) =>
-        performWebAnalysis({
-          query,
-          contentType: 'text',
-          mediaType: 'image',
-          searchEngineId: options?.searchEngineId,
-        })
-      )
-    );
-
-    for (const result of searchResults) {
-      if (result.status === 'fulfilled') {
-        for (const source of result.value.currentInformation || []) {
-          if (source?.url && !webSourcesMap.has(source.url)) {
-            webSourcesMap.set(source.url, source);
-          }
-        }
-      } else {
-        console.error('Web analysis failed:', result.reason);
-      }
-    }
-
-    let webSources = Array.from(webSourcesMap.values());
-
-    try {
-      const guidedQueries = await buildGeminiGuidedSearchQueries(understanding, ocrText);
-      const reverseQueries = buildReverseImageQueries(understanding, ocrText);
-      const combinedQueries = Array.from(new Set([...reverseQueries, ...guidedQueries]));
-      if (combinedQueries.length > 0) {
-        const reverseSources = await reverseImageGrounding(combinedQueries, options?.searchEngineId);
-        if (reverseSources.length > 0) {
-          const byUrl = new Map<string, any>();
-          for (const s of webSources) if (s?.url) byUrl.set(s.url, s);
-          for (const s of reverseSources) if (s?.url && !byUrl.has(s.url)) byUrl.set(s.url, s);
-          webSources = Array.from(byUrl.values());
-        }
-      }
-    } catch (error) {
-      console.warn('[WARN] Guided reverse image search failed:', error);
-    }
-
-    // Step 6: Determine analysis label
+    // Step 4: Fast analysis label determination
+    const labelStart = Date.now();
+    
     const watermarkConfidence = enrichedMetadata.watermarkFindings?.confidence ?? 0;
     const watermarkConcern = enrichedMetadata.watermarkFindings?.hasWatermark && watermarkConfidence >= 0.6;
     const suspectedAIGenerated = Boolean(enrichedMetadata.suspectedAIGenerated);
@@ -1201,7 +1194,7 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       analysisLabel = 'GREEN';
     }
 
-    // Step 7: Calculate scores
+    // Step 5: Fast score calculation
     const scores = calculateScores(contentAnalysis, {
       isManipulated: combinedIsManipulated,
       confidence: combinedManipulationConfidence,
@@ -1209,37 +1202,51 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       suspectedAIGenerated,
       aiConfidence: vertexInsights?.aiConfidence,
     });
+    
+    console.log(`[INFO] Analysis label (${analysisLabel}) and scores computed in ${Date.now() - labelStart}ms`);
 
-    // Step 8: Gemini-driven formatting of presentation fields and sources
+    // Step 6: Parallel presentation formatting and deep analysis
+    const presentationStart = Date.now();
+    
     const candidateSources = [
       ...(webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance })),
-      ...(enrichedMetadata.possibleSources || []).map((s) => ({ url: s.url, title: s.title, relevance: typeof s.score === 'number' ? s.score * 100 : undefined })),
     ];
-    const presentation = await formatUnifiedPresentation({
-      contentType: 'image',
-      analysisLabel,
-      rawSignals: {
-        description: contentAnalysis.description,
-        factualClaims: contentAnalysis.factualClaims,
-        isManipulated: combinedIsManipulated,
-        manipulationConfidence: combinedManipulationConfidence,
+    
+    const [presentation, deepAnalysis] = await Promise.all([
+      formatUnifiedPresentation({
+        contentType: 'image',
+        analysisLabel,
+        rawSignals: {
+          description: contentAnalysis.description,
+          factualClaims: contentAnalysis.factualClaims,
+          isManipulated: combinedIsManipulated,
+          manipulationConfidence: combinedManipulationConfidence,
+          ocrText,
+          metadata: visionMetadata,
+          geminiUnderstanding: understanding,
+        },
+        candidateSources,
+      }),
+      generateDeepAnalysisNarrative({
+        understanding,
         ocrText,
-        metadata: visionMetadata,
-        geminiUnderstanding: understanding,
-      },
-      candidateSources,
-    });
+        analysisLabel,
+        existingEducationalInsight: '', // Will be filled by presentation
+        sources: candidateSources.map(source => ({
+          url: source.url,
+          title: source.title,
+        })),
+      })
+    ]);
+    
+    const totalTime = Date.now() - startTime;
+    const presentationTime = Date.now() - presentationStart;
+    console.log(`[INFO] Image analysis completed in ${totalTime}ms (core: ${coreOperationsTime}ms, presentation: ${presentationTime}ms)`);
 
-    const deepAnalysis = await generateDeepAnalysisNarrative({
-      understanding,
-      ocrText,
-      analysisLabel,
-      existingEducationalInsight: presentation.educationalInsight,
-      sources: (presentation.sources || []).map((source: any) => ({
-        url: source.url,
-        title: source.title,
-      })),
-    });
+    // Use presentation's educational insight in deep analysis if it wasn't filled
+    if (!deepAnalysis.educationalInsights.length && presentation.educationalInsight) {
+      deepAnalysis.educationalInsights = [presentation.educationalInsight];
+    }
 
     return {
       analysisLabel,
@@ -1260,7 +1267,8 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       deepAnalysis,
     };
   } catch (error) {
-    console.error('Error in image analysis:', error);
+    const errorTime = Date.now() - startTime;
+    console.error(`[ERROR] Optimized image analysis failed after ${errorTime}ms:`, error);
 
     // Return error response with proper format
     return {

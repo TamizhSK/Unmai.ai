@@ -15,3 +15,8 @@ backend/dist
 **/build
 **/.turbo
 **/.cache
+
+# Exclude local helper scripts not needed in Docker build contexts
+scripts/test-connectivity.js
+scripts/validate-deployment.sh
+verify-app-working.js

@@ -19,8 +19,16 @@ const CSE_API_KEY = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
 const DEFAULT_SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID;
 
 // Validate Custom Search configuration on startup
+let CSE_AVAILABLE = false;
+
 if (CSE_API_KEY && DEFAULT_SEARCH_ENGINE_ID) {
-  console.log('✅ Google Custom Search API configured');
+  // Additional validation for API key format
+  if (CSE_API_KEY.startsWith('AIza') && DEFAULT_SEARCH_ENGINE_ID.length > 10) {
+    CSE_AVAILABLE = true;
+    console.log('✅ Google Custom Search API configured and validated');
+  } else {
+    console.warn('⚠️  Custom Search credentials appear invalid - using fallback methods');
+  }
 } else if (CSE_API_KEY && !DEFAULT_SEARCH_ENGINE_ID) {
   console.warn('⚠️  Custom Search API key found but missing GOOGLE_SEARCH_ENGINE_ID');
 } else if (!CSE_API_KEY && DEFAULT_SEARCH_ENGINE_ID) {
@@ -203,10 +211,11 @@ async function scrapeUrl(url: string): Promise<ScrapeResult> {
   }
 }
 
-// Google Custom Search JSON API with enhanced media support
+// Google Custom Search JSON API with enhanced media support and faster failure modes
 async function customSearch(query: string, cx: string, opts?: { mediaType?: 'text'|'image'|'video'|'audio' }): Promise<Array<{ title: string; url: string; snippet: string; date: string; relevance: number }>> {
-  if (!CSE_API_KEY) {
-    console.warn('[WARN] Custom Search API key not configured');
+  // Quick validation check
+  if (!CSE_AVAILABLE) {
+    console.log('[INFO] Custom Search not available - skipping to avoid latency');
     return [];
   }
   
@@ -221,10 +230,10 @@ async function customSearch(query: string, cx: string, opts?: { mediaType?: 'tex
     }
     
     const params = new URLSearchParams({
-      key: CSE_API_KEY,
+      key: CSE_API_KEY!,
       cx,
       q: trimmed,
-      num: '8', // Increased for better results
+      num: '5', // Reduced for faster response
       safe: 'active',
       gl: 'us', // Geographic location
       hl: 'en'  // Interface language
@@ -239,16 +248,34 @@ async function customSearch(query: string, cx: string, opts?: { mediaType?: 'tex
     
     console.log(`[INFO] Custom Search query: "${trimmed}" (${opts?.mediaType || 'text'})`);
     
-    const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params.toString()}`);
+    // Add timeout to Custom Search request to fail fast
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      console.warn('[WARN] Custom Search request timed out after 5 seconds');
+    }, 5000);
+    
+    const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params.toString()}`, {
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
     
     if (!res.ok) {
       const errorText = await res.text().catch(() => '');
       console.error(`[ERROR] Custom Search API failed: HTTP ${res.status} ${res.statusText}`);
-      if (errorText.includes('quotaExceeded')) {
-        console.error('[ERROR] Custom Search API quota exceeded');
-      } else if (errorText.includes('keyInvalid')) {
-        console.error('[ERROR] Invalid Custom Search API key');
+      
+      // Disable CSE for future requests if we get persistent errors
+      if (res.status === 400 || res.status === 403 || errorText.includes('keyInvalid')) {
+        console.error('[ERROR] Disabling Custom Search due to authentication/permission issues');
+        CSE_AVAILABLE = false;
       }
+      
+      if (errorText.includes('quotaExceeded')) {
+        console.error('[ERROR] Custom Search API quota exceeded - disabling for this session');
+        CSE_AVAILABLE = false;
+      }
+      
       return [];
     }
     
@@ -277,7 +304,20 @@ async function customSearch(query: string, cx: string, opts?: { mediaType?: 'tex
     
     return validResults;
   } catch (err) {
+    // Handle abort errors gracefully
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[WARN] Custom Search request aborted due to timeout - using fallback methods');
+      return [];
+    }
+    
     console.error('[ERROR] Custom Search query failed:', err);
+    
+    // Disable CSE if we get network or other persistent errors
+    if (err instanceof Error && (err.message.includes('fetch failed') || err.message.includes('network'))) {
+      console.warn('[WARN] Network issues with Custom Search - temporarily disabling');
+      CSE_AVAILABLE = false;
+    }
+    
     return [];
   }
 }
@@ -318,18 +358,27 @@ export async function performWebAnalysis(
     }
   }
 
-  // Attempt CSE grounding if keys are present
+  // Attempt CSE grounding with improved error handling
   const effectiveCx = input.searchEngineId || DEFAULT_SEARCH_ENGINE_ID;
-  if (CSE_API_KEY && effectiveCx) {
+  if (CSE_AVAILABLE && effectiveCx) {
     try {
       const queryForSearch = input.contentType === 'url' ? input.query : content;
+      const startTime = Date.now();
+      
       cseResults = await customSearch(queryForSearch, effectiveCx, { mediaType: input.mediaType });
+      
+      const duration = Date.now() - startTime;
       if (cseResults.length > 0) {
-        console.log(`[INFO] CSE returned ${cseResults.length} items for grounding`);
+        console.log(`[INFO] CSE returned ${cseResults.length} items for grounding in ${duration}ms`);
+      } else {
+        console.log(`[INFO] CSE returned no results in ${duration}ms - proceeding with fallback analysis`);
       }
     } catch (e) {
-      console.warn('[WARN] CSE grounding failed:', e);
+      console.warn('[WARN] CSE grounding failed - continuing without web grounding:', e);
+      // Continue without CSE results - this is not a blocking error
     }
+  } else if (!CSE_AVAILABLE) {
+    console.log('[INFO] Custom Search unavailable - using AI-only analysis');
   }
 
   const cseGroundingSection = cseResults.length > 0
