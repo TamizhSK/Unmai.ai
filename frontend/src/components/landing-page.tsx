@@ -39,7 +39,7 @@ export function LandingPage() {
   }, [showChat, sampleQuestions.length]);
 
   return (
-    <div className="flex flex-col h-screen w-full max-w-6xl mx-auto overflow-hidden">
+    <div className="flex flex-col min-h-[100svh] w-full max-w-6xl mx-auto overflow-hidden">
       {!showChat ? (
         // Redesigned Landing page with MagicUI components
         <div className="relative flex-1 flex flex-col justify-center px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
@@ -97,7 +97,7 @@ export function LandingPage() {
         />
       )}
       
-      <div className="flex-shrink-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex-shrink-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t border-border/40 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-6xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
           <InputBar
             addMessage={addMessage}
