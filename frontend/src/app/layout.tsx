@@ -1,0 +1,67 @@
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import { Toaster } from "@/components/ui/toaster";
+import { SimpleHeader } from "@/components/layout/simple-header";
+import { ThemeProvider } from "@/components";
+import { cn } from "@/lib/utils";
+import { LanguageProvider } from "@/context/language-context";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+export const metadata: Metadata = {
+  title: "unmai.ai - Verify Information with AI",
+  description:
+    "A tool that helps you verify the credibility of information using AI",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/favicon.ico",
+  },
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f3f4f6" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={cn(
+          `${inter.variable} antialiased min-h-[100svh]`
+        )}
+      >
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <LanguageProvider>
+            <div className="flex flex-col min-h-[100svh]">
+              <SimpleHeader />
+              <main className="flex-1 overflow-y-auto pt-[calc(4rem+env(safe-area-inset-top))] scroll-smooth">{children}</main>
+            </div>
+            <Toaster />
+          </LanguageProvider>
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}

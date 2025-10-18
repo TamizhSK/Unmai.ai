@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.gitignore
+README.md
+Dockerfile
+.dockerignore
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.DS_Store
+*.pem
+coverage
+.genkit
+*.tsbuildinfo
+.eslintcache
