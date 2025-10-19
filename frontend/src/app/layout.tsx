@@ -1,16 +1,31 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
-import { SimpleHeader } from "@/components/layout/simple-header";
-import { ThemeProvider } from "@/components";
+import { ThemeProvider } from "@/components/theme";
 import { cn } from "@/lib/utils";
 import { LanguageProvider } from "@/context/language-context";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
+const googleSans = localFont({
+  src: [
+    {
+      path: "../../public/GoogleSans-Regular.ttf",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../../public/GoogleSans-Medium.ttf",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "../../public/GoogleSans-Bold.ttf",
+      weight: "700",
+      style: "normal",
+    },
+  ],
+  variable: "--font-google-sans",
   display: "swap",
+  fallback: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
 });
 
 export const metadata: Metadata = {
@@ -22,10 +37,6 @@ export const metadata: Metadata = {
     shortcut: "/favicon.ico",
     apple: "/favicon.ico",
   },
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f3f4f6" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-  ],
 };
 
 export const viewport: Viewport = {
@@ -33,6 +44,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f3f4f6" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
 };
 
 export default function RootLayout({
@@ -44,21 +59,14 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className={cn(
-          `${inter.variable} antialiased min-h-[100svh]`
+          `${googleSans.variable} font-[var(--font-google-sans)] antialiased min-h-[100svh]`
         )}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
+        <ThemeProvider>
           <LanguageProvider>
             <div className="flex flex-col min-h-[100svh]">
-              <SimpleHeader />
-              <main className="flex-1 overflow-y-auto pt-[calc(4rem+env(safe-area-inset-top))] scroll-smooth">{children}</main>
+              <main className="flex-1 overflow-hidden">{children}</main>
             </div>
-            <Toaster />
           </LanguageProvider>
         </ThemeProvider>
       </body>
