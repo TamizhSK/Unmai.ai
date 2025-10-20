@@ -1,16 +1,31 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
-import { SimpleHeader } from "@/components/layout/simple-header";
-import { ThemeProvider } from "@/components";
+import { ThemeProvider } from "@/components/theme";
 import { cn } from "@/lib/utils";
 import { LanguageProvider } from "@/context/language-context";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
+const googleSans = localFont({
+  src: [
+    {
+      path: "../../public/GoogleSans-Regular.ttf",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../../public/GoogleSans-Medium.ttf",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "../../public/GoogleSans-Bold.ttf",
+      weight: "700",
+      style: "normal",
+    },
+  ],
+  variable: "--font-google-sans",
   display: "swap",
+  fallback: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
 });
 
 export const metadata: Metadata = {
@@ -24,6 +39,17 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f3f4f6" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -33,21 +59,14 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className={cn(
-          `${inter.variable} antialiased min-h-screen`
+          `${googleSans.variable} font-[var(--font-google-sans)] antialiased min-h-[100svh]`
         )}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
+        <ThemeProvider>
           <LanguageProvider>
-            <div className="flex flex-col min-h-screen">
-              <SimpleHeader />
-              <main className="flex-1 overflow-y-auto">{children}</main>
+            <div className="flex flex-col min-h-[100svh]">
+              <main className="flex-1 overflow-hidden">{children}</main>
             </div>
-            <Toaster />
           </LanguageProvider>
         </ThemeProvider>
       </body>

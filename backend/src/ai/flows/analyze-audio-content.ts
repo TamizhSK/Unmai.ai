@@ -374,57 +374,91 @@ function calculateScores(
   };
 }
 
-// Main analysis function
+// Main analysis function with optimized parallel processing
 export async function analyzeAudioContent(input: AudioAnalysisInput, options?: { searchEngineId?: string }): Promise<AudioAnalysisOutput> {
+  const startTime = Date.now();
+  console.log(`[INFO] Starting optimized audio analysis`);
+  
   try {
-    // Step 1: Transcribe audio
+    // Step 1: Transcribe audio first (required for all other operations)
+    const transcriptionStart = Date.now();
     const transcription = await transcribeAudio(input.audioData, input.mimeType);
+    const transcriptionTime = Date.now() - transcriptionStart;
+    console.log(`[INFO] Audio transcription completed in ${transcriptionTime}ms`);
 
     if (!transcription) {
       throw new Error('Failed to transcribe audio');
     }
 
-    // Step 2: Extract and fact-check claims
-    const factualClaims = await extractAndFactCheckClaims(transcription);
+    // Step 2: Run parallel analysis operations that depend on transcription
+    const parallelOperationsStart = Date.now();
+    const parallelOperations = {
+      // Extract and fact-check claims
+      claimAnalysis: extractAndFactCheckClaims(transcription),
+      
+      // Basic web analysis using transcription
+      webAnalysis: (async () => {
+        try {
+          const webAnalysis = await performWebAnalysis({
+            query: transcription.substring(0, 500),
+            contentType: 'text',
+            mediaType: 'audio',
+            searchEngineId: options?.searchEngineId
+          });
+          return webAnalysis.currentInformation || [];
+        } catch (error) {
+          console.error('[ERROR] Web analysis failed:', error);
+          return [] as any[];
+        }
+      })(),
+      
+      // Gemini-guided search queries
+      guidedQueries: buildGeminiGuidedSearchQueries(transcription),
+    };
 
-    // Step 3: Analyze authenticity (derived, non-LLM)
+    // Wait for all parallel operations to complete
+    const [factualClaims, webSources, geminiQueries] = await Promise.all([
+      parallelOperations.claimAnalysis,
+      parallelOperations.webAnalysis,
+      parallelOperations.guidedQueries,
+    ]);
+    
+    const parallelOperationsTime = Date.now() - parallelOperationsStart;
+    console.log(`[INFO] Parallel audio operations completed in ${parallelOperationsTime}ms`);
+
+    // Step 3: Fast authenticity analysis (synchronous)
     const authenticityAnalysis = deriveAudioAuthenticity(factualClaims);
 
-    // Step 4: Perform web analysis for context
-    let webSources: any[] = [];
+    // Step 4: Fast web source enrichment (if needed)
+    let finalWebSources = webSources;
+    const enrichmentStart = Date.now();
+    
     try {
-      const webAnalysis = await performWebAnalysis({
-        query: transcription.substring(0, 500),
-        contentType: 'text',
-        mediaType: 'audio',
-        searchEngineId: options?.searchEngineId
-      });
-      webSources = webAnalysis.currentInformation || [];
-    } catch (error) {
-      console.error('Web analysis failed:', error);
-    }
-
-    // Step 4b: Augment with Gemini-guided reverse grounding queries
-    let guidedQueries: string[] = [];
-    try {
-      const geminiQueries = await buildGeminiGuidedSearchQueries(transcription);
       const reverseQueries = buildReverseAudioQueries(transcription, factualClaims);
       const combinedQueries = Array.from(new Set([...reverseQueries, ...geminiQueries]));
-      guidedQueries = combinedQueries;
+      
       if (combinedQueries.length > 0) {
-        const reverseSources = await reverseAudioGrounding(combinedQueries, options?.searchEngineId);
-        if (reverseSources.length > 0) {
-          const byUrl = new Map<string, any>();
-          for (const s of webSources) if (s?.url) byUrl.set(s.url, s);
-          for (const s of reverseSources) if (s?.url && !byUrl.has(s.url)) byUrl.set(s.url, s);
-          webSources = Array.from(byUrl.values());
+        // Only do reverse grounding if we have reasonable queries and initial web sources are limited
+        if (webSources.length < 3 && combinedQueries.length <= 3) {
+          const reverseSources = await reverseAudioGrounding(combinedQueries.slice(0, 2), options?.searchEngineId);
+          if (reverseSources.length > 0) {
+            const byUrl = new Map<string, any>();
+            for (const s of webSources) if (s?.url) byUrl.set(s.url, s);
+            for (const s of reverseSources) if (s?.url && !byUrl.has(s.url)) byUrl.set(s.url, s);
+            finalWebSources = Array.from(byUrl.values());
+          }
         }
       }
     } catch (error) {
-      console.warn('[WARN] Guided reverse audio search failed:', error);
+      console.warn('[WARN] Audio source enrichment failed:', error);
     }
+    
+    const enrichmentTime = Date.now() - enrichmentStart;
+    console.log(`[INFO] Audio source enrichment completed in ${enrichmentTime}ms (${finalWebSources.length} sources)`);
 
-    // Step 5: Determine analysis label based on results
+    // Step 5: Fast analysis label determination
+    const labelStart = Date.now();
+    
     let analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN' = 'YELLOW';
     const verifiedClaims = factualClaims.filter(c => c.verdict === 'VERIFIED').length;
     const disputedClaims = factualClaims.filter(c => c.verdict === 'DISPUTED').length;
@@ -438,33 +472,49 @@ export async function analyzeAudioContent(input: AudioAnalysisInput, options?: {
       analysisLabel = 'ORANGE';
     }
 
-    // Step 6: Calculate scores
-    const scores = calculateScores(factualClaims, authenticityAnalysis, (webSources?.length || 0));
+    // Step 6: Fast score calculation
+    const scores = calculateScores(factualClaims, authenticityAnalysis, finalWebSources.length);
+    
+    console.log(`[INFO] Audio analysis label (${analysisLabel}) and scores computed in ${Date.now() - labelStart}ms`);
 
-    // Step 7: Gemini-driven formatting of presentation fields and sources
-    const candidateSources = (webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }));
-    const presentation = await formatUnifiedPresentation({
-      contentType: 'audio',
-      analysisLabel,
-      rawSignals: {
+    // Step 7: Parallel presentation formatting and deep analysis
+    const presentationStart = Date.now();
+    const candidateSources = finalWebSources.map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }));
+    
+    const [presentation, deepAnalysis] = await Promise.all([
+      formatUnifiedPresentation({
+        contentType: 'audio',
+        analysisLabel,
+        rawSignals: {
+          transcription,
+          factualClaims,
+          authenticityAnalysis,
+          webSources: finalWebSources
+        },
+        candidateSources
+      }),
+      generateDeepAnalysisNarrative({
         transcription,
         factualClaims,
-        authenticityAnalysis,
-        webSources
-      },
-      candidateSources
-    });
+        analysisLabel,
+        existingEducationalInsight: '', // Will be filled by presentation
+        sources: candidateSources.map((source: any) => ({
+          url: source.url,
+          title: source.title,
+        })),
+      })
+    ]);
+    
+    const totalTime = Date.now() - startTime;
+    const presentationTime = Date.now() - presentationStart;
+    console.log(`[INFO] Audio analysis completed in ${totalTime}ms (transcription: ${transcriptionTime}ms, parallel: ${parallelOperationsTime}ms, presentation: ${presentationTime}ms)`);
 
-    const deepAnalysis = await generateDeepAnalysisNarrative({
-      transcription,
-      factualClaims,
-      analysisLabel,
-      existingEducationalInsight: presentation.educationalInsight,
-      sources: (presentation.sources || []).map((source: any) => ({
-        url: source.url,
-        title: source.title,
-      })),
-    });
+    // Use presentation's educational insight in deep analysis if needed
+    if (!deepAnalysis?.educationalInsights?.length && presentation.educationalInsight) {
+      if (deepAnalysis) {
+        deepAnalysis.educationalInsights = [presentation.educationalInsight];
+      }
+    }
 
     return {
       analysisLabel,
@@ -481,12 +531,13 @@ export async function analyzeAudioContent(input: AudioAnalysisInput, options?: {
         bitrate: 0,
         transcription,
         factualClaims,
-        guidedQueries,
+        guidedQueries: geminiQueries,
       },
       deepAnalysis,
     };
   } catch (error) {
-    console.error('Error in audio analysis:', error);
+    const errorTime = Date.now() - startTime;
+    console.error(`[ERROR] Optimized audio analysis failed after ${errorTime}ms:`, error);
 
     // Return error response with proper format
     return {

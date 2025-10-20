@@ -1,7 +1,11 @@
-import { config } from 'dotenv';
+// Load secure environment (JWT, Google Secrets, or .env fallback)
+import secureEnv from '../lib/secure-env.js';
 
-// Load environment variables
-config();
+// Ensure environment is loaded and validated
+await secureEnv.load();
+if (!secureEnv.validate()) {
+  throw new Error('Required environment variables are missing or invalid');
+}
 
 // Get project ID
 export function getProjectId(): string {
