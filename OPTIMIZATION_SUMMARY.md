@@ -29,7 +29,7 @@ The AI flows have been completely optimized according to your specifications to 
 - **Result**: Faster and more accurate audio content analysis
 
 ### 📝 Text Analysis (`analyze-text-content.ts`)
-**Strategy: Fact check API, CSE, web sourcing and analysis (sentimental, NLP)**
+**Strategy: Fact check API, no CSE, web sourcing and analysis (sentimental, NLP)**
 - **Primary**: Enhanced claim extraction with factual indicators
 - **Secondary**: Fact Check API for claim verification, CSE for web sourcing
 - **Added**: Sentiment analysis and NLP for manipulation technique detection
@@ -37,7 +37,7 @@ The AI flows have been completely optimized according to your specifications to 
 - **Result**: More comprehensive text analysis with sentiment and manipulation detection
 
 ### 🔗 URL Analysis (`analyze-url-safety.ts`)
-**Strategy: Web Risk, CSE, web sourcing and analysis**
+**Strategy: Web Risk, no CSE, web sourcing and analysis**
 - **Primary**: Google Web Risk API for threat detection
 - **Secondary**: CSE for web sourcing, enhanced metadata extraction
 - **Optimization**: Parallel execution of security checks, source verification, and metadata fetching
