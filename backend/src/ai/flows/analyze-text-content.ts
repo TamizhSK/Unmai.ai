@@ -165,41 +165,63 @@ function calculateScores(claims: any[], webSourcesCount: number): {
   return finalScores;
 }
 
-// Main analysis function
+// Main analysis function with fully optimized parallel processing
 export async function analyzeTextContent(input: TextAnalysisInput, options?: { searchEngineId?: string }): Promise<TextAnalysisOutput> {
+  const startTime = Date.now();
+  console.log(`[INFO] Starting optimized text analysis for ${input.text.length} characters`);
+  
   try {
-    // Start web analysis early in parallel (independent of claim extraction)
-    const webAnalysisPromise = (async () => {
-      try {
-        const webAnalysis = await performWebAnalysis({
-          query: input.text.substring(0, 500),
-          contentType: 'text',
-          searchEngineId: options?.searchEngineId,
-        });
-        return webAnalysis.currentInformation || [];
-      } catch (error) {
-        console.error('Web analysis failed:', error);
-        return [] as any[];
-      }
-    })();
-
-    // Step 1: Break down text into claims
-    const claims = await extractClaims(input.text);
+    // Step 1: Extract claims synchronously (fast, no I/O)
+    const claims = extractClaims(input.text);
     const claimsToAnalyze = claims.slice(0, 5); // Limit to 5 claims for efficiency
+    console.log(`[INFO] Extracted ${claimsToAnalyze.length} claims for analysis`);
 
-    // Step 2: Fact-check each claim (already parallelized across claims)
-    const analyzedClaims = await Promise.all(claimsToAnalyze.map(claim => factCheckClaimWithSources(claim)));
+    // Step 2: Start ALL async operations in parallel immediately
+    const parallelOperations = {
+      // Web analysis for sourcing
+      webAnalysis: (async () => {
+        try {
+          const webAnalysis = await performWebAnalysis({
+            query: input.text.substring(0, 500),
+            contentType: 'text',
+            searchEngineId: options?.searchEngineId,
+          });
+          console.log(`[INFO] Web analysis completed with ${webAnalysis.currentInformation?.length || 0} sources`);
+          return webAnalysis.currentInformation || [];
+        } catch (error) {
+          console.error('[ERROR] Web analysis failed:', error);
+          return [] as any[];
+        }
+      })(),
+      
+      // Fact-check all claims in parallel
+      claimAnalysis: Promise.all(
+        claimsToAnalyze.map(async (claim, index) => {
+          const claimStart = Date.now();
+          const result = await factCheckClaimWithSources(claim);
+          console.log(`[INFO] Claim ${index + 1}/${claimsToAnalyze.length} analyzed in ${Date.now() - claimStart}ms`);
+          return result;
+        })
+      )
+    };
 
-    // Step 3: Retrieve web sources result
-    const webSources: any[] = await webAnalysisPromise;
+    // Step 3: Wait for ALL parallel operations to complete
+    const [webSources, analyzedClaims] = await Promise.all([
+      parallelOperations.webAnalysis,
+      parallelOperations.claimAnalysis
+    ]);
 
-    // Step 4: Determine analysis label
+    const parallelProcessingTime = Date.now() - startTime;
+    console.log(`[INFO] Parallel operations completed in ${parallelProcessingTime}ms`);
+
+    // Step 4: Determine analysis label (fast, synchronous)
     const { verdict, label } = determineOverallVerdict(analyzedClaims);
     
-    // Step 5: Calculate scores
+    // Step 5: Calculate scores (fast, synchronous)
     const scores = calculateScores(analyzedClaims, webSources.length);
 
     // Step 6: Gemini-driven formatting of presentation fields and sources
+    const presentationStart = Date.now();
     const candidateSources = (webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance }));
     const presentation = await formatUnifiedPresentation({
       contentType: 'text',
@@ -211,6 +233,10 @@ export async function analyzeTextContent(input: TextAnalysisInput, options?: { s
       },
       candidateSources
     });
+    
+    const totalTime = Date.now() - startTime;
+    const presentationTime = Date.now() - presentationStart;
+    console.log(`[INFO] Text analysis completed in ${totalTime}ms (core: ${parallelProcessingTime}ms, presentation: ${presentationTime}ms)`);
 
     return {
       analysisLabel: label as 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN',
@@ -224,7 +250,8 @@ export async function analyzeTextContent(input: TextAnalysisInput, options?: { s
       claims: analyzedClaims,
     };
   } catch (error) {
-    console.error('Error in text analysis:', error);
+    const errorTime = Date.now() - startTime;
+    console.error(`[ERROR] Text analysis failed after ${errorTime}ms:`, error);
     
     // Return error response with proper format
     return {

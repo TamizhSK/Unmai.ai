@@ -9,10 +9,9 @@ RUN apk add --no-cache libc6-compat
 
 # Copy package files
 COPY package*.json ./
-COPY .npmrc* ./
 
-# Install production dependencies with clean cache (no lockfile required)
-RUN npm install --omit=dev && npm cache clean --force
+# Install production dependencies with clean cache
+RUN npm install --omit=dev --prefer-offline && npm cache clean --force
 
 # --- Builder stage ---
 FROM node:20-alpine AS builder
@@ -23,15 +22,18 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./
 
 # Install all dependencies (including devDependencies)
-RUN npm install
+RUN npm install --prefer-offline
 
 # Copy source code
 COPY . .
-COPY .env.production* ./
 
-# Build application
+# Build application with optimizations
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV GENERATE_SOURCEMAP=false
+
+# Next.js configuration is already set in next.config.ts
+
 RUN npm run build
 
 # --- Runner stage ---
@@ -41,7 +43,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Create non-root user
+# Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs
 
@@ -49,11 +51,15 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package*.json ./
 
-# Copy built application
+# Copy built application with proper ownership
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-USER 1001
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
+
+USER nextjs
 
 EXPOSE 3000
 ENV PORT=3000

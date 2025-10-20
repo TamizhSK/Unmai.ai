@@ -12,8 +12,16 @@ import { performWebAnalysis } from './ai/flows/perform-web-analysis.js';
 import { safeSearchUrl } from './ai/flows/safe-search-url.js';
 import { translateTextFlow } from './ai/flows/translate-text.js';
 
-// Load environment variables
-config();
+// Load environment variables with JWT support
+try {
+  // Try to load JWT environment first (production/secure)
+  const { loadJWTEnvironment } = await import('./lib/jwt-env-loader.js');
+  await loadJWTEnvironment();
+} catch (error) {
+  // Fallback to regular dotenv (development)
+  console.log('[INFO] JWT environment not available, using dotenv fallback');
+  config();
+}
 
 // Validate required environment variables
 const requiredEnvVars = ['GCP_PROJECT_ID', 'GEMINI_API_KEY'];
@@ -62,45 +70,54 @@ app.post('/api/analyze', async (req: Request, res: Response) => {
   }
 });
 
-// Minimal educational insights route to support frontend client
-app.post('/api/educational-insights', async (req: Request, res: Response) => {
-  try {
-    const { text } = req.body || {};
-    if (!text) {
-      return res.status(400).json({ error: 'Text is required' });
-    }
-    const insights = [
-      'Cross-check claims with multiple reputable sources.',
-      'Look for publication date, author credentials, and primary sources.',
-      'Beware of emotionally charged language and missing context.'
-    ];
-    return res.json({
-      insights,
-      inputPreview: String(text).slice(0, 120),
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`Educational insights failed: ${errorMessage}`);
-    return res.status(500).json({
-      error: 'Educational insights service unavailable',
-      message: 'Unable to provide insights at this time',
-      timestamp: new Date().toISOString(),
-    });
+
+// Simple health check endpoint (fast response)
+app.get('/health', (req: Request, res: Response) => {
+  const healthStatus = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  };
+
+  // Add test mode indicator if running in test mode
+  if (process.argv.includes('--test-mode')) {
+    healthStatus.status = 'test';
+    // Exit after health check in test mode
+    setTimeout(() => process.exit(0), 100);
   }
+
+  res.json(healthStatus);
 });
 
-// Health check
-app.get('/health', (req: Request, res: Response) => {
-  res.json({
+// Detailed health check endpoint (more comprehensive)
+app.get('/health/detailed', (req: Request, res: Response) => {
+  const healthStatus = {
     status: 'OK',
     timestamp: new Date().toISOString(),
-    customSearch: {
-      configured: !!(customSearchKey && customSearchEngineId),
-      hasApiKey: !!customSearchKey,
-      hasEngineId: !!customSearchEngineId
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0',
+    uptime: process.uptime(),
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+      external: Math.round(process.memoryUsage().external / 1024 / 1024)
+    },
+    services: {
+      geminiApi: !!process.env.GEMINI_API_KEY,
+      gcpProject: !!process.env.GCP_PROJECT_ID,
+      customSearch: {
+        configured: !!(customSearchKey && customSearchEngineId),
+        hasApiKey: !!customSearchKey,
+        hasEngineId: !!customSearchEngineId
+      }
+    },
+    buildInfo: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch
     }
-  });
+  };
+
+  res.json(healthStatus);
 });
 
 // Custom Search test endpoint
@@ -301,6 +318,8 @@ app.post('/api/translate-text', async (req: Request, res: Response) => {
     });
   }
 });
+
+
 
 // Fallback for unknown routes - ensure JSON response
 app.use((req: Request, res: Response, _next: NextFunction) => {

@@ -20,6 +20,7 @@ interface InputBarProps {
   setShowChat: (show: boolean) => void;
   showChat: boolean;
   isLoading: boolean;
+  removeLastMessage?: () => void;
 }
 
 export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat, isLoading }: InputBarProps) {
