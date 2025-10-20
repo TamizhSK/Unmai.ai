@@ -36,16 +36,38 @@ declare const ImageAnalysisOutputSchema: z.ZodObject<{
         ocrText: z.ZodOptional<z.ZodString>;
         description: z.ZodOptional<z.ZodString>;
         isManipulated: z.ZodOptional<z.ZodBoolean>;
+        understandingDescription: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         location?: string | undefined;
         ocrText?: string | undefined;
         description?: string | undefined;
         isManipulated?: boolean | undefined;
+        understandingDescription?: string | undefined;
     }, {
         location?: string | undefined;
         ocrText?: string | undefined;
         description?: string | undefined;
         isManipulated?: boolean | undefined;
+        understandingDescription?: string | undefined;
+    }>>;
+    deepAnalysis: z.ZodOptional<z.ZodObject<{
+        what: z.ZodString;
+        how: z.ZodString;
+        why: z.ZodString;
+        when: z.ZodString;
+        educationalInsights: z.ZodArray<z.ZodString, "many">;
+    }, "strip", z.ZodTypeAny, {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
+    }, {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
     }>>;
 }, "strip", z.ZodTypeAny, {
     analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
@@ -65,6 +87,14 @@ declare const ImageAnalysisOutputSchema: z.ZodObject<{
         ocrText?: string | undefined;
         description?: string | undefined;
         isManipulated?: boolean | undefined;
+        understandingDescription?: string | undefined;
+    } | undefined;
+    deepAnalysis?: {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
     } | undefined;
 }, {
     analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
@@ -84,6 +114,14 @@ declare const ImageAnalysisOutputSchema: z.ZodObject<{
         ocrText?: string | undefined;
         description?: string | undefined;
         isManipulated?: boolean | undefined;
+        understandingDescription?: string | undefined;
+    } | undefined;
+    deepAnalysis?: {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
     } | undefined;
 }>;
 export type ImageAnalysisOutput = z.infer<typeof ImageAnalysisOutputSchema>;

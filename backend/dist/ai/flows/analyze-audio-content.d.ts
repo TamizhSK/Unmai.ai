@@ -49,6 +49,7 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
             verdict: "VERIFIED" | "DISPUTED" | "UNVERIFIED";
             confidence: number;
         }>, "many">>;
+        guidedQueries: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
     }, "strip", z.ZodTypeAny, {
         factualClaims?: {
             claim: string;
@@ -56,6 +57,7 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
             confidence: number;
         }[] | undefined;
         transcription?: string | undefined;
+        guidedQueries?: string[] | undefined;
         format?: string | undefined;
         duration?: number | undefined;
         bitrate?: number | undefined;
@@ -66,9 +68,29 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
             confidence: number;
         }[] | undefined;
         transcription?: string | undefined;
+        guidedQueries?: string[] | undefined;
         format?: string | undefined;
         duration?: number | undefined;
         bitrate?: number | undefined;
+    }>>;
+    deepAnalysis: z.ZodOptional<z.ZodObject<{
+        what: z.ZodString;
+        how: z.ZodString;
+        why: z.ZodString;
+        when: z.ZodString;
+        educationalInsights: z.ZodArray<z.ZodString, "many">;
+    }, "strip", z.ZodTypeAny, {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
+    }, {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
     }>>;
 }, "strip", z.ZodTypeAny, {
     analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
@@ -90,9 +112,17 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
             confidence: number;
         }[] | undefined;
         transcription?: string | undefined;
+        guidedQueries?: string[] | undefined;
         format?: string | undefined;
         duration?: number | undefined;
         bitrate?: number | undefined;
+    } | undefined;
+    deepAnalysis?: {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
     } | undefined;
 }, {
     analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
@@ -114,9 +144,17 @@ declare const AudioAnalysisOutputSchema: z.ZodObject<{
             confidence: number;
         }[] | undefined;
         transcription?: string | undefined;
+        guidedQueries?: string[] | undefined;
         format?: string | undefined;
         duration?: number | undefined;
         bitrate?: number | undefined;
+    } | undefined;
+    deepAnalysis?: {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
     } | undefined;
 }>;
 export type AudioAnalysisOutput = z.infer<typeof AudioAnalysisOutputSchema>;

@@ -3,6 +3,8 @@ import { SpeechClient } from '@google-cloud/speech';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { factCheckClaim } from './fact-check-claim.js';
+import { generativeModel } from '../genkit.js';
+import { getAuthConfig } from '../auth.js';
 const AudioAnalysisInputSchema = z.object({
     audioData: z.string().min(1, 'Audio data is required'),
     mimeType: z.string().optional(),
@@ -36,11 +38,168 @@ const AudioAnalysisOutputSchema = z.object({
             verdict: z.enum(['VERIFIED', 'DISPUTED', 'UNVERIFIED']),
             confidence: z.number().min(0).max(1),
         })).optional(),
+        guidedQueries: z.array(z.string()).optional(),
+    }).optional(),
+    deepAnalysis: z.object({
+        what: z.string(),
+        how: z.string(),
+        why: z.string(),
+        when: z.string(),
+        educationalInsights: z.array(z.string()),
     }).optional(),
 });
+function tryParseJsonLoose(text) {
+    try {
+        const stripped = text
+            .replace(/^```json\s*/i, '')
+            .replace(/^```\s*/i, '')
+            .replace(/```\s*$/i, '')
+            .trim();
+        const start = stripped.indexOf('{');
+        const end = stripped.lastIndexOf('}');
+        const candidate = start !== -1 && end !== -1 ? stripped.substring(start, end + 1) : stripped;
+        try {
+            return JSON.parse(candidate);
+        }
+        catch {
+            const noTrailingCommas = candidate.replace(/,(\s*[}\]])/g, '$1');
+            return JSON.parse(noTrailingCommas);
+        }
+    }
+    catch {
+        return null;
+    }
+}
+async function buildGeminiGuidedSearchQueries(transcription) {
+    if (!transcription)
+        return [];
+    try {
+        const prompt = `You assist analysts verifying spoken claims. Based on the transcript below, propose up to five precise web search queries that could help confirm authenticity, origin, or context. Return STRICT JSON:
+{
+  "queries": ["query one", "query two", ...],
+  "notes": "short rationale"
+}
+
+Transcript snippet (trim if needed):
+${transcription.slice(0, 1200)}`;
+        const result = await generativeModel.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+        });
+        const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const parsed = tryParseJsonLoose(text);
+        const candidate = Array.isArray(parsed?.queries) ? parsed.queries : parsed;
+        if (Array.isArray(candidate)) {
+            return candidate
+                .map((q) => (typeof q === 'string' ? q.trim() : ''))
+                .filter((q) => q.length > 0)
+                .slice(0, 5);
+        }
+    }
+    catch (error) {
+        console.warn('[WARN] Gemini-guided audio search generation failed:', error);
+    }
+    return [];
+}
+function buildReverseAudioQueries(transcription, factualClaims) {
+    const queries = [];
+    const add = (value) => {
+        const trimmed = value.trim();
+        if (trimmed.length > 0)
+            queries.push(trimmed);
+    };
+    factualClaims.slice(0, 3).forEach(({ claim }) => add(claim.slice(0, 120)));
+    if (transcription) {
+        add(transcription.slice(0, 160));
+    }
+    const seen = new Set();
+    return queries.filter((q) => {
+        const key = q.toLowerCase();
+        if (seen.has(key))
+            return false;
+        seen.add(key);
+        return true;
+    }).slice(0, 6);
+}
+async function reverseAudioGrounding(queries, searchEngineId) {
+    const results = [];
+    for (const q of queries) {
+        try {
+            const r = await performWebAnalysis({ query: q, contentType: 'text', searchEngineId });
+            if (Array.isArray(r?.currentInformation)) {
+                results.push(...r.currentInformation);
+            }
+        }
+        catch (error) {
+            console.warn('[WARN] reverseAudioGrounding query failed:', q, error);
+        }
+    }
+    const byUrl = new Map();
+    for (const item of results) {
+        if (item?.url && !byUrl.has(item.url)) {
+            byUrl.set(item.url, item);
+        }
+    }
+    return Array.from(byUrl.values()).slice(0, 12);
+}
+async function generateDeepAnalysisNarrative(params) {
+    try {
+        const prompt = `You extend an audio misinformation report with educational framing. Using the structured context below, output STRICT JSON:
+{
+  "what": "Summarize what is said in the audio",
+  "how": "Explain delivery techniques, manipulation signs, or verification notes",
+  "why": "Discuss motives or impact",
+  "when": "Temporal cues or situational context",
+  "educationalInsights": ["Actionable media literacy tips"]
+}
+
+Structured context:
+${JSON.stringify({
+            transcription: params.transcription,
+            claims: params.factualClaims,
+            analysisLabel: params.analysisLabel,
+            sources: params.sources,
+            existingEducationalInsight: params.existingEducationalInsight,
+        }).slice(0, 4000)}`;
+        const result = await generativeModel.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+        });
+        const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const parsed = tryParseJsonLoose(text);
+        if (parsed && typeof parsed === 'object') {
+            const narrative = {
+                what: String(parsed.what || '').trim() || 'Detailed description unavailable.',
+                how: String(parsed.how || '').trim() || 'Delivery techniques could not be determined.',
+                why: String(parsed.why || '').trim() || 'Motivations remain unclear.',
+                when: String(parsed.when || '').trim() || 'Temporal context not evident.',
+                educationalInsights: Array.isArray(parsed.educationalInsights)
+                    ? parsed.educationalInsights.map((v) => String(v || '').trim()).filter((v) => v.length > 0)
+                    : [],
+            };
+            if (narrative.educationalInsights.length === 0 && params.existingEducationalInsight) {
+                narrative.educationalInsights = [params.existingEducationalInsight];
+            }
+            return narrative;
+        }
+    }
+    catch (error) {
+        console.warn('[WARN] Gemini audio deep analysis narrative failed:', error);
+    }
+    const fallbackInsight = params.existingEducationalInsight
+        ? [params.existingEducationalInsight]
+        : ['Cross-check audio claims with reputable reporting and look for official transcripts.'];
+    return {
+        what: 'Detailed description unavailable due to limited context.',
+        how: 'Possible manipulation techniques could not be identified.',
+        why: 'The motivation or impact of this audio is uncertain.',
+        when: 'Temporal context could not be inferred from the audio.',
+        educationalInsights: fallbackInsight,
+    };
+}
 // Helper to transcribe audio using Google Speech-to-Text
 async function transcribeAudio(audioData, mimeType) {
-    const client = new SpeechClient();
+    const client = new SpeechClient(getAuthConfig());
     const audio = {
         content: audioData.includes('base64') ? Buffer.from(audioData.split(',')[1], 'base64') : audioData,
     };
@@ -168,12 +327,37 @@ export async function analyzeAudioContent(input, options) {
             const webAnalysis = await performWebAnalysis({
                 query: transcription.substring(0, 500),
                 contentType: 'text',
+                mediaType: 'audio',
                 searchEngineId: options?.searchEngineId
             });
             webSources = webAnalysis.currentInformation || [];
         }
         catch (error) {
             console.error('Web analysis failed:', error);
+        }
+        // Step 4b: Augment with Gemini-guided reverse grounding queries
+        let guidedQueries = [];
+        try {
+            const geminiQueries = await buildGeminiGuidedSearchQueries(transcription);
+            const reverseQueries = buildReverseAudioQueries(transcription, factualClaims);
+            const combinedQueries = Array.from(new Set([...reverseQueries, ...geminiQueries]));
+            guidedQueries = combinedQueries;
+            if (combinedQueries.length > 0) {
+                const reverseSources = await reverseAudioGrounding(combinedQueries, options?.searchEngineId);
+                if (reverseSources.length > 0) {
+                    const byUrl = new Map();
+                    for (const s of webSources)
+                        if (s?.url)
+                            byUrl.set(s.url, s);
+                    for (const s of reverseSources)
+                        if (s?.url && !byUrl.has(s.url))
+                            byUrl.set(s.url, s);
+                    webSources = Array.from(byUrl.values());
+                }
+            }
+        }
+        catch (error) {
+            console.warn('[WARN] Guided reverse audio search failed:', error);
         }
         // Step 5: Determine analysis label based on results
         let analysisLabel = 'YELLOW';
@@ -204,6 +388,16 @@ export async function analyzeAudioContent(input, options) {
             },
             candidateSources
         });
+        const deepAnalysis = await generateDeepAnalysisNarrative({
+            transcription,
+            factualClaims,
+            analysisLabel,
+            existingEducationalInsight: presentation.educationalInsight,
+            sources: (presentation.sources || []).map((source) => ({
+                url: source.url,
+                title: source.title,
+            })),
+        });
         return {
             analysisLabel,
             oneLineDescription: presentation.oneLineDescription,
@@ -218,8 +412,10 @@ export async function analyzeAudioContent(input, options) {
                 duration: 0,
                 bitrate: 0,
                 transcription,
-                factualClaims
-            }
+                factualClaims,
+                guidedQueries,
+            },
+            deepAnalysis,
         };
     }
     catch (error) {
@@ -244,6 +440,15 @@ export async function analyzeAudioContent(input, options) {
                 format: input.mimeType || 'unknown',
                 duration: 0,
                 bitrate: 0
+            },
+            deepAnalysis: {
+                what: 'Audio analysis unavailable due to an internal error.',
+                how: 'Processing steps failed before deep insights were produced.',
+                why: 'Unable to infer motivations or impact without a successful transcript.',
+                when: 'Temporal context could not be derived.',
+                educationalInsights: [
+                    'Retry later and corroborate spoken claims with trustworthy written sources.'
+                ],
             }
         };
     }

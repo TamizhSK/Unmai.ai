@@ -105,7 +105,9 @@ const sanitizePresentationFields = (parsed, input) => {
         sources: normalizeSources(parsed?.sources, input.candidateSources)
     };
 };
-function cleanJson(text) {
+// Main JSON parsing with multiple fallback strategies
+function parseJsonWithFallbacks(text, context) {
+    // Remove markdown code fences
     const stripped = text
         .replace(/^```json\s*/i, '')
         .replace(/^```\s*/i, '')
@@ -115,181 +117,316 @@ function cleanJson(text) {
     if (jsonStart === -1) {
         throw new Error('No JSON object found in AI response');
     }
-    const base = (() => {
-        const jsonEnd = stripped.lastIndexOf('}');
-        if (jsonEnd !== -1 && jsonEnd > jsonStart) {
-            return stripped.substring(jsonStart, jsonEnd + 1);
+    // Extract JSON portion
+    let base = stripped.substring(jsonStart);
+    // Find the last valid closing brace that matches our opening
+    let braceCount = 0;
+    let lastValidEnd = -1;
+    let inString = false;
+    let escaping = false;
+    for (let i = 0; i < base.length; i++) {
+        const char = base[i];
+        if (escaping) {
+            escaping = false;
+            continue;
         }
-        return stripped.substring(jsonStart);
-    })();
+        if (char === '\\' && inString) {
+            escaping = true;
+            continue;
+        }
+        if (char === '"' && !escaping) {
+            inString = !inString;
+            continue;
+        }
+        if (!inString) {
+            if (char === '{') {
+                braceCount++;
+            }
+            else if (char === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                    lastValidEnd = i;
+                }
+            }
+        }
+    }
+    // Use the last valid JSON object end if found
+    if (lastValidEnd > 0) {
+        base = base.substring(0, lastValidEnd + 1);
+    }
     const sanitizeStructure = (input) => {
         let output = input;
+        // Remove control characters and normalize quotes
         output = output
             .replace(/\r\n?/g, '\n')
             .replace(/[\u201C\u201D]/g, '"')
             .replace(/[\u2018\u2019]/g, "'")
-            .replace(/[\x00-\x1F\x7F]/g, '')
-            .replace(/,\s*([}\]])/g, (_match, closing) => closing)
-            .replace(/"([^"\\]*?)\\"(\s*:)/g, (_match, key, suffix) => `"${key}"${suffix}`)
-            .replace(/"([^"\\]+)""(\s*:)/g, (_match, key, suffix) => `"${key}"${suffix}`)
-            .replace(/:\s*""([^"\\]*?)"/g, (_match, value) => `: "${value}"`)
-            .replace(/:""([^"\\]*?)"/g, (_match, value) => `:"${value}"`)
-            .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, (_match, prefix, key) => `${prefix}"${key}":`)
-            .replace(/(?<!\\)"{3,}/g, '"')
-            .replace(/(?<!\\)""/g, '"')
-            .replace(/}\s*(?=\s*{)/g, '}, ');
+            .replace(/[\x00-\x1F\x7F]/g, ' ')
+            .replace(/\t/g, ' ')
+            .replace(/\n/g, ' ');
+        // Fix common JSON issues
+        output = output
+            .replace(/,\s*([}\]])/g, '$1') // Remove trailing commas
+            .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":') // Quote unquoted keys
+            .replace(/:\s*'([^']*)'/g, ':"$1"') // Convert single quotes to double
+            .replace(/"\s+"/g, '" "') // Normalize spaces between quotes
+            .replace(/\s+/g, ' '); // Normalize whitespace
         return output;
     };
-    const balanceContainers = (input) => {
-        let output = input;
-        const openBraces = (output.match(/{/g) ?? []).length;
-        const closeBraces = (output.match(/}/g) ?? []).length;
-        if (closeBraces < openBraces) {
-            output += '}'.repeat(openBraces - closeBraces);
+    // Helper to complete truncated JSON
+    const completeJsonStructure = (input) => {
+        let result = input.trim();
+        // Track open structures
+        let braceCount = 0;
+        let bracketCount = 0;
+        let inString = false;
+        let escaping = false;
+        let lastChar = '';
+        for (let i = 0; i < result.length; i++) {
+            const char = result[i];
+            if (escaping) {
+                escaping = false;
+                continue;
+            }
+            if (char === '\\' && inString) {
+                escaping = true;
+                continue;
+            }
+            if (char === '"' && !escaping) {
+                inString = !inString;
+            }
+            if (!inString) {
+                if (char === '{')
+                    braceCount++;
+                else if (char === '}')
+                    braceCount--;
+                else if (char === '[')
+                    bracketCount++;
+                else if (char === ']')
+                    bracketCount--;
+            }
+            if (char.trim())
+                lastChar = char;
         }
-        const openBrackets = (output.match(/\[/g) ?? []).length;
-        const closeBrackets = (output.match(/]/g) ?? []).length;
-        if (closeBrackets < openBrackets) {
-            output += ']'.repeat(openBrackets - closeBrackets);
+        // If we're in the middle of a string, close it
+        if (inString) {
+            result += '"';
         }
-        return output;
+        // Remove trailing comma if present
+        if (lastChar === ',') {
+            result = result.slice(0, -1);
+        }
+        // Close arrays first
+        while (bracketCount > 0) {
+            result += ']';
+            bracketCount--;
+        }
+        // Close objects
+        while (braceCount > 0) {
+            result += '}';
+            braceCount--;
+        }
+        return result;
     };
-    const sanitizeWhitespace = (input) => {
-        return input
-            .replace(/"([^"\\]*?)\n([^"\\]*?)"/g, (_match, before, after) => `"${before}\\n${after}"`)
-            .replace(/"([^"\\]*?)\t([^"\\]*?)"/g, (_match, before, after) => `"${before}\\t${after}"`)
-            .replace(/"\s*:/g, '":')
-            .replace(/:\s*"\s*/g, ': "');
+    // Advanced JSON repair for truncated responses
+    const repairTruncatedJson = (input) => {
+        let result = input.trim();
+        // Check if JSON appears truncated (doesn't end with } or ])
+        const lastChar = result[result.length - 1];
+        if (lastChar !== '}' && lastChar !== ']') {
+            // Find the last complete value
+            const lastQuoteIndex = result.lastIndexOf('"');
+            const lastCommaIndex = result.lastIndexOf(',');
+            const lastColonIndex = result.lastIndexOf(':');
+            // If we're in the middle of a value
+            if (lastColonIndex > Math.max(lastQuoteIndex, lastCommaIndex)) {
+                // We're after a colon, need to add a value
+                const afterColon = result.substring(lastColonIndex + 1).trim();
+                if (!afterColon || afterColon[0] !== '"') {
+                    result += '""'; // Add empty string value
+                }
+                else if (!afterColon.endsWith('"')) {
+                    result += '"'; // Close the string
+                }
+            }
+            // Complete the structure
+            result = completeJsonStructure(result);
+        }
+        return result;
+    };
+    // Smart JSON field reconstruction for partial responses
+    const reconstructMissingFields = (partial, input) => {
+        // If we got a partial response, try to fill in missing required fields
+        const result = { ...partial };
+        // Ensure all required fields exist
+        if (!result.oneLineDescription || typeof result.oneLineDescription !== 'string') {
+            result.oneLineDescription = `Analysis of ${input.contentType} content - ${input.analysisLabel} risk level`;
+        }
+        if (!result.summary || typeof result.summary !== 'string') {
+            // Try to construct from available data
+            const claims = input.rawSignals?.claims || [];
+            const verifiedCount = claims.filter((c) => c.verdict === 'VERIFIED').length;
+            const disputedCount = claims.filter((c) => c.verdict === 'DISPUTED').length;
+            if (claims.length > 0) {
+                result.summary = `Content analysis found ${claims.length} claims: ${verifiedCount} verified, ${disputedCount} disputed. Risk level: ${input.analysisLabel}.`;
+            }
+            else {
+                result.summary = `${input.contentType} content analyzed. Risk assessment: ${input.analysisLabel}. Verification recommended through trusted sources.`;
+            }
+        }
+        if (!result.educationalInsight || typeof result.educationalInsight !== 'string') {
+            const riskInsights = {
+                'RED': 'High-risk content detected. Verify all claims through multiple independent sources before sharing. Look for primary sources and official statements.',
+                'ORANGE': 'Moderate risk indicators found. Cross-reference key claims with fact-checking organizations. Be cautious of potential misinformation.',
+                'YELLOW': 'Some concerns identified. Verify specific claims that seem unusual or sensational. Check publication dates and author credentials.',
+                'GREEN': 'Low risk assessment. Content appears credible but always maintain healthy skepticism. Verify if sharing for important decisions.'
+            };
+            result.educationalInsight = riskInsights[input.analysisLabel] || riskInsights['YELLOW'];
+        }
+        if (!Array.isArray(result.sources) || result.sources.length < 3) {
+            result.sources = normalizeSources(result.sources, input.candidateSources);
+        }
+        return result;
     };
     const normalizeValueStrings = (input) => {
-        const out = [];
-        let i = 0;
-        while (i < input.length) {
-            const ch = input[i];
-            if (ch === ':') {
-                out.push(ch);
-                i++;
-                while (i < input.length && /\s/.test(input[i])) {
-                    out.push(input[i]);
-                    i++;
+        // This function is not needed with the new approach
+        return input;
+    };
+    const fixMissingCommas = (input) => {
+        const result = [];
+        const stack = [];
+        let inString = false;
+        let escaping = false;
+        const peekNextNonWhitespace = (start) => {
+            for (let j = start; j < input.length; j++) {
+                const ch = input[j];
+                if (!/\s/.test(ch)) {
+                    return ch;
                 }
-                if (i < input.length && input[i] === '"') {
-                    out.push('"');
-                    i++;
-                    let closed = false;
-                    while (i < input.length) {
-                        const c = input[i];
-                        if (c === '\\') {
-                            out.push(c);
-                            if (i + 1 < input.length) {
-                                out.push(input[i + 1]);
-                                i += 2;
-                            }
-                            else {
-                                i++;
-                            }
-                            continue;
-                        }
-                        if (c === '"') {
-                            let k = i + 1;
-                            while (k < input.length && /\s/.test(input[k]))
-                                k++;
-                            if (k >= input.length || ',}]'.includes(input[k])) {
-                                out.push('"');
-                                i++;
-                                closed = true;
-                                break;
-                            }
-                            out.push('\\"');
-                            i++;
-                            continue;
-                        }
-                        out.push(c);
-                        i++;
-                    }
-                    if (!closed) {
-                        out.push('"');
-                    }
-                    continue;
+            }
+            return null;
+        };
+        for (let i = 0; i < input.length; i++) {
+            const ch = input[i];
+            result.push(ch);
+            if (escaping) {
+                escaping = false;
+                continue;
+            }
+            if (ch === '\\') {
+                if (inString) {
+                    escaping = true;
                 }
                 continue;
             }
-            out.push(ch);
-            i++;
+            if (ch === '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) {
+                continue;
+            }
+            if (ch === '{') {
+                stack.push('object');
+                continue;
+            }
+            if (ch === '[') {
+                stack.push('array');
+                continue;
+            }
+            if (ch === '}' || ch === ']') {
+                const closing = ch;
+                const last = stack.pop();
+                const parent = stack[stack.length - 1];
+                const next = peekNextNonWhitespace(i + 1);
+                if (closing === '}' && last === 'object') {
+                    if (parent === 'array' && next && next !== ',' && next !== ']') {
+                        result.push(',');
+                    }
+                    else if (parent === 'object' && next && next !== ',' && next !== '}' && next !== null) {
+                        result.push(',');
+                    }
+                }
+                else if (closing === ']' && last === 'array') {
+                    if (parent === 'object' && next && next !== ',' && next !== '}') {
+                        result.push(',');
+                    }
+                }
+                continue;
+            }
         }
-        return out.join('');
+        return result.join('');
     };
     const attempts = [base];
     const structural = sanitizeStructure(base);
     if (structural !== base) {
         attempts.push(structural);
     }
-    const whitespaceNormalized = sanitizeWhitespace(structural);
-    if (whitespaceNormalized !== structural) {
-        attempts.push(whitespaceNormalized);
+    const commaFixed = fixMissingCommas(structural);
+    if (commaFixed !== structural) {
+        attempts.push(commaFixed);
     }
-    const balanced = balanceContainers(whitespaceNormalized);
-    if (balanced !== whitespaceNormalized) {
-        attempts.push(balanced);
+    const completed = completeJsonStructure(commaFixed);
+    if (completed !== commaFixed) {
+        attempts.push(completed);
     }
-    const valueNormalized = normalizeValueStrings(balanced);
-    if (valueNormalized !== balanced) {
-        attempts.push(valueNormalized);
-    }
-    // Helper to close unterminated strings and ensure object closure
-    const closeOpenString = (jsonStr) => {
-        // First, close any unterminated string by adding quote at end if odd quotes
-        let fixed = jsonStr.trim();
-        // Remove any trailing commas before closing braces/brackets
-        fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
-        // Count quotes to ensure they're balanced
-        const quoteMatches = fixed.match(/"/g) || [];
-        if (quoteMatches.length % 2 === 1) {
-            fixed = fixed + '"';
-        }
-        // Ensure object/array is properly closed
-        const openBraces = (fixed.match(/{/g) || []).length;
-        const closeBraces = (fixed.match(/}/g) || []).length;
-        if (closeBraces < openBraces) {
-            fixed = fixed + '}'.repeat(openBraces - closeBraces);
-        }
-        // Ensure no trailing commas in arrays/objects
-        fixed = fixed.replace(/,(\s*[}\]])(?=([^"]*"[^"]*")*[^"]*$)/g, '$1');
-        return fixed;
-    };
-    // Try each candidate in sequence
-    let lastParseError = null;
-    for (let i = 0; i < attempts.length; i++) {
+    // Define the parsing attempts with the functions available in this scope
+    const parsingAttempts = [
+        { method: 'direct', transform: (s) => s },
+        { method: 'sanitized', transform: (s) => sanitizeStructure(s) },
+        { method: 'repaired', transform: (s) => repairTruncatedJson(sanitizeStructure(s)) },
+        { method: 'completed', transform: (s) => completeJsonStructure(sanitizeStructure(s)) },
+        { method: 'aggressive', transform: (s) => {
+                // Most aggressive: try to extract just the JSON fields we need
+                const patterns = {
+                    oneLineDescription: /"oneLineDescription"\s*:\s*"([^"]*)"/,
+                    summary: /"summary"\s*:\s*"([^"]*)"/,
+                    educationalInsight: /"educationalInsight"\s*:\s*"([^"]*)"/,
+                    analysisLabel: /"analysisLabel"\s*:\s*"(RED|YELLOW|ORANGE|GREEN)"/
+                };
+                const extracted = {};
+                for (const [key, pattern] of Object.entries(patterns)) {
+                    const match = s.match(pattern);
+                    if (match) {
+                        extracted[key] = match[1];
+                    }
+                }
+                // Try to extract sources array
+                const sourcesMatch = s.match(/"sources"\s*:\s*\[([^\]]*)/s);
+                if (sourcesMatch) {
+                    try {
+                        // Try to parse the sources portion
+                        const sourcesStr = '[' + sourcesMatch[1] + ']';
+                        extracted.sources = JSON.parse(completeJsonStructure(sourcesStr));
+                    }
+                    catch {
+                        extracted.sources = [];
+                    }
+                }
+                return JSON.stringify(extracted);
+            } }
+    ];
+    let lastError = null;
+    for (const { method, transform } of parsingAttempts) {
         try {
-            const candidate = attempts[i];
-            // First try direct parse
-            return JSON.parse(candidate);
-        }
-        catch (error) {
-            lastParseError = error instanceof Error ? error : new Error(String(error));
-            // If this is the last attempt, try with salvage
-            if (i === attempts.length - 1) {
-                const lastCandidate = attempts[attempts.length - 1] || base;
-                const salvaged = closeOpenString(lastCandidate);
-                try {
-                    return JSON.parse(salvaged);
-                }
-                catch (salvageError) {
-                    // Log minimal error info
-                    const snippet = lastCandidate.substring(0, 200) + (lastCandidate.length > 200 ? '...' : '');
-                    const context = { error: lastParseError.message, attempt: i + 1, snippet };
-                    if (process.env.NODE_ENV !== 'production') {
-                        console.warn('[WARN] Presentation JSON salvage failed', context);
-                    }
-                    else {
-                        console.warn('[WARN] Presentation JSON salvage failed');
-                    }
-                    throw new Error('Failed to process AI response. The content may be malformed.');
-                }
+            const transformed = transform(base);
+            const parsed = JSON.parse(transformed);
+            // Ensure we have valid data
+            if (parsed && typeof parsed === 'object') {
+                // Fill in any missing fields
+                return reconstructMissingFields(parsed, context);
             }
         }
+        catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            // Continue to next attempt
+        }
     }
-    throw lastParseError || new Error('No valid JSON could be parsed from the response');
+    // If all parsing attempts failed, return a fully constructed fallback
+    if (process.env.NODE_ENV !== 'production') {
+        console.warn('[WARN] All JSON parsing attempts failed, using constructed fallback');
+    }
+    return reconstructMissingFields({}, context);
 }
 // Helper function to check if JSON is properly formatted
 export async function formatUnifiedPresentation(input) {
@@ -351,7 +488,12 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
             throw new Error('Empty response from AI model');
         }
         try {
-            const parsed = cleanJson(text);
+            const parsed = parseJsonWithFallbacks(text, {
+                contentType: input.contentType,
+                analysisLabel: input.analysisLabel,
+                rawSignals: input.rawSignals,
+                candidateSources: input.candidateSources
+            });
             const normalized = sanitizePresentationFields(parsed, {
                 analysisLabel: input.analysisLabel,
                 contentType: input.contentType,
@@ -360,12 +502,10 @@ ${JSON.stringify(input.candidateSources).slice(0, 4000)}
             return PresentationSchema.parse(normalized);
         }
         catch (e) {
+            // Parsing failed, but parseJsonWithFallbacks should have handled it
+            // This catch block should rarely be reached
             if (process.env.NODE_ENV !== 'production') {
-                console.warn('[WARN] Presentation JSON parse failed; using fallback:', e);
-                console.warn('[DEBUG] Raw AI snippet:', text.substring(0, 300));
-            }
-            else {
-                console.warn('[WARN] Presentation JSON parse failed; using fallback');
+                console.warn('[WARN] Presentation formatting error:', e instanceof Error ? e.message : 'Unknown error');
             }
         }
         // Generate fallback response if AI response parsing fails

@@ -50,6 +50,25 @@ declare const VideoAnalysisOutputSchema: z.ZodObject<{
         events?: string[] | undefined;
         technicalData?: Record<string, unknown> | undefined;
     }>>;
+    deepAnalysis: z.ZodOptional<z.ZodObject<{
+        what: z.ZodString;
+        how: z.ZodString;
+        why: z.ZodString;
+        when: z.ZodString;
+        educationalInsights: z.ZodArray<z.ZodString, "many">;
+    }, "strip", z.ZodTypeAny, {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
+    }, {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
+    }>>;
 }, "strip", z.ZodTypeAny, {
     analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
@@ -70,6 +89,13 @@ declare const VideoAnalysisOutputSchema: z.ZodObject<{
         events?: string[] | undefined;
         technicalData?: Record<string, unknown> | undefined;
     } | undefined;
+    deepAnalysis?: {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
+    } | undefined;
 }, {
     analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
     oneLineDescription: string;
@@ -89,6 +115,13 @@ declare const VideoAnalysisOutputSchema: z.ZodObject<{
         transcription?: string | undefined;
         events?: string[] | undefined;
         technicalData?: Record<string, unknown> | undefined;
+    } | undefined;
+    deepAnalysis?: {
+        what: string;
+        how: string;
+        why: string;
+        when: string;
+        educationalInsights: string[];
     } | undefined;
 }>;
 export type VideoAnalysisOutput = z.infer<typeof VideoAnalysisOutputSchema>;

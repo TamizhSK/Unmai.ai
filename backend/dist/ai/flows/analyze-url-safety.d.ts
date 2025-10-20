@@ -34,18 +34,42 @@ declare const UrlAnalysisOutputSchema: z.ZodObject<{
         isSafe: z.ZodOptional<z.ZodBoolean>;
         reputationScore: z.ZodOptional<z.ZodNumber>;
         ageDays: z.ZodOptional<z.ZodNumber>;
+        status: z.ZodOptional<z.ZodNumber>;
+        finalUrl: z.ZodOptional<z.ZodString>;
+        usesHttps: z.ZodOptional<z.ZodBoolean>;
+        securityHeaders: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        missingSecurityHeaders: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        detectedFrameworks: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        hasLoginForm: z.ZodOptional<z.ZodBoolean>;
+        wordCount: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
+        status?: number | undefined;
         domain?: string | undefined;
         threats?: string[] | undefined;
         isSafe?: boolean | undefined;
         reputationScore?: number | undefined;
         ageDays?: number | undefined;
+        finalUrl?: string | undefined;
+        usesHttps?: boolean | undefined;
+        securityHeaders?: string[] | undefined;
+        missingSecurityHeaders?: string[] | undefined;
+        detectedFrameworks?: string[] | undefined;
+        hasLoginForm?: boolean | undefined;
+        wordCount?: number | undefined;
     }, {
+        status?: number | undefined;
         domain?: string | undefined;
         threats?: string[] | undefined;
         isSafe?: boolean | undefined;
         reputationScore?: number | undefined;
         ageDays?: number | undefined;
+        finalUrl?: string | undefined;
+        usesHttps?: boolean | undefined;
+        securityHeaders?: string[] | undefined;
+        missingSecurityHeaders?: string[] | undefined;
+        detectedFrameworks?: string[] | undefined;
+        hasLoginForm?: boolean | undefined;
+        wordCount?: number | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
     analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
@@ -61,11 +85,19 @@ declare const UrlAnalysisOutputSchema: z.ZodObject<{
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
     metadata?: {
+        status?: number | undefined;
         domain?: string | undefined;
         threats?: string[] | undefined;
         isSafe?: boolean | undefined;
         reputationScore?: number | undefined;
         ageDays?: number | undefined;
+        finalUrl?: string | undefined;
+        usesHttps?: boolean | undefined;
+        securityHeaders?: string[] | undefined;
+        missingSecurityHeaders?: string[] | undefined;
+        detectedFrameworks?: string[] | undefined;
+        hasLoginForm?: boolean | undefined;
+        wordCount?: number | undefined;
     } | undefined;
 }, {
     analysisLabel: "RED" | "YELLOW" | "ORANGE" | "GREEN";
@@ -81,11 +113,19 @@ declare const UrlAnalysisOutputSchema: z.ZodObject<{
     contentAuthenticityScore: number;
     trustExplainabilityScore: number;
     metadata?: {
+        status?: number | undefined;
         domain?: string | undefined;
         threats?: string[] | undefined;
         isSafe?: boolean | undefined;
         reputationScore?: number | undefined;
         ageDays?: number | undefined;
+        finalUrl?: string | undefined;
+        usesHttps?: boolean | undefined;
+        securityHeaders?: string[] | undefined;
+        missingSecurityHeaders?: string[] | undefined;
+        detectedFrameworks?: string[] | undefined;
+        hasLoginForm?: boolean | undefined;
+        wordCount?: number | undefined;
     } | undefined;
 }>;
 export type UrlAnalysisOutput = z.infer<typeof UrlAnalysisOutputSchema>;

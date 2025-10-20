@@ -14,9 +14,23 @@ config();
 const USER_AGENT = process.env.USER_AGENT || 'Mozilla/5.0 (compatible; unmai.ai/1.0; +https://unmai.ai)';
 const CSE_API_KEY = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
 const DEFAULT_SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID;
+// Validate Custom Search configuration on startup
+if (CSE_API_KEY && DEFAULT_SEARCH_ENGINE_ID) {
+    console.log('✅ Google Custom Search API configured');
+}
+else if (CSE_API_KEY && !DEFAULT_SEARCH_ENGINE_ID) {
+    console.warn('⚠️  Custom Search API key found but missing GOOGLE_SEARCH_ENGINE_ID');
+}
+else if (!CSE_API_KEY && DEFAULT_SEARCH_ENGINE_ID) {
+    console.warn('⚠️  Search Engine ID found but missing GOOGLE_CUSTOM_SEARCH_API_KEY');
+}
+else {
+    console.log('ℹ️  Custom Search not configured - using fallback search methods');
+}
 const PerformWebAnalysisInputSchema = z.object({
     query: z.string().describe('The query or content to analyze in real-time.'),
     contentType: z.enum(['text', 'url']).describe('The type of the content.'),
+    mediaType: z.enum(['text', 'image', 'video', 'audio']).optional().describe('Hint for the type of media to bias the search.'),
     searchEngineId: z.string().optional().describe('The ID of the custom search engine to use.'),
 });
 const PerformWebAnalysisOutputSchema = z.object({
@@ -31,6 +45,53 @@ const PerformWebAnalysisOutputSchema = z.object({
     informationGaps: z.array(z.string()).describe('Information gaps or areas needing more research.'),
     analysisSummary: z.string().describe('Summary of the real-time web analysis findings.'),
 });
+function sanitizeCurrentInformation(rawItems) {
+    if (!Array.isArray(rawItems)) {
+        return [];
+    }
+    return rawItems
+        .filter((item) => typeof item === 'object' && item !== null)
+        .map((item, index) => {
+        const record = item;
+        const url = typeof record.url === 'string' ? record.url : '';
+        const snippet = typeof record.snippet === 'string' ? record.snippet : '';
+        const date = typeof record.date === 'string' ? record.date : '';
+        const fallbackTitleFromUrl = (() => {
+            if (!url)
+                return '';
+            try {
+                const { hostname } = new URL(url);
+                return hostname || '';
+            }
+            catch {
+                return '';
+            }
+        })();
+        const title = (() => {
+            if (typeof record.title === 'string' && record.title.trim().length > 0) {
+                return record.title.trim();
+            }
+            if (fallbackTitleFromUrl) {
+                return fallbackTitleFromUrl;
+            }
+            if (snippet.trim().length > 0) {
+                return snippet.trim().slice(0, 80);
+            }
+            return `Untitled source ${index + 1}`;
+        })();
+        const relevanceRaw = record.relevance;
+        const relevance = typeof relevanceRaw === 'number' && Number.isFinite(relevanceRaw)
+            ? Math.max(0, Math.min(100, relevanceRaw))
+            : Math.max(0, 100 - index * 10);
+        return {
+            title,
+            url,
+            snippet,
+            date,
+            relevance,
+        };
+    });
+}
 // Enhanced URL content scraper with better error handling
 async function scrapeUrl(url) {
     try {
@@ -107,36 +168,71 @@ async function scrapeUrl(url) {
         return { content: '', errorMessage: `Failed to scrape URL: ${errorMsg}` };
     }
 }
-// Optional: Google Custom Search JSON API (text search)
-async function customSearch(query, cx) {
+// Google Custom Search JSON API with enhanced media support
+async function customSearch(query, cx, opts) {
+    if (!CSE_API_KEY) {
+        console.warn('[WARN] Custom Search API key not configured');
+        return [];
+    }
     try {
-        const trimmed = (query || '').toString().slice(0, 512);
+        let trimmed = (query || '').toString().slice(0, 512);
+        // Bias queries based on media type for better results
+        if (opts?.mediaType === 'video') {
+            trimmed = `${trimmed} site:youtube.com OR site:vimeo.com OR site:dailymotion.com`;
+        }
+        else if (opts?.mediaType === 'audio') {
+            trimmed = `${trimmed} podcast OR audio OR sound OR music`;
+        }
         const params = new URLSearchParams({
             key: CSE_API_KEY,
             cx,
             q: trimmed,
-            num: '5',
-            safe: 'active'
+            num: '8', // Increased for better results
+            safe: 'active',
+            gl: 'us', // Geographic location
+            hl: 'en' // Interface language
         });
+        // Use image search mode for image media
+        if (opts?.mediaType === 'image') {
+            params.set('searchType', 'image');
+            params.set('imgSize', 'medium');
+            params.set('imgType', 'photo');
+        }
+        console.log(`[INFO] Custom Search query: "${trimmed}" (${opts?.mediaType || 'text'})`);
         const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params.toString()}`);
         if (!res.ok) {
-            const t = await res.text().catch(() => '');
-            console.warn(`[WARN] CSE fetch failed: HTTP ${res.status} ${res.statusText} ${t}`);
+            const errorText = await res.text().catch(() => '');
+            console.error(`[ERROR] Custom Search API failed: HTTP ${res.status} ${res.statusText}`);
+            if (errorText.includes('quotaExceeded')) {
+                console.error('[ERROR] Custom Search API quota exceeded');
+            }
+            else if (errorText.includes('keyInvalid')) {
+                console.error('[ERROR] Invalid Custom Search API key');
+            }
             return [];
         }
         const data = await res.json();
+        if (data.error) {
+            console.error('[ERROR] Custom Search API error:', data.error);
+            return [];
+        }
         const items = Array.isArray(data.items) ? data.items : [];
+        console.log(`[INFO] Custom Search returned ${items.length} results`);
         const mapped = items.map((it, idx) => ({
-            title: String(it.title || ''),
+            title: String(it.title || '').trim(),
             url: String(it.link || it.formattedUrl || ''),
-            snippet: String(it.snippet || it.htmlSnippet || ''),
-            date: String(it.pagemap?.metatags?.[0]?.['article:published_time'] || it.pagemap?.metatags?.[0]?.['og:updated_time'] || ''),
-            relevance: Math.max(0, 100 - idx * 10)
+            snippet: String(it.snippet || it.htmlSnippet || it.mime || '').trim(),
+            date: String(it.pagemap?.metatags?.[0]?.['article:published_time'] ||
+                it.pagemap?.metatags?.[0]?.['og:updated_time'] ||
+                it.image?.contextLink || ''),
+            relevance: Math.max(0, 100 - idx * 8) // Better scoring distribution
         }));
-        return mapped.filter((result) => Boolean(result.url));
+        const validResults = mapped.filter((result) => Boolean(result.url && result.title));
+        console.log(`[INFO] Filtered to ${validResults.length} valid results`);
+        return validResults;
     }
     catch (err) {
-        console.warn('[WARN] CSE query error:', err);
+        console.error('[ERROR] Custom Search query failed:', err);
         return [];
     }
 }
@@ -180,7 +276,7 @@ export async function performWebAnalysis(input) {
     if (CSE_API_KEY && effectiveCx) {
         try {
             const queryForSearch = input.contentType === 'url' ? input.query : content;
-            cseResults = await customSearch(queryForSearch, effectiveCx);
+            cseResults = await customSearch(queryForSearch, effectiveCx, { mediaType: input.mediaType });
             if (cseResults.length > 0) {
                 console.log(`[INFO] CSE returned ${cseResults.length} items for grounding`);
             }
@@ -256,7 +352,11 @@ export async function performWebAnalysis(input) {
             .replace(/```\s*$/, '') // Remove closing ```
             .trim(); // Remove any extra whitespace
         const parsedJson = JSON.parse(cleanJson);
-        return PerformWebAnalysisOutputSchema.parse(parsedJson);
+        const sanitized = {
+            ...parsedJson,
+            currentInformation: sanitizeCurrentInformation(parsedJson?.currentInformation)
+        };
+        return PerformWebAnalysisOutputSchema.parse(sanitized);
     }
     catch (error) {
         console.error('Error in real-time web analysis:', error);

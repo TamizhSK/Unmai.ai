@@ -9,14 +9,17 @@ import { z } from 'zod';
 declare const PerformWebAnalysisInputSchema: z.ZodObject<{
     query: z.ZodString;
     contentType: z.ZodEnum<["text", "url"]>;
+    mediaType: z.ZodOptional<z.ZodEnum<["text", "image", "video", "audio"]>>;
     searchEngineId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     contentType: "text" | "url";
     query: string;
+    mediaType?: "text" | "image" | "video" | "audio" | undefined;
     searchEngineId?: string | undefined;
 }, {
     contentType: "text" | "url";
     query: string;
+    mediaType?: "text" | "image" | "video" | "audio" | undefined;
     searchEngineId?: string | undefined;
 }>;
 export type PerformWebAnalysisInput = z.infer<typeof PerformWebAnalysisInputSchema>;

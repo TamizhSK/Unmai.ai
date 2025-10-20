@@ -9,21 +9,14 @@
 import { z } from 'zod';
 import { WebRiskServiceClient, protos } from '@google-cloud/web-risk';
 import { config } from 'dotenv';
+import { getAuthConfig } from '../auth.js';
 // Load environment variables
 config();
-// Initialize Web Risk client with error handling
-const client = new WebRiskServiceClient();
-// Validate Web Risk API availability
-const validateWebRiskAPI = async () => {
-    try {
-        console.log('[INFO] Web Risk API client initialized');
-    }
-    catch (error) {
-        console.warn('[WARN] Web Risk API initialization warning:', error);
-    }
-};
-// Initialize validation (non-blocking)
-validateWebRiskAPI();
+// Create Web Risk client with modern authentication
+function getWebRiskClient() {
+    return new WebRiskServiceClient(getAuthConfig());
+}
+// API validation removed - runs silently
 const SafeSearchUrlInputSchema = z.object({
     url: z.string().url().describe('The URL to check.'),
 });
@@ -34,6 +27,7 @@ const SafeSearchUrlOutputSchema = z.object({
 });
 export async function safeSearchUrl(input) {
     try {
+        const client = getWebRiskClient();
         const request = {
             uri: input.url,
             threatTypes: [
