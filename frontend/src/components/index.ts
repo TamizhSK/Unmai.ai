@@ -6,4 +6,3 @@ export { Message, UserMessage } from './messages';
 export { LandingPage } from './landing-page';
 
 // Theme components
-export { ThemeProvider } from './theme-provider';

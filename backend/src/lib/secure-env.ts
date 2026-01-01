@@ -88,6 +88,12 @@ class SecureEnvironment {
 
   private async loadFromGoogleSecrets(): Promise<boolean> {
     try {
+      // Skip Google Cloud authentication in development mode
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[INFO] Development mode - skipping Google Cloud Secret Manager');
+        return false;
+      }
+      
       // Check if we're in Google Cloud environment
       if (!process.env.GOOGLE_CLOUD_PROJECT && !process.env.GCP_PROJECT_ID) {
         return false;

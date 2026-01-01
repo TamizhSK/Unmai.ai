@@ -10,7 +10,7 @@
     "dev:watch": "tsx --watch src/server.ts",
     "build": "echo 'Build completed - using tsx runtime compilation'",
     "start": "tsx src/server.ts",
-    "typecheck": "echo 'Type checking skipped - using tsx runtime'",
+    "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "test:env": "node -e \"require('dotenv').config(); console.log('Environment check passed'); console.log('GCP_PROJECT_ID:', process.env.GCP_PROJECT_ID ? '[OK] SET' : '[ERROR] MISSING'); console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? '[OK] SET' : '[ERROR] MISSING');\"",
     "kill:port": "lsof -ti:3001 | xargs kill -9 || echo 'No process found on port 3001'"

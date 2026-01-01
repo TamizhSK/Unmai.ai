@@ -35,10 +35,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // Prevent hydration mismatch with a simple wrapper
-  if (!mounted) {
-    return <div suppressHydrationWarning>{children}</div>
-  }
-
+  // Always render children - theme will be applied via useEffect
+  // This prevents hydration mismatch since we don't conditionally render
   return <>{children}</>
 }

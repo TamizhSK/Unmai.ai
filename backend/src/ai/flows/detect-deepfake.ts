@@ -117,28 +117,39 @@ export async function detectDeepfake(
   let synthIdAnalysis;
 
   if (input.contentType === 'image') {
-    try {
-      const imageContent = input.media.split(';base64,').pop();
-      if (!imageContent) {
-        throw new Error('Invalid base64 image data');
-      }
-
-      const visionClient = getVisionClient();
-      const [response] = await visionClient.safeSearchDetection({
-        image: {content: imageContent},
-      });
-      
-      const safeSearch = response.safeSearchAnnotation;
-      visionApiResult = `Adult: ${safeSearch?.adult}, Medical: ${safeSearch?.medical}, Spoof: ${safeSearch?.spoof}, Violence: ${safeSearch?.violence}, Racy: ${safeSearch?.racy}`;
-      visionApiAnalysis = {
-          safeSearchResult: visionApiResult,
-      };
-    } catch (error) {
-      console.error('[ERROR] Vision API call failed:', error);
-      visionApiResult = 'Vision API analysis unavailable';
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    // Skip Vision API in development mode
+    if (isDevelopment) {
+      console.log('[INFO] Development mode - skipping Vision API for deepfake detection');
+      visionApiResult = 'Vision API skipped in development mode';
       visionApiAnalysis = {
         safeSearchResult: visionApiResult,
       };
+    } else {
+      try {
+        const imageContent = input.media.split(';base64,').pop();
+        if (!imageContent) {
+          throw new Error('Invalid base64 image data');
+        }
+
+        const visionClient = getVisionClient();
+        const [response] = await visionClient.safeSearchDetection({
+          image: {content: imageContent},
+        });
+        
+        const safeSearch = response.safeSearchAnnotation;
+        visionApiResult = `Adult: ${safeSearch?.adult}, Medical: ${safeSearch?.medical}, Spoof: ${safeSearch?.spoof}, Violence: ${safeSearch?.violence}, Racy: ${safeSearch?.racy}`;
+        visionApiAnalysis = {
+            safeSearchResult: visionApiResult,
+        };
+      } catch (error) {
+        console.error('[ERROR] Vision API call failed:', error);
+        visionApiResult = 'Vision API analysis unavailable';
+        visionApiAnalysis = {
+          safeSearchResult: visionApiResult,
+        };
+      }
     }
   } else if (input.contentType === 'video') {
     // Video Intelligence API analysis

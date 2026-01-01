@@ -21,10 +21,9 @@ const nextConfig: NextConfig = {
   ],
   
   // Build optimizations
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
+      typescript: {
+        ignoreBuildErrors: false,
+      },  eslint: {
     ignoreDuringBuilds: true,
   },
   
@@ -83,6 +82,9 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
   },
+  
+  // Reduce hydration warnings in development
+  reactStrictMode: true,
 };
 
 export default nextConfig;

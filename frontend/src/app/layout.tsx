@@ -57,15 +57,39 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Suppress hydration warnings caused by browser extensions */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // Remove browser extension attributes that cause hydration mismatches
+              if (typeof window !== 'undefined') {
+                const observer = new MutationObserver((mutations) => {
+                  mutations.forEach((mutation) => {
+                    if (mutation.type === 'attributes') {
+                      const attr = mutation.attributeName;
+                      if (attr && (attr.startsWith('bis_') || attr.startsWith('data-grammarly') || attr.startsWith('data-lt-'))) {
+                        mutation.target.removeAttribute(attr);
+                      }
+                    }
+                  });
+                });
+                observer.observe(document.documentElement, { attributes: true, subtree: true });
+              }
+            `,
+          }}
+        />
+      </head>
       <body
         className={cn(
           `${googleSans.variable} font-[var(--font-google-sans)] antialiased min-h-[100svh]`
         )}
+        suppressHydrationWarning
       >
         <ThemeProvider>
           <LanguageProvider>
-            <div className="flex flex-col min-h-[100svh]">
-              <main className="flex-1 overflow-hidden">{children}</main>
+            <div className="flex flex-col min-h-[100svh]" suppressHydrationWarning>
+              <main className="flex-1 overflow-hidden" suppressHydrationWarning>{children}</main>
             </div>
           </LanguageProvider>
         </ThemeProvider>
