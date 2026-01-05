@@ -1,0 +1,107 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "prism",
+  "name": "Unmai.ai",
+  "colors": {
+    "primary": "#16A34A",
+    "light": "#07C983",
+    "dark": "#15803D"
+  },
+  "favicon": "docs/favicon.svg",
+  "tabs": [
+    {
+      "name": "Guides",
+      "url": "docs/guides"
+    },
+    {
+      "name": "API Reference",
+      "url": "docs/api-reference"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Getting started",
+      "pages": [
+        "docs/index",
+        "docs/quickstart",
+        "docs/development"
+      ]
+    },
+    {
+      "group": "Customization",
+      "pages": [
+        "docs/essentials/settings",
+        "docs/essentials/navigation"
+      ]
+    },
+    {
+      "group": "Writing content",
+      "pages": [
+        "docs/essentials/markdown",
+        "docs/essentials/code",
+        "docs/essentials/images",
+        "docs/essentials/reusable-snippets"
+      ]
+    },
+    {
+      "group": "AI tools",
+      "pages": [
+        "docs/ai-tools/cursor",
+        "docs/ai-tools/claude-code",
+        "docs/ai-tools/windsurf"
+      ]
+    },
+    {
+      "group": "API documentation",
+      "pages": [
+        "docs/api-reference/introduction"
+      ]
+    },
+    {
+      "group": "Endpoint examples",
+      "pages": [
+        "docs/api-reference/endpoint/get",
+        "docs/api-reference/endpoint/create",
+        "docs/api-reference/endpoint/delete",
+        "docs/api-reference/endpoint/webhook"
+      ]
+    }
+  ],
+  "anchors": [
+    {
+      "name": "Documentation",
+      "url": "https://mintlify.com/docs",
+      "icon": "book-open-cover"
+    },
+    {
+      "name": "Blog",
+      "url": "https://mintlify.com/blog",
+      "icon": "newspaper"
+    }
+  ],
+  "logo": {
+    "light": "docs/logo/light.svg",
+    "dark": "docs/logo/dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Support",
+        "href": "mailto:hi@mintlify.com"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Dashboard",
+      "href": "https://dashboard.mintlify.com"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/mintlify",
+      "github": "https://github.com/mintlify",
+      "linkedin": "https://linkedin.com/company/mintlify"
+    }
+  },
+  "openapi": "docs/api-reference/openapi.json"
+}
