@@ -10,3 +10,7 @@
 
 # Other
 .DS_Store
+.env.local
+.env
+.env.jwt
+.env.secret
