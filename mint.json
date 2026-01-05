@@ -33,18 +33,19 @@
       ]
     },
     {
-      "group": "API documentation",
+      "group": "API Reference",
       "pages": [
-        "docs/api-reference/introduction"
-      ]
-    },
-    {
-      "group": "Endpoint examples",
-      "pages": [
-        "docs/api-reference/endpoint/get",
-        "docs/api-reference/endpoint/create",
-        "docs/api-reference/endpoint/delete",
-        "docs/api-reference/endpoint/webhook"
+        "docs/api-reference/introduction",
+        {
+          "group": "Endpoints",
+          "pages": [
+            "docs/api-reference/endpoint/analyze",
+            "docs/api-reference/endpoint/fact-check",
+            "docs/api-reference/endpoint/deepfake",
+            "docs/api-reference/endpoint/safety",
+            "docs/api-reference/endpoint/health"
+          ]
+        }
       ]
     }
   ],
