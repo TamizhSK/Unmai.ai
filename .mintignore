@@ -1,23 +1,10 @@
-# Ignore all root level markdown files to prevent parsing errors
-*.md
-*.txt
-*.yaml
-*.yml
-*.json
-*.js
-*.ts
+# Ignore all root level files
+/*
+!/mint.json
+!/docs/
 
-# Ignore project directories
-node_modules/
-backend/
-frontend/
-scripts/
-.git/
-.github/
-.vscode/
-.kiro/
-.qodo/
+# Explicitly unignore everything inside docs
+!/docs/**
 
-# Un-ignore specific documentation files and config
-!mint.json
-!docs/
+# But we can re-ignore things inside docs if needed, e.g. .DS_Store
+docs/.DS_Store
