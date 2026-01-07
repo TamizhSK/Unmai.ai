@@ -87,6 +87,11 @@ class SecureEnvironment {
   }
 
   private async loadFromGoogleSecrets(): Promise<boolean> {
+    // COMMENTED OUT FOR PROTOTYPE - Google Cloud Secret Manager disabled
+    console.log('[INFO] Google Cloud Secret Manager disabled for prototype');
+    return false;
+    
+    /* Original code commented out due to ongoing GCP issues
     try {
       // Skip Google Cloud authentication in development mode
       if (process.env.NODE_ENV === 'development') {
@@ -144,6 +149,7 @@ class SecureEnvironment {
       console.warn('[WARN] Google Secret Manager not available:', error);
       return false;
     }
+    */
   }
 
   private loadFromJWT(): boolean {
@@ -219,19 +225,19 @@ class SecureEnvironment {
       return;
     }
 
-    console.log('[INFO] Loading secure environment...');
+    console.log('[INFO] Loading secure environment (PROTOTYPE MODE - GCP disabled)...');
 
     // Try loading in order of preference:
-    // 1. Google Cloud Secret Manager (production)
+    // 1. Google Cloud Secret Manager (DISABLED FOR PROTOTYPE)
     // 2. JWT environment files (secure local/staging)
     // 3. Regular .env files (development fallback)
 
     let loaded = false;
 
-    // Try Google Cloud secrets first (production)
-    if (await this.loadFromGoogleSecrets()) {
-      loaded = true;
-    }
+    // Google Cloud secrets disabled for prototype
+    // if (await this.loadFromGoogleSecrets()) {
+    //   loaded = true;
+    // }
 
     // Try JWT environment (secure local/staging)
     if (!loaded && this.loadFromJWT()) {
@@ -277,10 +283,10 @@ class SecureEnvironment {
   }
 }
 
-// Create and export singleton instance
+// Create and export singleton instance (GCP_PROJECT_ID optional for prototype)
 const secureEnv = SecureEnvironment.getInstance({
-  required: ['GCP_PROJECT_ID', 'GEMINI_API_KEY'],
-  optional: ['GOOGLE_CUSTOM_SEARCH_API_KEY', 'GOOGLE_SEARCH_ENGINE_ID']
+  required: [/* 'GCP_PROJECT_ID', */ 'GEMINI_API_KEY'], // GCP_PROJECT_ID commented out for prototype
+  optional: ['GOOGLE_CUSTOM_SEARCH_API_KEY', 'GOOGLE_SEARCH_ENGINE_ID', 'GCP_PROJECT_ID']
 });
 
 // Auto-load environment

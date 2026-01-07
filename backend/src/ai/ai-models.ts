@@ -1,60 +1,62 @@
-import { VertexAI } from '@google-cloud/vertexai';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// Commented out Vertex AI for prototype - using Gemini API key only
+// import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { config } from 'dotenv';
 
 // Load environment variables
 config();
 
 // Validate required environment variables
-const project = process.env.GCP_PROJECT_ID;
-const location = process.env.GCP_LOCATION || 'us-central1';
-const textModel = process.env.VERTEX_AI_TEXT_MODEL || 'gemini-2.5-pro';
-const visionModel = process.env.VERTEX_AI_VISION_MODEL || 'gemini-2.5-pro';
+// const project = process.env.GCP_PROJECT_ID; // Commented out for prototype
+// const location = process.env.GCP_LOCATION || 'us-central1'; // Commented out for prototype
+const textModel = process.env.VERTEX_AI_TEXT_MODEL || 'gemini-2.0-flash-exp';
+const visionModel = process.env.VERTEX_AI_VISION_MODEL || 'gemini-2.0-flash-exp';
 const geminiApiKey = process.env.GEMINI_API_KEY;
 
-if (!project) {
-  throw new Error('GCP_PROJECT_ID environment variable is required');
-}
+// Commented out for prototype - GCP not needed when using Gemini API key
+// if (!project) {
+//   throw new Error('GCP_PROJECT_ID environment variable is required');
+// }
 
 if (!geminiApiKey) {
   throw new Error('GEMINI_API_KEY environment variable is required');
 }
 
-export const vertexAI = new VertexAI({ project: project, location: location });
+// Vertex AI disabled for prototype
+// export const vertexAI = new VertexAI({ project: project, location: location });
+export const vertexAI = null; // Disabled for prototype
 
-// Instantiate Gemini models
-export const generativeModel = vertexAI.getGenerativeModel({
-  model: textModel,
-});
-
-export const generativeVisionModel = vertexAI.getGenerativeModel({
-  model: visionModel,
-});
-
-// Grounded model (no extra tools in config to avoid type issues)
-export const groundedModel = vertexAI.getGenerativeModel({
-  model: textModel,
-});
-
-// Model with custom search engine configuration
-export const customSearchModel = (_searchEngineId: string) => vertexAI.getGenerativeModel({
-  model: textModel,
-});
-
-// Initialize direct Gemini API client
+// Initialize direct Gemini API client (PRIMARY METHOD FOR PROTOTYPE)
 export const geminiAI = new GoogleGenerativeAI(geminiApiKey);
 
-// Direct Gemini API models (alternative to Vertex AI)
-export const geminiTextModel = geminiAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-export const geminiVisionModel = geminiAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+// Direct Gemini API models with safety settings disabled for prototype
+export const geminiTextModel = geminiAI.getGenerativeModel({ 
+  model: textModel,
+  safetySettings: [
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  ]
+});
+export const geminiVisionModel = geminiAI.getGenerativeModel({ 
+  model: visionModel,
+  safetySettings: [
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  ]
+});
 
-// Helper function to choose between Vertex AI and direct Gemini API
-export const getPreferredTextModel = () => {
-  // Use Vertex AI by default, fallback to direct Gemini API if needed
-  return generativeModel || geminiTextModel;
-};
+// Use Gemini API models directly (Vertex AI disabled for prototype)
+export const generativeModel = geminiTextModel;
+export const generativeVisionModel = geminiVisionModel;
+export const groundedModel = geminiTextModel;
 
-export const getPreferredVisionModel = () => {
-  // Use Vertex AI by default, fallback to direct Gemini API if needed
-  return generativeVisionModel || geminiVisionModel;
-};
+// Model with custom search engine configuration (Gemini API only)
+export const customSearchModel = (_searchEngineId: string) => geminiTextModel;
+
+// Helper function to get Gemini API models (Vertex AI disabled for prototype)
+export const getPreferredTextModel = () => geminiTextModel;
+export const getPreferredVisionModel = () => geminiVisionModel;

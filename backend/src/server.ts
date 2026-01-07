@@ -23,14 +23,17 @@ try {
   config();
 }
 
-// Validate required environment variables
-const requiredEnvVars = ['GCP_PROJECT_ID', 'GEMINI_API_KEY'];
+// Validate required environment variables (GCP_PROJECT_ID commented out for prototype)
+const requiredEnvVars = [/* 'GCP_PROJECT_ID', */ 'GEMINI_API_KEY'];
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
     console.error(`Missing required environment variable: ${envVar}`);
     process.exit(1);
   }
 }
+
+// Log prototype mode
+console.log('[INFO] PROTOTYPE MODE - Using Gemini API key exclusively (GCP disabled)');
 
 // Validate optional Custom Search configuration
 const customSearchKey = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
@@ -103,7 +106,7 @@ app.get('/health/detailed', (req: Request, res: Response) => {
     },
     services: {
       geminiApi: !!process.env.GEMINI_API_KEY,
-      gcpProject: !!process.env.GCP_PROJECT_ID,
+      gcpProject: false, // Disabled for prototype
       customSearch: {
         configured: !!(customSearchKey && customSearchEngineId),
         hasApiKey: !!customSearchKey,

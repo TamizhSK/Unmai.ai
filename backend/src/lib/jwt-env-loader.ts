@@ -140,6 +140,18 @@ class JWTEnvironmentLoader {
       }
 
       console.log('[INFO] JWT environment loaded successfully');
+      
+      // PROTOTYPE FIX: Force load local .env to allow overrides (e.g. for new API key)
+      try {
+        const { config } = await import('dotenv');
+        // Try loading from standard locations with override enabled
+        config({ path: path.join(process.cwd(), '.env'), override: true });
+        config({ path: path.join(projectRoot, '.env'), override: true });
+        console.log('[INFO] Loaded local .env overrides for prototype');
+      } catch (dotenvError) {
+        console.warn('[WARN] Failed to load .env overrides:', dotenvError);
+      }
+
       this.loaded = true;
     } catch (error) {
       console.error(`[ERROR] Failed to load JWT environment: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -188,7 +200,7 @@ export async function loadJWTEnvironment(): Promise<void> {
   await jwtEnvLoader.loadEnvironment();
 }
 
-export function validateEnvironment(requiredVars: string[] = ['GCP_PROJECT_ID', 'GEMINI_API_KEY']): boolean {
+export function validateEnvironment(requiredVars: string[] = [/* 'GCP_PROJECT_ID', */ 'GEMINI_API_KEY']): boolean {
   return jwtEnvLoader.validateRequiredVars(requiredVars);
 }
 
