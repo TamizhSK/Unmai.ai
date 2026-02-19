@@ -1,6 +1,10 @@
 import type { NextConfig } from 'next';
+import path from 'path';
 
 const nextConfig: NextConfig = {
+  // Explicitly set the root to silence workspace warnings
+  outputFileTracingRoot: path.join(__dirname, '..'),
+
   // Standalone output for optimized Cloud Run deployment
   output: 'standalone',
   
@@ -21,9 +25,10 @@ const nextConfig: NextConfig = {
   ],
   
   // Build optimizations
-      typescript: {
-        ignoreBuildErrors: false,
-      },  eslint: {
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+  eslint: {
     ignoreDuringBuilds: true,
   },
   

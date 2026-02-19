@@ -3,15 +3,44 @@
 ## Overview
 The backend has been configured to use **only the Gemini API key** for the prototype. All Google Cloud Platform (GCP) dependencies have been commented out due to ongoing issues.
 
+## Quick Start
+
+### For Development (Recommended)
+```bash
+npm run dev
+```
+This runs both frontend and backend in development mode.
+
+### Backend Only (For API Testing)
+```bash
+node run-backend-only.js
+```
+Or manually:
+```bash
+cd backend && npm run dev
+```
+
+### Production Mode (Requires Build)
+```bash
+# Build frontend first
+cd frontend && npm run build && cd ..
+# Then start both
+npm run start
+```
+
+## API Key Configuration
+- **New Gemini API Key**: Set in `backend/.env` (see `.env.example`)
+- **Model**: `gemini-2.0-flash-exp` (Latest Gemini 2.0 Flash experimental)
+- **Note**: Gemini 2.5 is not available via direct API key yet (only through Vertex AI)
+
 ## Changes Made
 
 ### 1. Environment Configuration
-- **New Gemini API Key**: `***REDACTED_API_KEY***`
 - Updated in:
   - `.env` (root)
   - `backend/.env`
 - **GCP_PROJECT_ID**: Commented out (not required for prototype)
-- **Model Configuration**: Using `gemini-2.0-flash-exp` (latest experimental model)
+- **Model Configuration**: Using `gemini-2.0-flash-exp`
 
 ### 2. Backend Code Changes
 
@@ -53,6 +82,27 @@ safetySettings: [
 ```
 **Note**: This allows the API to analyze all kinds of inputs for prototype testing.
 
+## Testing the API
+
+### Health Check
+```bash
+curl http://localhost:3001/health
+```
+
+### Test Text Analysis
+```bash
+curl -X POST http://localhost:3001/api/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"type": "text", "payload": {"text": "The sky is blue"}}'
+```
+
+### Test URL Analysis
+```bash
+curl -X POST http://localhost:3001/api/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"type": "url", "payload": {"url": "https://example.com"}}'
+```
+
 ## What Still Works
 
 ✅ All AI flows use Gemini API key
@@ -76,15 +126,24 @@ safetySettings: [
 ❌ GCP authentication requirements
 ❌ Content safety filtering (for prototype testing)
 
-## Running the Backend
+## Troubleshooting
 
+### Frontend Build Issues
+If you get "Could not find a production build" error:
 ```bash
-cd backend
-npm install
-npm start
+cd frontend
+rm -rf .next
+npm run build
+cd ..
+npm run start
 ```
 
-The backend will start on port 3001 and use only the Gemini API key for all operations.
+### Use Development Mode Instead
+For development, always use:
+```bash
+npm run dev
+```
+This avoids build issues and provides hot reloading.
 
 ## Important Notes
 
@@ -92,16 +151,8 @@ The backend will start on port 3001 and use only the Gemini API key for all oper
 2. **Safety Disabled**: Content safety filters are disabled to allow testing of all input types
 3. **API Key Security**: The API key is stored in `.env` files - ensure these are not committed to public repositories
 4. **GCP Issues**: All GCP-related code is commented out (not deleted) so it can be easily restored when issues are resolved
-5. **Model Version**: Using `gemini-2.0-flash-exp` - the latest experimental model
-
-## Restoring GCP Integration
-
-When GCP issues are resolved:
-1. Uncomment all Vertex AI imports and initialization code
-2. Uncomment Google Cloud Secret Manager code in `secure-env.ts`
-3. Add `GCP_PROJECT_ID` back to required environment variables
-4. Update safety settings as needed for production
-5. Test both Gemini API and Vertex AI paths
+5. **Model Version**: Using `gemini-2.0-flash-exp` - the latest available Gemini 2.0 model via API key
+6. **Gemini 2.5**: Not available via direct API key yet - only through Vertex AI (which is disabled for prototype)
 
 ## Environment Variables Required
 

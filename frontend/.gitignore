@@ -1,34 +1,36 @@
-# Build output
-.next/
-out/
-package-lock.json
+# ========================================
+# Unmai.ai Frontend - .gitignore
+# ========================================
 
-# Dependencies
+# --------------- Dependencies ---------------
 node_modules/
 
-# Environment files
+# --------------- Build Output ---------------
+.next/
+out/
+
+# --------------- Environment Variables ---------------
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 !.env.example
 !.env.*.example
-!.env.production
 
-# Logs
-*.log
-npm-debug.log*
-
-# TypeScript
+# --------------- TypeScript ---------------
 *.tsbuildinfo
 next-env.d.ts
 
-# OS files
+# --------------- Logs ---------------
+*.log
+npm-debug.log*
+
+# --------------- OS Files ---------------
 .DS_Store
 
-# Cache
+# --------------- Cache ---------------
 .eslintcache
 .cache/
 
-# Vercel
+# --------------- Vercel ---------------
 .vercel/

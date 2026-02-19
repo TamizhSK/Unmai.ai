@@ -3,15 +3,18 @@ import secureEnv from '../lib/secure-env.js';
 
 // Ensure environment is loaded and validated
 await secureEnv.load();
-if (!secureEnv.validate()) {
-  throw new Error('Required environment variables are missing or invalid');
-}
+// Skip validation for prototype mode - GCP not required when using Gemini API only
+// if (!secureEnv.validate()) {
+//   throw new Error('Required environment variables are missing or invalid');
+// }
 
-// Get project ID
+// Get project ID (optional for prototype)
 export function getProjectId(): string {
     const projectId = process.env.GCP_PROJECT_ID;
     if (!projectId) {
-        throw new Error('GCP_PROJECT_ID environment variable is required');
+        // Return a dummy project ID for prototype mode
+        console.warn('[WARN] GCP_PROJECT_ID not set - using prototype mode');
+        return 'prototype-project';
     }
     return projectId;
 }

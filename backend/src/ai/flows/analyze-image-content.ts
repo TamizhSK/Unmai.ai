@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { ImageAnnotatorClient } from '@google-cloud/vision';
+// Commented out Google Cloud Vision for prototype - using Gemini API only
+// import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
 import { generativeModel, generativeVisionModel } from '../genkit.js';
-import { getAuthConfig, getProjectId } from '../auth.js';
+// import { getAuthConfig, getProjectId } from '../auth.js';
 
 const ImageAnalysisInputSchema = z.object({
   imageData: z.string().min(1, 'Image data is required'), // Base64 or URL
@@ -536,131 +537,83 @@ Rules:
   };
 }
 
-// Helper to extract image metadata using Google Vision API
+// Helper to extract image metadata using Gemini Vision API (prototype mode)
 async function extractImageMetadata(imageData: string): Promise<ExtractedImageSignals> {
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  console.log('[INFO] PROTOTYPE MODE - Using Gemini Vision API for metadata extraction');
   
-  // Skip Vision API in development mode - return empty signals
-  if (isDevelopment) {
-    console.log('[INFO] Development mode - skipping Vision API for metadata extraction');
-    return {
-      location: 'Unknown',
-      safeSearch: undefined,
-      logos: [],
-      labels: [],
-      webDetection: { bestGuessLabels: [], webEntities: [] },
-      watermarkFindings: { hasWatermark: false, confidence: 0, indicators: [] },
-      suspectedAIGenerated: false,
-      aiIndicators: [],
-      possibleSources: [],
-    } as ExtractedImageSignals;
-  }
-  
-  const client = new ImageAnnotatorClient(getAuthConfig());
-  const request = {
-    image: toVisionImagePayload(imageData),
-    features: [
-      { type: 'SAFE_SEARCH_DETECTION' },
-      { type: 'WEB_DETECTION' },
-      { type: 'LOGO_DETECTION', maxResults: 10 },
-      { type: 'LABEL_DETECTION', maxResults: 50 },
-      { type: 'IMAGE_PROPERTIES' },
-      { type: 'LANDMARK_DETECTION', maxResults: 5 },
-    ],
-  };
-
   try {
-    const [result] = await client.annotateImage(request);
-    const safeSearch = result.safeSearchAnnotation
-      ? {
-        adult: likelihoodToString(result.safeSearchAnnotation.adult),
-        spoof: likelihoodToString(result.safeSearchAnnotation.spoof),
-        medical: likelihoodToString(result.safeSearchAnnotation.medical),
-        violence: likelihoodToString(result.safeSearchAnnotation.violence),
-        racy: likelihoodToString(result.safeSearchAnnotation.racy),
+    // Use Gemini Vision model for metadata extraction
+    const result = await generativeVisionModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [
+          { 
+            text: `Analyze this image and extract metadata information. Provide a JSON response with the following structure:
+{
+  "location": "estimated location or landmark name or 'Unknown'",
+  "safeSearch": {
+    "adult": "VERY_UNLIKELY|UNLIKELY|POSSIBLE|LIKELY|VERY_LIKELY",
+    "spoof": "VERY_UNLIKELY|UNLIKELY|POSSIBLE|LIKELY|VERY_LIKELY", 
+    "medical": "VERY_UNLIKELY|UNLIKELY|POSSIBLE|LIKELY|VERY_LIKELY",
+    "violence": "VERY_UNLIKELY|UNLIKELY|POSSIBLE|LIKELY|VERY_LIKELY",
+    "racy": "VERY_UNLIKELY|UNLIKELY|POSSIBLE|LIKELY|VERY_LIKELY"
+  },
+  "logos": [{"description": "logo name", "score": 0.0-1.0}],
+  "labels": [{"description": "object/concept", "score": 0.0-1.0}],
+  "webDetection": {
+    "bestGuessLabels": ["label1", "label2"],
+    "webEntities": [{"description": "entity", "score": 0.0-1.0}]
+  },
+  "suspectedAIGenerated": boolean,
+  "aiIndicators": ["ai", "indicators"],
+  "watermarkFindings": {
+    "hasWatermark": boolean,
+    "confidence": 0.0-1.0,
+    "indicators": ["watermark", "indicators"]
+  },
+  "possibleSources": [{"url": "source_url", "title": "title", "score": 0.0-1.0}]
+}
+
+Analyze the image for content, safety, logos, objects, potential AI generation signs, watermarks, and possible sources.` 
+          },
+          { inlineData: { mimeType: imageData.split(';')[0].split(':')[1] || 'image/jpeg', data: imageData.split(';base64,')[1] } }
+        ]
+      }]
+    });
+    
+    const response = await result.response;
+    const analysisText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    // Try to parse JSON response
+    let parsed;
+    try {
+      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
       }
-      : undefined;
-
-    const logos = (result.logoAnnotations || []).map((logo) => ({
-      description: logo.description ?? 'Unknown logo',
-      score: logo.score ?? undefined,
-    }));
-
-    const labels = (result.labelAnnotations || []).map((label) => ({
-      description: label.description ?? 'Unknown label',
-      score: label.score ?? undefined,
-    }));
-
-    const webDetection = {
-      bestGuessLabels: (result.webDetection?.bestGuessLabels || [])
-        .map((guess) => guess.label)
-        .filter(Boolean) as string[],
-      webEntities: (result.webDetection?.webEntities || [])
-        .filter((entity) => entity.description)
-        .map((entity) => ({
-          description: entity.description as string,
-          score: entity.score ?? undefined,
-        })),
-    };
-
-    const possibleSources: ReverseImageSource[] = (result.webDetection?.pagesWithMatchingImages || [])
-      .filter((page) => typeof page.url === 'string' && page.url.startsWith('http'))
-      .map((page) => ({
-        url: page.url as string,
-        title: page.pageTitle ?? undefined,
-        score: typeof page.score === 'number' ? Math.min(1, Math.max(0, page.score)) : undefined,
-      }));
-
-    const watermarkIndicators: string[] = [];
-    const allDescriptors = [
-      ...logos.map((item) => item.description),
-      ...labels.map((item) => item.description),
-      ...webDetection.webEntities.map((item) => item.description),
-    ];
-
-    for (const descriptor of allDescriptors) {
-      if (!descriptor) continue;
-      if (WATERMARK_TERMS.some((term) => term.test(descriptor))) {
-        watermarkIndicators.push(descriptor);
-      }
+    } catch (parseError) {
+      console.warn('[WARN] Failed to parse Gemini metadata JSON, using defaults');
     }
-
-    const aiIndicators: string[] = [];
-    for (const descriptor of [...allDescriptors, ...webDetection.bestGuessLabels]) {
-      if (!descriptor) continue;
-      if (AI_INDICATOR_TERMS.some((term) => term.test(descriptor))) {
-        aiIndicators.push(descriptor);
-      }
-    }
-
-    const hasWatermark = watermarkIndicators.length > 0;
-    const watermarkConfidence = hasWatermark
-      ? Math.min(1, 0.35 + watermarkIndicators.length * 0.15)
-      : 0;
-
-    const suspectedAIGenerated = aiIndicators.length > 0;
-
-    const location = result.landmarkAnnotations?.[0]?.description || 'Unknown';
-
+    
     const signals: ExtractedImageSignals = {
-      location,
-      safeSearch,
-      logos,
-      labels,
-      webDetection,
+      location: parsed?.location || 'Unknown',
+      safeSearch: parsed?.safeSearch || undefined,
+      logos: parsed?.logos || [],
+      labels: parsed?.labels || [],
+      webDetection: parsed?.webDetection || { bestGuessLabels: [], webEntities: [] },
       watermarkFindings: {
-        hasWatermark,
-        confidence: watermarkConfidence,
-        indicators: watermarkIndicators,
+        hasWatermark: parsed?.watermarkFindings?.hasWatermark || false,
+        confidence: parsed?.watermarkFindings?.confidence || 0,
+        indicators: parsed?.watermarkFindings?.indicators || []
       },
-      suspectedAIGenerated,
-      aiIndicators,
-      possibleSources,
+      suspectedAIGenerated: parsed?.suspectedAIGenerated || false,
+      aiIndicators: parsed?.aiIndicators || [],
+      possibleSources: parsed?.possibleSources || []
     };
-
+    
     return signals;
   } catch (error) {
-    console.error('Vision API error:', error);
+    console.error('Gemini Vision API error:', error);
     return {
       location: 'Unknown',
       safeSearch: undefined,
@@ -675,27 +628,30 @@ async function extractImageMetadata(imageData: string): Promise<ExtractedImageSi
   }
 }
 
-// Helper to perform OCR on image
+// Helper to perform OCR on image using Gemini Vision API (prototype mode)
 async function performOcr(imageData: string) {
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  console.log('[INFO] PROTOTYPE MODE - Using Gemini Vision API for OCR');
   
-  // Skip Vision API OCR in development mode
-  if (isDevelopment) {
-    console.log('[INFO] Development mode - skipping Vision API for OCR');
-    return '';
-  }
-  
-  const client = new ImageAnnotatorClient(getAuthConfig());
-  const request = {
-    image: toVisionImagePayload(imageData),
-    features: [{ type: 'TEXT_DETECTION' }],
-  };
-
   try {
-    const [result] = await client.annotateImage(request);
-    return result.fullTextAnnotation?.text || '';
+    // Use Gemini Vision model for OCR
+    const result = await generativeVisionModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [
+          { 
+            text: 'Extract all readable text from this image. Return only the text content, preserving line breaks and formatting where possible. If no text is visible, return an empty string.' 
+          },
+          { inlineData: { mimeType: imageData.split(';')[0].split(':')[1] || 'image/jpeg', data: imageData.split(';base64,')[1] } }
+        ]
+      }]
+    });
+    
+    const response = await result.response;
+    const extractedText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    return extractedText || '';
   } catch (error) {
-    console.error('OCR error:', error);
+    console.error('Gemini OCR error:', error);
     return '';
   }
 }

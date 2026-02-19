@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { groundedModel, generativeModel, generativeVisionModel } from '../genkit.js';
-import { v1 as videoIntelligence, protos as viProtos } from '@google-cloud/video-intelligence';
+// Commented out Google Cloud Video Intelligence for prototype - using Gemini API only
+// import { v1 as videoIntelligence, protos as viProtos } from '@google-cloud/video-intelligence';
 import { performWebAnalysis } from './perform-web-analysis.js';
 import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
-import { getAuthConfig, getProjectId } from '../auth.js';
+// import { getAuthConfig, getProjectId } from '../auth.js';
 
 // Cache for storing analysis results (5 minute TTL)
 const analysisCache = new Map<string, { timestamp: number; result: any }>();
@@ -58,50 +59,64 @@ const VideoAnalysisOutputSchema = z.object({
 });
 export type VideoAnalysisOutput = z.infer<typeof VideoAnalysisOutputSchema>;
 
-// Consolidated Video Intelligence API analysis (metadata + transcription + events)
+// Consolidated Video Analysis using Gemini Vision API (prototype mode)
 async function analyzeVideoIntelligence(videoData: string) {
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  console.log('[INFO] PROTOTYPE MODE - Using Gemini Vision API for video analysis');
   
-  // Skip Video Intelligence API in development mode
-  if (isDevelopment) {
-    console.log('[INFO] Development mode - skipping Video Intelligence API');
-    return { 
-      transcription: '[Video transcription not available in development mode]', 
-      events: [], 
-      location: 'Unknown', 
-      technicalData: { note: 'Video Intelligence API skipped in development mode' } 
-    };
-  }
-  
-  const client = new videoIntelligence.VideoIntelligenceServiceClient(getAuthConfig());
-  const request = {
-    inputUri: videoData.startsWith('gs://') ? videoData : undefined,
-    inputContent: videoData.startsWith('data:') ? Buffer.from(videoData.split(',')[1], 'base64') : undefined,
-    features: [
-      viProtos.google.cloud.videointelligence.v1.Feature.LABEL_DETECTION,
-      viProtos.google.cloud.videointelligence.v1.Feature.SPEECH_TRANSCRIPTION,
-    ],
-    videoContext: {
-      speechTranscriptionConfig: {
-        languageCode: 'en-US',
-        enableAutomaticPunctuation: true,
-      },
-    },
-  } as any;
-
   try {
-    const [operation] = await client.annotateVideo(request);
-    const [result] = await operation.promise();
-    const annotations = result.annotationResults?.[0];
+    // Use Gemini Vision model for video analysis
+    const result = await generativeVisionModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [
+          { 
+            text: `Analyze this video and provide a JSON response with the following structure:
+{
+  "transcription": "transcribed speech/audio content or empty string if no speech",
+  "events": ["list", "of", "key", "events", "or", "activities"],
+  "location": "estimated location or setting or 'Unknown'",
+  "technicalData": {
+    "duration": "estimated duration",
+    "quality": "video quality assessment",
+    "content_type": "type of video content"
+  }
+}
+
+Focus on extracting speech/audio, identifying key events or activities, and assessing the video content.` 
+          },
+          { inlineData: { mimeType: videoData.split(';')[0].split(':')[1] || 'video/mp4', data: videoData.split(';base64,')[1] } }
+        ]
+      }]
+    });
+    
+    const response = await result.response;
+    const analysisText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    // Try to parse JSON response
+    let parsed;
+    try {
+      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      }
+    } catch (parseError) {
+      console.warn('[WARN] Failed to parse Gemini video JSON, using defaults');
+    }
+    
     return {
-      transcription: annotations?.speechTranscriptions?.[0]?.alternatives?.[0]?.transcript || '',
-      events: annotations?.segmentLabelAnnotations?.map(a => a.entity?.description || '').filter(Boolean) || [],
-      location: annotations?.segmentLabelAnnotations?.[0]?.entity?.description || 'Unknown',
-      technicalData: { inputUri: annotations?.inputUri || 'Unknown' },
+      transcription: parsed?.transcription || '',
+      events: parsed?.events || [],
+      location: parsed?.location || 'Unknown',
+      technicalData: parsed?.technicalData || { note: 'Gemini video analysis' }
     };
   } catch (error) {
-    console.error('Video Intelligence analysis error:', error);
-    return { transcription: '', events: [], location: 'Unknown', technicalData: { error: 'Analysis failed' } };
+    console.error('Gemini Video analysis error:', error);
+    return { 
+      transcription: '', 
+      events: [], 
+      location: 'Unknown', 
+      technicalData: { error: 'Gemini video analysis failed' } 
+    };
   }
 }
 
@@ -390,33 +405,50 @@ Guidelines:
   };
 }
 
-// VI shot change detection to derive representative timestamps (no frame extraction)
+// Shot change detection using Gemini Vision API (prototype mode)
 async function getShotChangeTimestamps(videoData: string): Promise<Array<{ startSec: number; endSec: number }>> {
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  console.log('[INFO] PROTOTYPE MODE - Using Gemini for shot change estimation');
   
-  // Skip Video Intelligence API in development mode
-  if (isDevelopment) {
-    console.log('[INFO] Development mode - skipping Video Intelligence shot change detection');
-    return [];
-  }
-  
-  const client = new videoIntelligence.VideoIntelligenceServiceClient(getAuthConfig());
-  const request = {
-    inputUri: videoData.startsWith('gs://') ? videoData : undefined,
-    inputContent: videoData.startsWith('data:') ? Buffer.from(videoData.split(',')[1], 'base64') : undefined,
-    features: [viProtos.google.cloud.videointelligence.v1.Feature.SHOT_CHANGE_DETECTION],
-  } as any;
   try {
-    const [operation] = await client.annotateVideo(request);
-    const [result] = await operation.promise();
-    const shots = result.annotationResults?.[0]?.shotAnnotations || [];
-    return shots.slice(0, 10).map((s: any) => {
-      const start = Number(s.startTimeOffset?.seconds || 0) + Number(s.startTimeOffset?.nanos || 0) / 1e9;
-      const end = Number(s.endTimeOffset?.seconds || 0) + Number(s.endTimeOffset?.nanos || 0) / 1e9;
-      return { startSec: Math.max(0, Math.floor(start)), endSec: Math.max(0, Math.ceil(end)) };
+    // Use Gemini to estimate shot changes in video
+    const result = await generativeVisionModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [
+          { 
+            text: `Analyze this video and estimate shot changes or scene transitions. Provide a JSON response with the following structure:
+{
+  "shots": [
+    {"startSec": 0, "endSec": 5},
+    {"startSec": 5, "endSec": 12},
+    {"startSec": 12, "endSec": 20}
+  ]
+}
+
+Estimate where major scene changes, cuts, or transitions occur in the video. Provide up to 10 shots maximum.` 
+          },
+          { inlineData: { mimeType: videoData.split(';')[0].split(':')[1] || 'video/mp4', data: videoData.split(';base64,')[1] } }
+        ]
+      }]
     });
+    
+    const response = await result.response;
+    const analysisText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    // Try to parse JSON response
+    let parsed;
+    try {
+      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      }
+    } catch (parseError) {
+      console.warn('[WARN] Failed to parse Gemini shot change JSON, using defaults');
+    }
+    
+    return parsed?.shots || [];
   } catch (e) {
-    console.warn('[WARN] Shot change detection failed:', e);
+    console.warn('[WARN] Gemini shot change detection failed:', e);
     return [];
   }
 }

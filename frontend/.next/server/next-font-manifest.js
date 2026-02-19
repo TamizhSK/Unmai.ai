@@ -1,1 +1,0 @@
-self.__NEXT_FONT_MANIFEST="{\"pages\":{},\"app\":{\"/Users/Shared/Projects/Unmai.ai/frontend/src/app/layout\":[\"static/media/40dc20eab8f7c9f3-s.p.ttf\",\"static/media/0b2a6fe52f0e1b8a-s.p.ttf\",\"static/media/570ccc2466c41278-s.p.ttf\"]},\"appUsingSizeAdjust\":true,\"pagesUsingSizeAdjust\":false}"

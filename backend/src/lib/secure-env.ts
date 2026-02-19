@@ -199,19 +199,21 @@ class SecureEnvironment {
     }
   }
 
-  private loadFromDotenv(): boolean {
+  private async loadFromDotenv(): Promise<boolean> {
     try {
       const projectRoot = this.findProjectRoot();
       const envPath = path.join(projectRoot, '.env');
       
+      const { config } = await import('dotenv');
+
       if (fs.existsSync(envPath)) {
-        require('dotenv').config({ path: envPath });
+        config({ path: envPath });
         console.log('[INFO] Loaded environment from .env file');
         return true;
       }
       
       // Try loading from current directory
-      require('dotenv').config();
+      config();
       console.log('[INFO] Loaded environment from default .env');
       return true;
     } catch (error) {
@@ -246,7 +248,7 @@ class SecureEnvironment {
 
     // Fallback to regular .env (development)
     if (!loaded) {
-      this.loadFromDotenv();
+      await this.loadFromDotenv();
     }
 
     this.loaded = true;

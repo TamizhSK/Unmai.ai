@@ -9,8 +9,8 @@ config();
 // Validate required environment variables
 // const project = process.env.GCP_PROJECT_ID; // Commented out for prototype
 // const location = process.env.GCP_LOCATION || 'us-central1'; // Commented out for prototype
-const textModel = process.env.VERTEX_AI_TEXT_MODEL || 'gemini-2.0-flash-exp';
-const visionModel = process.env.VERTEX_AI_VISION_MODEL || 'gemini-2.0-flash-exp';
+const textModel = process.env.VERTEX_AI_TEXT_MODEL || 'gemini-3-flash-preview';
+const visionModel = process.env.VERTEX_AI_VISION_MODEL || 'gemini-3-flash-preview';
 const geminiApiKey = process.env.GEMINI_API_KEY;
 
 // Commented out for prototype - GCP not needed when using Gemini API key

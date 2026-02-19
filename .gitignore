@@ -1,17 +1,114 @@
+# ========================================
+# Unmai.ai - Root .gitignore
+# ========================================
 
-# Dependencies
-/node_modules
-/backend/node_modules
-/frontend/node_modules
+# --------------- Dependencies ---------------
+node_modules/
+.pnp
+.pnp.js
+.pnp.cjs
 
-# Build artifacts
-/backend/dist
-/frontend/.next
-
-# Other
-.DS_Store
-.env.local
+# --------------- Environment Variables ---------------
+# NEVER commit secrets, API keys, or credentials
 .env
+.env.*
+!.env.example
+!.env.*.example
+!.env.production
+
+# Legacy secret files
 .env.jwt
 .env.secret
 
+# --------------- Build Artifacts ---------------
+# Frontend (Next.js)
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+
+# Backend
+backend/dist/
+backend/build/
+
+# --------------- Logs ---------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --------------- OS Files ---------------
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon?
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# --------------- IDE / Editor ---------------
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*.swn
+*.bak
+*.tmp
+*.orig
+*.sublime-workspace
+*.sublime-project
+.project
+.classpath
+.settings/
+
+# --------------- Runtime / Cache ---------------
+.cache/
+.parcel-cache/
+.turbo/
+.eslintcache
+*.tsbuildinfo
+
+# --------------- Testing / Coverage ---------------
+coverage/
+.nyc_output/
+*.lcov
+
+# --------------- TypeScript ---------------
+*.tsbuildinfo
+
+# --------------- Docker ---------------
+# Don't ignore Dockerfiles or docker-compose, but ignore runtime data
+docker-compose.override.yml
+
+# --------------- Google Cloud ---------------
+.genkit/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# --------------- Misc ---------------
+*.pid
+*.seed
+*.pid.lock
+*.pem
+
+# Temporary test/debug scripts (not part of the app)
+test-api-key.js
+run-backend-only.js
+verify-app-working.js

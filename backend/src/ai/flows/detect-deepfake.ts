@@ -1,6 +1,6 @@
 'use server';
 /**
- * @fileOverview Detects deepfake content in images and videos.
+ * @fileOverview Detects deepfake content in images and videos using Gemini API.
  *
  * - detectDeepfake - A function that detects deepfake content.
  * - DetectDeepfakeInput - The input type for the detectDeepfake function.
@@ -9,21 +9,22 @@
 
 import { z } from 'zod';
 import { generativeVisionModel } from '../genkit.js';
-import { ImageAnnotatorClient } from '@google-cloud/vision';
-import { VideoIntelligenceServiceClient } from '@google-cloud/video-intelligence';
+// Commented out Google Cloud Vision for prototype - using Gemini API only
+// import { ImageAnnotatorClient } from '@google-cloud/vision';
+// import { VideoIntelligenceServiceClient } from '@google-cloud/video-intelligence';
 import { config } from 'dotenv';
-import { getAuthConfig, getProjectId } from '../auth.js';
+// import { getAuthConfig, getProjectId } from '../auth.js';
 
 // Load environment variables
 
-// Create Google Cloud clients with modern authentication
-function getVisionClient() {
-  return new ImageAnnotatorClient(getAuthConfig());
-}
+// Google Cloud clients commented out for prototype - using Gemini API only
+// function getVisionClient() {
+//   return new ImageAnnotatorClient(getAuthConfig());
+// }
 
-function getVideoClient() {
-  return new VideoIntelligenceServiceClient(getAuthConfig());
-}
+// function getVideoClient() {
+//   return new VideoIntelligenceServiceClient(getAuthConfig());
+// }
 
 const DetectDeepfakeInputSchema = z.object({
   media: z
@@ -117,71 +118,73 @@ export async function detectDeepfake(
   let synthIdAnalysis;
 
   if (input.contentType === 'image') {
-    const isDevelopment = process.env.NODE_ENV === 'development';
+    // Use Gemini Vision API instead of Google Cloud Vision for prototype
+    console.log('[INFO] PROTOTYPE MODE - Using Gemini Vision API for deepfake detection');
     
-    // Skip Vision API in development mode
-    if (isDevelopment) {
-      console.log('[INFO] Development mode - skipping Vision API for deepfake detection');
-      visionApiResult = 'Vision API skipped in development mode';
+    try {
+      // Use Gemini Vision model for image analysis
+      const result = await generativeVisionModel.generateContent({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: 'Analyze this image for signs of manipulation, deepfake, or AI generation. Look for inconsistencies in lighting, shadows, facial features, artifacts, or other signs of digital manipulation. Provide a brief analysis.' },
+            { inlineData: { mimeType: input.media.split(';')[0].split(':')[1], data: input.media.split(';base64,')[1] } }
+          ]
+        }]
+      });
+      
+      const response = await result.response;
+      const analysisText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      visionApiResult = `Gemini Vision Analysis: ${analysisText}`;
       visionApiAnalysis = {
         safeSearchResult: visionApiResult,
       };
-    } else {
-      try {
-        const imageContent = input.media.split(';base64,').pop();
-        if (!imageContent) {
-          throw new Error('Invalid base64 image data');
-        }
-
-        const visionClient = getVisionClient();
-        const [response] = await visionClient.safeSearchDetection({
-          image: {content: imageContent},
-        });
-        
-        const safeSearch = response.safeSearchAnnotation;
-        visionApiResult = `Adult: ${safeSearch?.adult}, Medical: ${safeSearch?.medical}, Spoof: ${safeSearch?.spoof}, Violence: ${safeSearch?.violence}, Racy: ${safeSearch?.racy}`;
-        visionApiAnalysis = {
-            safeSearchResult: visionApiResult,
-        };
-      } catch (error) {
-        console.error('[ERROR] Vision API call failed:', error);
-        visionApiResult = 'Vision API analysis unavailable';
-        visionApiAnalysis = {
-          safeSearchResult: visionApiResult,
-        };
-      }
+    } catch (error) {
+      console.error('[ERROR] Gemini Vision API call failed:', error);
+      visionApiResult = 'Gemini Vision API analysis unavailable';
+      visionApiAnalysis = {
+        safeSearchResult: visionApiResult,
+      };
     }
   } else if (input.contentType === 'video') {
-    // Video Intelligence API analysis
+    // Use Gemini for video analysis (prototype mode)
+    console.log('[INFO] PROTOTYPE MODE - Using Gemini for video analysis');
+    
     try {
-      const videoData = input.media.split(';base64,')[1];
-      if (!videoData) {
-        throw new Error('Invalid base64 video data');
-      }
-      const videoBuffer = Buffer.from(videoData, 'base64');
+      // For video, we'll analyze it as frames or provide general guidance
+      const result = await generativeVisionModel.generateContent({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: 'Analyze this video content for signs of deepfake or manipulation. Look for inconsistencies in facial movements, lip sync issues, unnatural transitions, or other signs of AI-generated content. Provide analysis based on what you can observe.' },
+            { inlineData: { mimeType: input.media.split(';')[0].split(':')[1], data: input.media.split(';base64,')[1] } }
+          ]
+        }]
+      });
       
-      // For now, we'll just note that we would perform these analyses
-      // In a production environment, you would send the video to the API
+      const response = await result.response;
+      const analysisText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
       videoIntelligenceAnalysis = {
-        faceDetection: 'Video Intelligence API analysis would detect faces and facial landmarks for consistency analysis',
-        shotChange: 'Video Intelligence API analysis would detect shot changes and scene transitions',
-        labelDetection: 'Video Intelligence API analysis would identify objects and activities in the video'
+        faceDetection: `Gemini analysis: ${analysisText}`,
+        shotChange: 'Analyzed for temporal consistency and transitions',
+        labelDetection: 'Analyzed for content authenticity markers'
       };
     } catch (error) {
-      console.error('[ERROR] Video Intelligence API call failed:', error);
+      console.error('[ERROR] Gemini video analysis failed:', error);
       videoIntelligenceAnalysis = {
-        faceDetection: 'Video Intelligence API unavailable',
-        shotChange: 'Video Intelligence API unavailable',
-        labelDetection: 'Video Intelligence API unavailable'
+        faceDetection: 'Gemini video analysis unavailable',
+        shotChange: 'Analysis unavailable',
+        labelDetection: 'Analysis unavailable'
       };
     }
     
-    // SynthID analysis placeholder
-    // In a production environment, you would integrate with the SynthID Detector API
+    // SynthID analysis placeholder (not available in prototype)
     synthIdAnalysis = {
       isSynthetic: false,
       confidence: 0,
-      details: 'SynthID analysis would detect AI-generated content markers'
+      details: 'SynthID analysis not available in prototype mode'
     };
   }
 
