@@ -42,6 +42,11 @@
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
+  "overrides": {
+    "protobufjs": "^7.4.0",
+    "@tootallnate/once": "^3.0.1",
+    "http-proxy-agent": "^7.0.0"
+  },
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=8.0.0"

@@ -1,2 +1,14 @@
 Configuration updated
 Version: 792
+
+
+npx shadcn@latest add sidebar
+
+use sonner instead of toast from shacn UI
+npx shadcn@latest add sonner
+
+use sonner instead of toast from shacn UI
+use sonner instead of toast from shacn UI
+
+ npx shadcn@latest add skeleton i want you to fix the UI choppiness and update the frontend to include the login/signup, sidebar, user query history and
+  other updates. 

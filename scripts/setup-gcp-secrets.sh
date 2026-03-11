@@ -108,36 +108,20 @@ else
     exit 1
 fi
 
-# Setup optional GOOGLE_CUSTOM_SEARCH_API_KEY
-print_header "Setting up Google Custom Search API Key (Optional)"
-if [ -n "$GOOGLE_CUSTOM_SEARCH_API_KEY" ]; then
-    print_status "Using GOOGLE_CUSTOM_SEARCH_API_KEY from environment"
-    create_or_update_secret "google-custom-search-api-key" "$GOOGLE_CUSTOM_SEARCH_API_KEY" "Google Custom Search API key"
-elif [ -f ".env" ] && grep -q "GOOGLE_CUSTOM_SEARCH_API_KEY" .env; then
-    print_status "Reading GOOGLE_CUSTOM_SEARCH_API_KEY from .env file"
-    GOOGLE_CUSTOM_SEARCH_API_KEY=$(grep "GOOGLE_CUSTOM_SEARCH_API_KEY" .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-    if [ -n "$GOOGLE_CUSTOM_SEARCH_API_KEY" ]; then
-        create_or_update_secret "google-custom-search-api-key" "$GOOGLE_CUSTOM_SEARCH_API_KEY" "Google Custom Search API key"
+# Setup optional GOOGLE_API_KEY (used for Fact Check Tools API)
+print_header "Setting up Google API Key (Optional)"
+if [ -n "$GOOGLE_API_KEY" ]; then
+    print_status "Using GOOGLE_API_KEY from environment"
+    create_or_update_secret "google-api-key" "$GOOGLE_API_KEY" "Google API key for Fact Check Tools"
+elif [ -f ".env" ] && grep -q "GOOGLE_API_KEY" .env; then
+    print_status "Reading GOOGLE_API_KEY from .env file"
+    GOOGLE_API_KEY=$(grep "GOOGLE_API_KEY" .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    if [ -n "$GOOGLE_API_KEY" ]; then
+        create_or_update_secret "google-api-key" "$GOOGLE_API_KEY" "Google API key for Fact Check Tools"
     fi
 else
-    print_warning "GOOGLE_CUSTOM_SEARCH_API_KEY not found (optional)"
-    print_status "You can add it later with: gcloud secrets create google-custom-search-api-key --data-file=<(echo 'your_key')"
-fi
-
-# Setup optional GOOGLE_SEARCH_ENGINE_ID
-print_header "Setting up Google Search Engine ID (Optional)"
-if [ -n "$GOOGLE_SEARCH_ENGINE_ID" ]; then
-    print_status "Using GOOGLE_SEARCH_ENGINE_ID from environment"
-    create_or_update_secret "google-search-engine-id" "$GOOGLE_SEARCH_ENGINE_ID" "Google Custom Search Engine ID"
-elif [ -f ".env" ] && grep -q "GOOGLE_SEARCH_ENGINE_ID" .env; then
-    print_status "Reading GOOGLE_SEARCH_ENGINE_ID from .env file"
-    GOOGLE_SEARCH_ENGINE_ID=$(grep "GOOGLE_SEARCH_ENGINE_ID" .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-    if [ -n "$GOOGLE_SEARCH_ENGINE_ID" ]; then
-        create_or_update_secret "google-search-engine-id" "$GOOGLE_SEARCH_ENGINE_ID" "Google Custom Search Engine ID"
-    fi
-else
-    print_warning "GOOGLE_SEARCH_ENGINE_ID not found (optional)"
-    print_status "You can add it later with: gcloud secrets create google-search-engine-id --data-file=<(echo 'your_id')"
+    print_warning "GOOGLE_API_KEY not found (optional)"
+    print_status "You can add it later with: gcloud secrets create google-api-key --data-file=<(echo 'your_key')"
 fi
 
 # IAM permissions will be handled automatically by Cloud Run

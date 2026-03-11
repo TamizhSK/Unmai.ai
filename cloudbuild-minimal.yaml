@@ -13,7 +13,7 @@ options:
   machineType: E2_HIGHCPU_8
   diskSizeGb: 100
 
-timeout: 1200s
+timeout: 900s
 
 images:
   - ${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-frontend:$BUILD_ID
@@ -38,6 +38,7 @@ steps:
     dir: backend
     args:
       - build
+      - --build-arg=BUILDKIT_INLINE_CACHE=1
       - --cache-from=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend:latest
       - -t=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend:$BUILD_ID
       - -t=${_ARTIFACT_REGISTRY}/$PROJECT_ID/${_REPOSITORY}/unmai-backend:latest
@@ -66,16 +67,18 @@ steps:
           --memory=2Gi \
           --cpu=2 \
           --timeout=900 \
-          --min-instances=0 \
+          --min-instances=1 \
           --max-instances=10 \
+          --concurrency=80 \
+          --cpu-boost \
+          --cpu-throttling=false \
           --set-env-vars NODE_ENV=production \
           --set-env-vars GCP_PROJECT_ID=$PROJECT_ID \
-          --set-secrets GEMINI_API_KEY=gemini-api-key:latest \
-          --set-secrets GOOGLE_CUSTOM_SEARCH_API_KEY=google-custom-search-api-key:latest \
-          --set-secrets GOOGLE_SEARCH_ENGINE_ID=google-search-engine-id:latest \
+          --set-secrets GOOGLE_API_KEY=google-api-key:latest \
+          --set-secrets JWT_SECRET=jwt-secret:latest \
           --allow-unauthenticated \
           --quiet
-        echo "✅ Backend deployed"
+        echo "✅ Backend deployed (min-instances=1, cold start eliminated)"
     waitFor: ['push-backend']
 
   # Step 5: Get backend URL and configure frontend
@@ -132,7 +135,7 @@ steps:
           --memory=1Gi \
           --cpu=1 \
           --timeout=300 \
-          --min-instances=0 \
+          --min-instances=1 \
           --max-instances=5 \
           --set-env-vars NODE_ENV=production \
           --allow-unauthenticated \
