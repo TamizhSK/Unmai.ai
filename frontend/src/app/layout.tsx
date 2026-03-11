@@ -4,6 +4,9 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme";
 import { cn } from "@/lib/utils";
 import { LanguageProvider } from "@/context/language-context";
+import { AuthProvider } from "@/context/auth-context";
+import { Toaster } from "@/components/ui/sonner";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 const googleSans = localFont({
   src: [
@@ -44,6 +47,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
+  interactiveWidget: "resizes-visual",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f3f4f6" },
     { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
@@ -88,9 +92,14 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <LanguageProvider>
-            <div className="flex flex-col min-h-[100svh]" suppressHydrationWarning>
-              <main className="flex-1 overflow-hidden" suppressHydrationWarning>{children}</main>
-            </div>
+            <AuthProvider>
+              <ErrorBoundary>
+                <div className="flex flex-col min-h-[100svh]" suppressHydrationWarning>
+                  <main className="flex-1 overflow-hidden" suppressHydrationWarning>{children}</main>
+                </div>
+              </ErrorBoundary>
+              <Toaster />
+            </AuthProvider>
           </LanguageProvider>
         </ThemeProvider>
       </body>

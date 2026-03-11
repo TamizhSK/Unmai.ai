@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useRef, ChangeEvent, DragEvent, ClipboardEvent, SyntheticEvent, useEffect } from 'react';
+import { useState, useRef, useMemo, ChangeEvent, DragEvent, ClipboardEvent, SyntheticEvent, useEffect } from 'react';
 import { Textarea } from './ui/textarea';
 import { Button } from './ui/button';
 import { Paperclip, X, Mic, UploadCloud, ArrowUp, FileVideo, FileAudio } from 'lucide-react';
 import Image from 'next/image';
-import { Select, SelectContent, SelectItem, SelectTrigger} from './ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger } from './ui/select';
 import {
   Tooltip,
   TooltipContent,
@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useLanguage } from '@/context/language-context';
+import { toast } from 'sonner';
 
 interface InputBarProps {
   addMessage: (message: any) => void;
@@ -29,6 +30,7 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
   const [isRecording, setIsRecording] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const { language: contextLanguage, setLanguage: setContextLanguage, translate } = useLanguage();
+
   const [selectedLanguage, setSelectedLanguage] = useState(contextLanguage);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -56,13 +58,13 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
   };
 
   // Dynamic placeholder based on current state (short, compact labels)
-  const getPlaceholder = () => {
+  const placeholder = useMemo(() => {
     if (isRecording) return 'Recording…';
     if (isRecognizing) return 'Listening…';
     if (file) return 'Add a note';
     if (input.trim()) return 'Ready';
     return 'Type text, paste URL, or add image/video/audio';
-  };
+  }, [isRecording, isRecognizing, file, input]);
 
   const handleFileSelect = (selectedFile: File | null) => {
     if (selectedFile && (selectedFile.type.startsWith('image/') || selectedFile.type.startsWith('video/') || selectedFile.type.startsWith('audio/'))) {
@@ -154,7 +156,9 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
       if (SpeechRecognition && !isRecognizing) {
         handleSpeechRecognition();
       } else {
-        alert("Microphone access denied or not supported. Please check your browser permissions.");
+        toast.error("Microphone unavailable", {
+          description: "Access denied or not supported. Please check your browser permissions.",
+        });
       }
     }
   };
@@ -312,7 +316,7 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onPaste={handlePaste}
-          placeholder={getPlaceholder()}
+          placeholder={placeholder}
           className="flex-1 resize-none border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[36px] sm:min-h-[40px] max-h-32 text-sm sm:text-base leading-snug placeholder:text-muted-foreground"
           rows={1}
           onKeyDown={(e) => {
@@ -337,7 +341,10 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
             }}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <SelectTrigger className="h-8 w-10 sm:w-12 border-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full text-xs font-medium [&>svg]:hidden focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                  <SelectTrigger
+                    aria-label={`Language: ${getLanguageCode(selectedLanguage)}`}
+                    className="h-8 w-10 sm:w-12 border-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full text-xs font-medium [&>svg]:hidden focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  >
                     <span className="text-center w-full">{getLanguageCode(selectedLanguage)}</span>
                   </SelectTrigger>
                 </TooltipTrigger>
@@ -369,6 +376,7 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
                   disabled={isLoading}
                   variant="default"
                   size="icon"
+                  aria-label={translate('input.attachFile')}
                   className="h-7 w-7 sm:h-8 sm:w-8 rounded-full"
                 >
                   <Paperclip className="h-4 w-4" />
@@ -387,6 +395,7 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
                   disabled={isLoading}
                   variant={isRecording || isRecognizing ? "destructive" : "default"}
                   size="icon"
+                  aria-label={isRecording ? translate('input.stopRecording') : isRecognizing ? translate('input.stopRecognition') : translate('input.startVoice')}
                   className="h-7 w-7 sm:h-8 sm:w-8 rounded-full"
                 >
                   <Mic className="h-4 w-4" />
@@ -394,8 +403,8 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
               </TooltipTrigger>
               <TooltipContent>
                 <p>
-                  {isRecording ? translate('input.stopRecording') : 
-                   isRecognizing ? translate('input.stopRecognition') : 
+                  {isRecording ? translate('input.stopRecording') :
+                   isRecognizing ? translate('input.stopRecognition') :
                    translate('input.startVoice')}
                 </p>
               </TooltipContent>
@@ -406,6 +415,7 @@ export function InputBar({ addMessage, removeLastMessage, setShowChat, showChat,
               disabled={isLoading || (!input.trim() && !file)}
               variant="default"
               size="icon"
+              aria-label="Send"
               className="h-7 w-7 sm:h-8 sm:w-8 rounded-full"
             >
               <ArrowUp className="h-4 w-4" />

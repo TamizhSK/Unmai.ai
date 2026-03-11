@@ -1,6 +1,12 @@
 import type { NextConfig } from 'next';
 import path from 'path';
 
+// Bundle analyzer: run with ANALYZE=true npm run build
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const withBundleAnalyzer = process.env.ANALYZE === 'true'
+  ? require('@next/bundle-analyzer')({ enabled: true })
+  : (config: NextConfig) => config;
+
 const nextConfig: NextConfig = {
   // Explicitly set the root to silence workspace warnings
   outputFileTracingRoot: path.join(__dirname, '..'),
@@ -34,7 +40,7 @@ const nextConfig: NextConfig = {
   
   // Image optimization for Cloud Run
   images: {
-    unoptimized: true,
+    unoptimized: false,
     remotePatterns: [
       {
         protocol: 'https',
@@ -92,4 +98,4 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);

@@ -1,644 +1,610 @@
+/**
+ * Unified Response Card (v3) — Professional Verification UI
+ * 
+ * Redesigned for:
+ * - Compact layout that fits at 100% zoom
+ * - Accurate donut chart color mapping
+ * - Professional loader with real analysis stages
+ * - Stage-synchronized progress bar
+ * - Smooth animations and auto-scroll
+ * 
+ * Max width: 720px for optimal readability
+ */
+
 "use client";
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Link as LinkIcon, Globe, CheckCircle, AlertTriangle, XCircle, Shield } from "lucide-react";
-import { useLanguage } from '@/context/language-context';
 
-export interface MultiModalTrustScores {
-  sourceIntegrityScore: number;      // Source credibility & integrity
-  contentAuthenticityScore: number;  // Content authenticity & semantic consistency
-  trustExplainabilityScore: number;  // Explainability & composite rationale
-}
+import {
+  ExternalLink,
+  Globe,
+  Shield,
+  FileText,
+  Lightbulb,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  HelpCircle,
+  Activity,
+  Database,
+  Search,
+  FileCheck,
+  BrainCircuit,
+  ClipboardCheck,
+  Layers,
+  Sparkles,
+} from "lucide-react";
 
-export interface MisleadingIndicator {
-  indicator: string;
-  confidence: number;
-  severity: 'low' | 'medium' | 'high';
-}
-
-export interface DeepfakeDetection {
-  isDeepfake: boolean;
-  confidence: number;
-  details: string;
-  technicalDetails?: string;
-}
-
-export interface SourceMetadata {
-  domain?: string;
-  author?: string;
-  reputation?: string;
-  verificationStatus?: 'verified' | 'suspicious' | 'unknown';
-  publishDate?: string;
-  ssl?: boolean;
-}
-
-export interface EducationalCard {
-  type: 'verification' | 'manipulation' | 'warning';
-  title: string;
-  content: string;
-  icon: string;
-}
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface UnifiedResponseData {
-  mainLabel: string;                    // Content type analyzed (Text, Video, Image, URL)
-  oneLineDescription: string;           // Brief description of analyzed input
-  informationSummary: string;           // Key findings summary
-  educationalInsight: string;           // Educational insight on manipulation/credibility
-  
-  // Multi-modal trust scores
-  trustScores: MultiModalTrustScores;
-  
-  // Detection results
-  misleadingIndicators?: MisleadingIndicator[];
-  deepfakeDetection?: DeepfakeDetection;
-  
-  // Source information
-  sources: Array<{url: string, title: string, favicon?: string, credibility?: number}>;
-  sourceMetadata?: SourceMetadata;
-  
-  // Overall verdict
-  verificationLevel: 'authentic' | 'suspicious' | 'fake';
-  verdict: 'True' | 'Suspicious' | 'Fake';
-  
-  // Additional data
-  educationalCards?: EducationalCard[];
+  verdict: 'True' | 'False' | 'Misleading' | 'Unverified';
+  label: 'GREEN' | 'RED' | 'ORANGE' | 'YELLOW';
+  oneLineDescription: string;
+  explanation: string;
+  evidenceSummary: string;
+  insight: string;
+  sources: Array<{ 
+    url: string; 
+    title: string; 
+    domain: string; 
+    credibilityScore: number;
+    credibilityTier?: 'high' | 'medium' | 'low';
+  }>;
+  scores: {
+    sourceIntegrity: number;
+    contentAuthenticity: number;
+    trustExplainability: number;
+  };
+  claims?: Array<{
+    claim: string;
+    verdict: string;
+    confidence: number;
+    reasoning: string;
+    keyEvidence?: string[];
+  }>;
+  metadata?: {
+    source?: string;
+    isManipulated?: boolean;
+    manipulationDetails?: string;
+  };
 }
 
-// Loading skeleton type for backend-in-flight responses
 export interface AnalysisLoadingSkeleton {
   kind: 'loading';
-  stage?: string; // e.g., "fetching_sources", "fact_checking", etc.
+  stage?: string;
   message?: string;
-  expectedChecks?: string[]; // list of checks that are running
+  expectedChecks?: string[];
+  progress?: number;
 }
 
 type UnifiedResponse = UnifiedResponseData | AnalysisLoadingSkeleton;
 
 interface UnifiedResponseCardProps {
   response: UnifiedResponse;
+  onHeightChange?: (height: number) => void;
 }
 
-const getLabelVariant = (verificationLevel: string) => {
-  switch (verificationLevel) {
-    case 'authentic':
-      return 'bg-google-green';
-    case 'suspicious':
-      return 'bg-google-yellow';
-    case 'fake':
-      return 'bg-google-red';
-    default:
-      return 'bg-google-blue';
+// ─── Verdict Styling ────────────────────────────────────────────────────────
+
+const VERDICT_STYLES: Record<string, { 
+  bg: string; 
+  text: string; 
+  border: string;
+  bgSoft: string;
+  badgeBg: string;
+  icon: React.ComponentType<any>;
+}> = {
+  True:       { 
+    bg: 'bg-emerald-500', 
+    text: 'text-emerald-500', 
+    border: 'border-emerald-500/30',
+    bgSoft: 'bg-emerald-500/10',
+    badgeBg: 'bg-emerald-500',
+    icon: CheckCircle2,
+  },
+  False:      { 
+    bg: 'bg-red-500', 
+    text: 'text-red-500', 
+    border: 'border-red-500/30',
+    bgSoft: 'bg-red-500/10',
+    badgeBg: 'bg-red-500',
+    icon: XCircle,
+  },
+  Misleading: { 
+    bg: 'bg-amber-500', 
+    text: 'text-amber-500', 
+    border: 'border-amber-500/30',
+    bgSoft: 'bg-amber-500/10',
+    badgeBg: 'bg-amber-500',
+    icon: AlertTriangle,
+  },
+  Unverified: { 
+    bg: 'bg-gray-400', 
+    text: 'text-gray-400', 
+    border: 'border-gray-400/30',
+    bgSoft: 'bg-gray-400/10',
+    badgeBg: 'bg-gray-400',
+    icon: HelpCircle,
+  },
+};
+
+const getVerdictStyle = (verdict: string) => VERDICT_STYLES[verdict] || VERDICT_STYLES.Unverified;
+
+// ─── Score Color Logic (Strict Thresholds) ──────────────────────────────────
+
+/**
+ * Returns color based on strict score thresholds:
+ * 0-39: Red (#EF4444)
+ * 40-69: Orange (#F59E0B)
+ * 70-100: Green (#10B981)
+ */
+function getScoreColor(value: number): { 
+  stroke: string; 
+  gradientStart: string; 
+  gradientEnd: string;
+  text: string; 
+  bg: string;
+} {
+  if (value < 40) {
+    return {
+      stroke: '#EF4444',
+      gradientStart: '#EF4444',
+      gradientEnd: '#DC2626',
+      text: 'text-red-500',
+      bg: 'bg-red-500',
+    };
   }
-};
+  if (value < 70) {
+    return {
+      stroke: '#F59E0B',
+      gradientStart: '#F59E0B',
+      gradientEnd: '#D97706',
+      text: 'text-amber-500',
+      bg: 'bg-amber-500',
+    };
+  }
+  return {
+    stroke: '#10B981',
+    gradientStart: '#10B981',
+    gradientEnd: '#059669',
+    text: 'text-emerald-500',
+    bg: 'bg-emerald-500',
+  };
+}
 
-// Removed unused getVerificationLevel (handled upstream)
+// ─── Animated Counter Hook ──────────────────────────────────────────────────
 
-const getScoreColor = (score: number): string => {
-  if (score >= 75) return 'hsl(var(--google-green))';
-  if (score >= 40) return 'hsl(var(--google-yellow))';
-  return 'hsl(var(--google-red))';
-};
+function useAnimatedCounter(targetValue: number, duration: number = 1000, enabled: boolean = true) {
+  const [value, setValue] = useState(0);
 
-// Circular trust score component
-const CircularTrustScore = ({ score, label }: { score: number; label: string }) => {
-  const radius = 20;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (score / 100) * circumference;
-  const color = getScoreColor(score);
-  
+  useEffect(() => {
+    if (!enabled) {
+      setValue(targetValue);
+      return;
+    }
+
+    let startTime: number | null = null;
+    let animationFrame: number;
+
+    const animate = (timestamp: number) => {
+      if (!startTime) startTime = timestamp;
+      const elapsed = timestamp - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Ease-out quart
+      const eased = 1 - Math.pow(1 - progress, 4);
+      const currentValue = Math.round(targetValue * eased);
+      
+      setValue(currentValue);
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(animate);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [targetValue, duration, enabled]);
+
+  return value;
+}
+
+// ─── Donut Chart Component (Corrected) ──────────────────────────────────────
+
+interface DonutChartProps {
+  value: number;
+  label: string;
+  icon?: React.ReactNode;
+  size?: 'md' | 'lg';
+  delay?: number;
+}
+
+const DonutChart = ({ value, label, icon, size = 'lg', delay = 0 }: DonutChartProps) => {
+  const normalizedValue = Math.max(0, Math.min(100, value));
+  const animatedValue = useAnimatedCounter(normalizedValue, 1000, true);
+  // Color based on the ANIMATED value so it updates during animation
+  const colors = getScoreColor(animatedValue);
+  const uniqueId = React.useId();
+
+  const config = {
+    container: 'w-16 h-16',
+    value: 'text-base',
+    label: 'text-[9px]',
+    strokeWidth: 8,
+    radius: 30,
+  };
+
+  const circumference = 2 * Math.PI * config.radius;
+  const strokeDashoffset = circumference - (animatedValue / 100) * circumference;
+
   return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="relative">
-        <svg className="w-16 h-16 sm:w-20 sm:h-20 transform -rotate-90" viewBox="0 0 50 50">
-          {/* Background circle */}
+    <div className="flex flex-col items-center gap-1.5">
+      <div className={`relative ${config.container}`}>
+        <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
           <circle
-            cx="25"
-            cy="25"
-            r={radius}
-            stroke="currentColor"
-            strokeWidth="3"
-            fill="transparent"
-            className="text-muted-foreground/20"
+            cx="50"
+            cy="50"
+            r={config.radius}
+            fill="none"
+            stroke="hsl(var(--muted))"
+            strokeWidth={config.strokeWidth}
+            strokeLinecap="round"
           />
-          {/* Progress circle */}
+          {/* Use direct stroke color instead of gradient to avoid ID collisions */}
           <circle
-            cx="25"
-            cy="25"
-            r={radius}
-            stroke={color}
-            strokeWidth="3"
-            fill="transparent"
+            cx="50"
+            cy="50"
+            r={config.radius}
+            fill="none"
+            stroke={colors.stroke}
+            strokeWidth={config.strokeWidth}
+            strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            className="transition-all duration-1000 ease-out"
+            style={{
+              transition: `stroke-dashoffset ${1000 + delay}ms ease-out ${delay}ms, stroke 300ms ease`,
+            }}
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            <div className={`text-base sm:text-lg font-bold`} style={{ color }}>{score}</div>
-          </div>
+          <span className={`font-bold ${colors.text} ${config.value}`}>
+            {animatedValue}
+          </span>
         </div>
       </div>
-      <div className="text-xs text-center text-foreground font-medium">
-        <span className="block leading-tight max-w-[7.5rem] break-words">{label}</span>
+      <span className={`text-muted-foreground ${config.label} font-semibold uppercase tracking-wide`}>
+        {label}
+      </span>
+    </div>
+  );
+};
+
+// ─── Professional Loader Stages ─────────────────────────────────────────────
+
+interface LoaderStage {
+  id: string;
+  label: string;
+  icon: React.ComponentType<any>;
+  progress: number;
+}
+
+// Stage IDs MUST match backend PIPELINE_STAGES in unified-analysis.ts exactly:
+// detecting → extracting → claims → queries → evidence → ranking → reasoning → explanation → complete
+const LOADER_STAGES: LoaderStage[] = [
+  { id: 'detecting', label: 'Detecting input type', icon: Activity, progress: 8 },
+  { id: 'extracting', label: 'Extracting content', icon: Layers, progress: 20 },
+  { id: 'claims', label: 'Identifying factual claims', icon: FileCheck, progress: 32 },
+  { id: 'queries', label: 'Generating search queries', icon: Search, progress: 42 },
+  { id: 'evidence', label: 'Searching fact-check databases & sources', icon: Database, progress: 55 },
+  { id: 'ranking', label: 'Ranking source credibility', icon: Shield, progress: 68 },
+  { id: 'reasoning', label: 'AI analyzing evidence', icon: BrainCircuit, progress: 80 },
+  { id: 'explanation', label: 'Generating explanation', icon: Sparkles, progress: 92 },
+  { id: 'complete', label: 'Preparing verification report', icon: ClipboardCheck, progress: 100 },
+];
+
+interface LoaderProps {
+  stage?: string;
+  message?: string;
+  progress?: number;
+  expectedChecks?: string[];
+}
+
+const Loader = ({ stage, message, progress, expectedChecks }: LoaderProps) => {
+  const [currentStageIndex, setCurrentStageIndex] = useState(0);
+  const [displayProgress, setDisplayProgress] = useState(0);
+
+  // Sync stage from backend SSE events
+  useEffect(() => {
+    if (progress !== undefined) {
+      const idx = LOADER_STAGES.findIndex(s => s.progress >= progress);
+      if (idx !== -1) setCurrentStageIndex(idx);
+    } else {
+      const stageLower = (stage || '').toLowerCase();
+      const stageIdx = LOADER_STAGES.findIndex(s =>
+        s.id === stageLower || stageLower.includes(s.id) || s.label.toLowerCase().includes(stageLower)
+      );
+      if (stageIdx !== -1) setCurrentStageIndex(stageIdx);
+    }
+  }, [stage, progress]);
+
+  // Animate progress bar smoothly
+  useEffect(() => {
+    const targetProgress = LOADER_STAGES[currentStageIndex]?.progress || 0;
+    const step = () => {
+      setDisplayProgress(prev => {
+        if (prev >= targetProgress) return targetProgress;
+        return prev + Math.max(0.5, (targetProgress - prev) * 0.08);
+      });
+    };
+    const interval = setInterval(step, 30);
+    return () => clearInterval(interval);
+  }, [currentStageIndex]);
+
+  const stageLabel = LOADER_STAGES[currentStageIndex]?.label || 'Analyzing...';
+
+  return (
+    <div className="py-1">
+      <div className="space-y-2.5">
+        {/* Stage label */}
+        <p className="text-xs text-muted-foreground">
+          {stageLabel}... <span className="text-muted-foreground/50">({currentStageIndex + 1}/{LOADER_STAGES.length})</span>
+        </p>
+
+        {/* Progress bar */}
+        <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+          <div
+            className="h-full bg-blue-500 rounded-full transition-none"
+            style={{ width: `${Math.min(100, displayProgress)}%` }}
+          />
+        </div>
       </div>
     </div>
   );
 };
 
-export function UnifiedResponseCard({ response }: UnifiedResponseCardProps) {
-  const { translate } = useLanguage();
-  const getHostname = (url: string) => {
-    try {
-      return new URL(url).hostname;
-    } catch {
-      return '';
-    }
-  };
+// ─── Source Favicon ─────────────────────────────────────────────────────────
 
-  const getFavicon = (url: string) => {
-    const host = getHostname(url);
-    if (!host) return '';
-    // DuckDuckGo IP3 favicons are reliable and fast
-    return `https://icons.duckduckgo.com/ip3/${host}.ico`;
-  };
-
-  const safeRender = (value: any): string => {
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number') return String(value);
-    if (typeof value === 'boolean') return String(value);
-    if (value === null || value === undefined) return '';
-    // Since backend now returns properly formatted strings, just convert to string
-    return String(value);
-  };
-
-  // Frontend does not perform JSON/markdown formatting; backend returns clean strings.
-  const sanitizeText = (value: any): string => {
-    let text = safeRender(value);
-    if (!text) return '';
-    // Minimal whitespace normalization only
-    text = text.replace(/\n{3,}/g, '\n\n').trim();
-    return text;
-  };
-
-  const getSourceStatusIcon = (status: string) => {
-    switch (status) {
-      case 'verified':
-        return <CheckCircle className="h-4 w-4 text-google-green" />;
-      case 'suspicious':
-        return <XCircle className="h-4 w-4 text-google-red" />;
-      default:
-        return <AlertTriangle className="h-4 w-4 text-google-yellow" />;
-    }
-  };
-
-  const getSourceStatusColor = (status: string) => {
-    switch (status) {
-      case 'verified':
-        return 'bg-google-green/10 text-google-green';
-      case 'suspicious':
-        return 'bg-google-red/10 text-google-red';
-      default:
-        return 'bg-google-yellow/10 text-google-yellow';
-    }
-  };
-
-
-  // Calculate composite trust score from individual scores
-  const getCompositeScore = (scores: MultiModalTrustScores) => {
-    return Math.round(
-      (scores.sourceIntegrityScore + scores.contentAuthenticityScore + scores.trustExplainabilityScore) / 3
-    );
-  };
-
-  const EducationalCardsSection = ({ cards }: { cards?: EducationalCard[] }) => {
-    if (!cards || cards.length === 0) return null;
-    
-    return (
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground uppercase">{translate('card.heading.educationalSection')}</h3>
-        <div className="grid gap-3">
-          {cards.map((card, index) => (
-            <div key={index} className={`p-3 rounded-lg border-l-4 ${
-              card.type === 'verification' ? 'border-l-google-green bg-google-green/5' :
-              card.type === 'manipulation' ? 'border-l-google-yellow bg-google-yellow/5' :
-              'border-l-google-red bg-google-red/5'
-            }`}>
-              <div className="flex items-start gap-2">
-                <span className="text-lg">{card.icon}</span>
-                <div className="flex-1">
-                  <h4 className="font-medium text-sm mb-1 text-foreground">{card.title}</h4>
-                  <p className="text-xs text-foreground leading-relaxed text-justify">{card.content}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  const SourceInformationSection = ({ sourceMetadata }: { sourceMetadata?: SourceMetadata }) => {
-    if (!sourceMetadata) return null;
-    return (
-          <div className="p-3 sm:p-4 border rounded-lg bg-muted/50">
-        <h3 className="font-medium mb-3 flex items-center gap-2 text-sm sm:text-base">
-          <Shield className="h-4 w-4" />
-          {translate('card.heading.sourceInformation')}
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-          {sourceMetadata.domain && (
-            <div>
-              <span className="text-muted-foreground">{translate('card.label.domain')}</span>
-              <p className="font-medium">{sourceMetadata.domain}</p>
-            </div>
-          )}
-          {sourceMetadata.author && (
-            <div>
-              <span className="text-muted-foreground">{translate('card.label.author')}</span>
-              <p className="font-medium">{sourceMetadata.author}</p>
-            </div>
-          )}
-          {sourceMetadata.publishDate && (
-            <div>
-              <span className="text-muted-foreground">{translate('card.label.published')}</span>
-              <p className="font-medium">{sourceMetadata.publishDate}</p>
-            </div>
-          )}
-          {sourceMetadata.reputation && (
-            <div>
-              <span className="text-muted-foreground">{translate('card.label.reputation')}</span>
-              <p className="font-medium capitalize">{sourceMetadata.reputation}</p>
-            </div>
-          )}
-          {sourceMetadata.verificationStatus && (
-            <div>
-              <span className="text-muted-foreground">{translate('card.label.status')}</span>
-              <span className={`ml-2 text-xs px-2 py-1 rounded-full ${getSourceStatusColor(sourceMetadata.verificationStatus)} inline-flex items-center gap-1`}>
-                {getSourceStatusIcon(sourceMetadata.verificationStatus)}
-                <span className="capitalize">{sourceMetadata.verificationStatus}</span>
-              </span>
-            </div>
-          )}
-          {typeof sourceMetadata.ssl === 'boolean' && (
-            <div>
-              <span className="text-muted-foreground">{translate('card.label.ssl')}</span>
-              <p className="font-medium">{sourceMetadata.ssl ? translate('card.text.sslEnabled') : translate('card.text.sslDisabled')}</p>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const isLoading = (resp: UnifiedResponse): resp is AnalysisLoadingSkeleton => (resp as any)?.kind === 'loading';
-  const compositeScore = !isLoading(response) && (response as UnifiedResponseData).trustScores ? 
-    getCompositeScore((response as UnifiedResponseData).trustScores) : 0;
+const SourceFavicon = ({ url, size = 'sm' }: { url: string; size?: 'sm' | 'md' }) => {
+  const sizeClasses = { sm: 'w-4 h-4', md: 'w-5 h-5' };
   
-  if (isLoading(response)) {
-    // Skeleton UI while backend analysis runs
-    return (
-      <div className="relative rounded-xl">
-        <Card className="relative bg-card text-card-foreground shadow-lg rounded-xl overflow-hidden border z-0">
-          <CardContent className="p-6 space-y-4">
-            <div className="w-24 h-6 rounded-md bg-muted animate-pulse" />
-            <div className="space-y-3">
-              <div className="h-4 w-3/4 bg-muted rounded animate-pulse" />
-              <div className="h-4 w-2/3 bg-muted rounded animate-pulse" />
-            </div>
-            <div className="space-y-2">
-              <div className="h-4 w-40 bg-muted rounded animate-pulse" />
-              <div className="h-16 w-full bg-muted rounded animate-pulse" />
-            </div>
-            <div className="space-y-2">
-              <div className="h-4 w-72 bg-muted rounded animate-pulse" />
-              <div className="h-20 w-full bg-muted rounded animate-pulse" />
-              {response.expectedChecks && response.expectedChecks.length > 0 && (
-                <div className="grid gap-2">
-                  {response.expectedChecks.map((c, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-muted animate-pulse" />
-                      <div className="text-xs text-muted-foreground">{c}</div>
-                    </div>
-                  ))}
+  const getFavicon = (url: string) => {
+    try { 
+      const domain = new URL(url).hostname.replace(/^www\./, '');
+      return `https://icons.duckduckgo.com/ip3/${domain}.ico`; 
+    } catch { 
+      return ''; 
+    }
+  };
+  
+  const fav = getFavicon(url);
+  
+  return (
+    <div className={`${sizeClasses[size]} rounded-full overflow-hidden flex-shrink-0 bg-background border`}>
+      {fav ? (
+        <img src={fav} alt="" className="w-full h-full object-contain p-0.5" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+      ) : (
+        <Globe className="w-2.5 h-2.5 m-1 text-muted-foreground" />
+      )}
+    </div>
+  );
+};
+
+// ─── Sources Dialog ─────────────────────────────────────────────────────────
+
+const SourcesDialog = ({ sources }: { sources: UnifiedResponseData['sources'] }) => {
+  const getTierBadge = (tier?: string) => {
+    switch (tier) {
+      case 'high': return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20';
+      case 'medium': return 'bg-amber-500/10 text-amber-600 border-amber-500/20';
+      case 'low': return 'bg-red-500/10 text-red-600 border-red-500/20';
+      default: return 'bg-gray-500/10 text-gray-600 border-gray-500/20';
+    }
+  };
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="rounded-full flex items-center gap-2 w-full sm:w-auto justify-center hover:bg-accent/50 transition-colors">
+          <div className="flex -space-x-2">
+            {sources.slice(0, 3).map((s, i) => (
+              <SourceFavicon key={i} url={s.url} size="sm" />
+            ))}
+          </div>
+          <span className="text-xs font-medium">Sources</span>
+          <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5">
+            {sources.length}
+          </Badge>
+        </Button>
+      </DialogTrigger>
+      
+      <DialogContent className="max-w-[95vw] sm:max-w-xl max-h-[85vh] overflow-hidden flex flex-col rounded-lg p-0">
+        <DialogHeader className="flex-shrink-0 pb-3 border-b px-5 pt-5">
+          <DialogTitle className="text-base">Sources & References</DialogTitle>
+          <DialogDescription className="text-sm">
+            {sources.length} credible sources referenced
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-2">
+          {sources.length > 0 ? sources.map((source, i) => (
+            <a
+              key={i}
+              href={source.url || '#'}
+              target="_blank"
+              rel="nofollow noopener noreferrer"
+              className="flex items-start gap-3 rounded-lg p-3 hover:bg-accent/50 transition-colors border border-border/50 group"
+            >
+              <SourceFavicon url={source.url} size="md" />
+              <div className="min-w-0 flex-1">
+                <div className="font-medium text-sm text-foreground line-clamp-2 group-hover:text-blue-500 transition-colors">
+                  {source.title}
                 </div>
-              )}
-            </div>
-            <div className="flex items-end justify-between pt-2">
-              <div>
-                <div className="h-8 w-20 rounded-full bg-muted animate-pulse" />
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  <span className="text-xs text-muted-foreground truncate">{source.domain}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${getTierBadge(source.credibilityTier)}`}>
+                    {source.credibilityTier === 'high' ? 'High' : source.credibilityTier === 'medium' ? 'Medium' : 'Low'}
+                  </span>
+                  <span className="text-xs font-semibold text-foreground">
+                    {Math.round(source.credibilityScore * 100)}%
+                  </span>
+                </div>
               </div>
-              <div className="flex items-end gap-3">
-                {[0,1,2].map((i) => (
-                  <div key={i} className="flex flex-col items-center gap-1">
-                    <div className="w-14 h-14 rounded-full bg-muted animate-pulse" />
-                    <div className="h-3 w-24 bg-muted rounded animate-pulse" />
-                  </div>
-                ))}
-              </div>
+              <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-blue-500 flex-shrink-0 mt-0.5" />
+            </a>
+          )) : (
+            <div className="text-center py-8">
+              <Globe className="w-12 h-12 text-muted-foreground/50 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">No sources found</p>
             </div>
-            <div className="pt-2 border-t border-border">
-              <div className="flex items-center justify-between">
-                <div className="h-4 w-28 bg-muted rounded animate-pulse" />
-                <div className="h-6 w-16 bg-muted rounded animate-pulse" />
-              </div>
-              {response.message && (
-                <div className="mt-3 text-xs text-muted-foreground">{response.message}</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ─── Main Card Component ────────────────────────────────────────────────────
+
+export const UnifiedResponseCard = React.memo(function UnifiedResponseCard({ 
+  response,
+  onHeightChange,
+}: UnifiedResponseCardProps) {
+  
+  const [isMounted, setIsMounted] = useState(false);
+  const cardRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Notify parent of height changes
+  useEffect(() => {
+    if (cardRef.current && onHeightChange) {
+      const observer = new ResizeObserver(entries => {
+        for (const entry of entries) {
+          onHeightChange(entry.contentRect.height);
+        }
+      });
+      observer.observe(cardRef.current);
+      return () => observer.disconnect();
+    }
+  }, [onHeightChange]);
+
+  // Auto-scroll handling
+  useEffect(() => {
+    if (isMounted && cardRef.current) {
+      const isLoading = (response as any)?.kind === 'loading';
+      
+      // Smooth scroll to card
+      cardRef.current.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'start',
+      });
+    }
+  }, [response, isMounted]);
+
+  const isLoading = (r: UnifiedResponse): r is AnalysisLoadingSkeleton => 
+    (r as any)?.kind === 'loading';
+
+  if (isLoading(response)) {
+    return (
+      <div ref={cardRef} className="w-full max-w-[560px]">
+        <Loader {...(response as AnalysisLoadingSkeleton)} />
       </div>
     );
   }
 
   const data = response as UnifiedResponseData;
+  const style = getVerdictStyle(data.verdict);
+  const VerdictIcon = style.icon;
 
   return (
-    <div className="relative rounded-xl w-full max-w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl mx-auto">
-      <Card className="relative bg-card text-card-foreground shadow-lg rounded-xl transition-all duration-300 hover:shadow-xl overflow-hidden border z-0">
-        <CardContent className="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4">
-          {/* 1. Analysis Label - Shows risk level prominently */}
-            <div className="flex items-center gap-2 sm:gap-3">
-            <Badge className={`text-xs sm:text-sm px-2.5 sm:px-3 py-0.5 sm:py-1 text-white w-fit pointer-events-none ${getLabelVariant(data.verificationLevel)}`}>
-              {data.mainLabel}
+    <div ref={cardRef} className="w-full max-w-[560px]">
+      <Card className={`bg-card text-card-foreground shadow-md rounded-xl overflow-hidden border ${style.border}`}>
+        <CardContent className="p-3.5 space-y-2.5">
+
+          {/* ── 1. Verdict Header ─────────────────────────────── */}
+          <div className="flex items-center gap-2 pb-2.5 border-b border-border/50">
+            <VerdictIcon className={`w-4.5 h-4.5 ${style.text}`} strokeWidth={2.5} />
+            <Badge className={`${style.badgeBg} text-white text-xs px-2.5 py-0.5 pointer-events-none font-semibold`}>
+              {data.metadata?.isManipulated ? 'Manipulated' : data.verdict}
             </Badge>
           </div>
-          {/* Prominent Deepfake Banner (if applicable) */}
-          {data.deepfakeDetection && (
-            <div className={`flex items-start gap-3 p-3 rounded-lg border ${data.deepfakeDetection.isDeepfake ? 'bg-google-red/10 border-google-red/20' : 'bg-google-green/10 border-google-green/20'}`}>
-              <div className="flex-shrink-0">
-                {data.deepfakeDetection.isDeepfake ? (
-                  <XCircle className="h-4 w-4 sm:h-5 sm:w-5 text-google-red" />
-                ) : (
-                  <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-google-green" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs sm:text-sm font-medium text-foreground">
-                    {data.deepfakeDetection.isDeepfake ? 'Deepfake Detected' : 'No Deepfake Detected'}
-                  </h3>
-                  <Badge variant={data.deepfakeDetection.isDeepfake ? ('destructive' as const) : ('default' as const)} className="text-xs pointer-events-none">
-                    {data.deepfakeDetection.confidence}% confidence
-                  </Badge>
-                </div>
-                <p className="text-xs text-foreground mt-1 text-justify">{data.deepfakeDetection.details}</p>
+
+          {/* ── 2. Headline ───────────────────────────────────── */}
+          <p className="text-foreground text-[13px] leading-relaxed font-medium">
+            {data.oneLineDescription}
+          </p>
+
+          {/* ── 3. Information Summary ─────────────────────────── */}
+          <div className="space-y-1 pt-1.5">
+            <h3 className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Information Summary
+            </h3>
+            <p className="text-foreground text-[13px] leading-relaxed">
+              {data.explanation}
+            </p>
+          </div>
+
+          {/* ── 4. Educational Insight ────────────────────────── */}
+          {data.insight && (
+            <div className="space-y-1 pt-1.5 border-t border-border/50">
+              <h3 className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <Lightbulb className="w-3 h-3 text-amber-500" strokeWidth={2} />
+                Educational Insight
+              </h3>
+              <div className="p-2.5 bg-amber-500/5 rounded-lg border border-amber-500/10">
+                <p className="text-[13px] text-foreground leading-relaxed">
+                  {data.insight}
+                </p>
               </div>
             </div>
           )}
-          
-          {/* 2. One-line description of the input */}
-          <div className="space-y-1 border-b border-border pb-3">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{translate('card.heading.description')}</h3>
-            <p className="text-foreground text-sm leading-relaxed break-words whitespace-pre-wrap text-justify">
-              {sanitizeText(data.oneLineDescription) || translate('card.placeholder.noDescription')}
-            </p>
-          </div>
 
-          {/* 3. Information Summary of the analysis */}
-          <div className="space-y-2 border-b border-border pb-3">
-            <h3 className="text-xs sm:text-sm font-medium text-muted-foreground uppercase">{translate('card.heading.summary')}</h3>
-            <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap break-words text-justify">
-              {sanitizeText(data.informationSummary) || translate('card.placeholder.noSummary')}
-            </p>
-          </div>
-
-          {/* 4. Educational Insight - Expandable */}
-          <Accordion type="single" collapsible className="border-b border-border">
-            <AccordionItem value="educational" className="border-0">
-              <AccordionTrigger className="text-xs sm:text-sm font-medium text-muted-foreground py-2 hover:no-underline uppercase">
-                {translate('card.heading.educational')}
-              </AccordionTrigger>
-              <AccordionContent>
-                {data.educationalInsight && (
-                  <div className="p-3 bg-muted/50 rounded-lg text-sm leading-relaxed">
-                    <p className="whitespace-pre-wrap break-words text-foreground text-justify">{sanitizeText(data.educationalInsight)}</p>
-                
-                {/* Misleading Indicators */}
-                {data.misleadingIndicators && data.misleadingIndicators.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase">{translate('card.heading.misleadingIndicators')}</h4>
-                    {data.misleadingIndicators.map((indicator, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 bg-background rounded border">
-                        <span className="text-xs">{indicator.indicator}</span>
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 bg-muted rounded-full h-1.5">
-                            <div 
-                              className={`h-1.5 rounded-full ${
-                                indicator.severity === 'high' ? 'bg-google-red' :
-                                indicator.severity === 'medium' ? 'bg-google-yellow' : 'bg-google-green'
-                              }`}
-                              style={{ width: `${indicator.confidence}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground">{indicator.confidence}%</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Educational Cards (if available) */}
-                {data.educationalCards && data.educationalCards.length > 0 && (
-                  <div className="mt-4">
-                    <EducationalCardsSection cards={data.educationalCards} />
-                  </div>
-                )}
-
-                {/* Deepfake Detection Results */}
-                {data.deepfakeDetection && (
-                  <div className="mt-4 p-3 bg-background rounded border">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-xs font-medium text-muted-foreground uppercase">{translate('card.heading.deepfakeDetection')}</h4>
-                      <Badge variant={data.deepfakeDetection.isDeepfake ? ("destructive" as const) : ("default" as const)} className="text-xs pointer-events-none">
-                        {data.deepfakeDetection.isDeepfake ? translate('card.badge.detected') : translate('card.badge.notDetected')}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-foreground mb-2 text-justify">{data.deepfakeDetection.details}</p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs">{translate('card.text.deepfakeConfidence')}</span>
-                      <div className="w-20 bg-muted rounded-full h-1.5">
-                        <div 
-                          className="h-1.5 bg-google-blue rounded-full"
-                          style={{ width: `${data.deepfakeDetection.confidence}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-muted-foreground">{data.deepfakeDetection.confidence}%</span>
-                    </div>
-                    {data.deepfakeDetection.technicalDetails && (
-                      <details className="mt-2">
-                        <summary className="text-xs text-muted-foreground cursor-pointer">{translate('card.details.technical')}</summary>
-                        <pre className="mt-1 text-[10px] leading-snug whitespace-pre-wrap text-muted-foreground bg-muted/50 p-2 rounded">{sanitizeText(data.deepfakeDetection.technicalDetails)}</pre>
-                      </details>
-                    )}
-                  </div>
-                )}
-                  </div>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-
-          {/* 5. Sources, Scores, and Overall Verdict */}
-          <div className="space-y-2.5 sm:space-y-3">
-            <h3 className="text-xs sm:text-sm font-medium text-muted-foreground uppercase">{translate('card.heading.sources')}</h3>
-            {/* Trust Scores */}
-            <div className="flex items-center justify-between gap-3 px-1 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-6 sm:justify-items-center sm:px-0">
-              <CircularTrustScore 
-                score={data.trustScores?.sourceIntegrityScore || 0} 
-                label={translate('card.trust.sourceIntegrity')}
+          {/* ── 5. Trust Metrics (Donut Charts) ───────────────── */}
+          <div className="space-y-2 pt-1.5 border-t border-border/50">
+            <h3 className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider text-center">
+              Trust Metrics
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+              <DonutChart
+                value={data.scores.sourceIntegrity}
+                label="Source"
+                delay={0}
               />
-              <CircularTrustScore 
-                score={data.trustScores?.contentAuthenticityScore || 0} 
-                label={translate('card.trust.contentAuthenticity')}
+              <DonutChart
+                value={data.scores.contentAuthenticity}
+                label="Content"
+                delay={200}
               />
-              <CircularTrustScore 
-                score={(data.trustScores?.trustExplainabilityScore ?? compositeScore) ?? 0} 
-                label={translate('card.trust.trustExplainability')}
+              <DonutChart
+                value={data.scores.trustExplainability}
+                label="Trust"
+                delay={400}
               />
             </div>
-            
-            {/* Verdict + Sources in a single bar */}
-            <div className="p-2.5 sm:p-3 bg-muted/50 rounded-lg flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 sm:justify-between">
-              {/* Sources Button with Avatar Group (left) */}
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="rounded-full flex items-center gap-2 w-full sm:w-auto justify-center"
-                  >
-                    {/* Grouped favicon avatars */}
-                    {data.sources && data.sources.length > 0 && (
-                      <div className="flex -space-x-2 sm:-space-x-2.5 md:-space-x-3">
-                        {data.sources.slice(0, 3).map((source, index) => {
-                          const fav = source.favicon || getFavicon(source.url);
-                          return (
-                            <div key={index} className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7 rounded-full border-2 border-background shadow-sm overflow-hidden flex-shrink-0 bg-background">
-                              {fav ? (
-                                <img src={fav} alt="" className="w-full h-full object-contain p-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
-                              ) : null}
-                              <div className={`w-full h-full bg-gradient-to-br from-[#4285F4] to-[#0F9D58] flex items-center justify-center ${fav ? 'hidden' : ''}`}>
-                                <Globe className="w-3 h-3 text-white" />
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {data.sources.length > 3 && (
-                          <div className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7 rounded-full border-2 border-background bg-muted shadow-sm flex items-center justify-center flex-shrink-0">
-                            <span className="text-[10px] font-semibold text-muted-foreground">+{data.sources.length - 3}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {translate('card.heading.sourcesButton')}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-[95vw] sm:max-w-xl md:max-w-2xl lg:max-w-3xl h-[90vh] sm:h-auto max-h-[85vh] sm:max-h-[85vh] overflow-hidden flex flex-col rounded-none sm:rounded-lg p-3 sm:p-6">
-                  <DialogHeader className="flex-shrink-0 pb-3 sm:pb-4 border-b">
-                    <div className="flex items-center gap-3">
-                      <div className="flex -space-x-1.5 sm:-space-x-2">
-                        {data.sources?.slice(0, 4).map((source, index) => {
-                          const fav = source.favicon || getFavicon(source.url);
-                          return (
-                            <div key={index} className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 border-background overflow-hidden shadow-sm bg-background">
-                              {fav ? (
-                                <img src={fav} alt="" className="w-full h-full object-contain p-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
-                              ) : null}
-                              <div className={`w-full h-full bg-gradient-to-br from-[#4285F4] to-[#0F9D58] flex items-center justify-center ${fav ? 'hidden' : ''}`}>
-                                <Globe className="w-3 h-3 text-white" />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div>
-                        <DialogTitle className="text-lg sm:text-xl">{translate('card.dialog.title')}</DialogTitle>
-                        <DialogDescription className="text-xs sm:text-sm">{translate('card.dialog.referenced', { count: data.sources?.length || 0 })}</DialogDescription>
-                      </div>
-                    </div>
-                  </DialogHeader>
-                  <div className="flex-1 overflow-y-auto space-y-4 py-4">
-                    {/* Source Metadata */}
-                    {data.sourceMetadata && (
-                      <SourceInformationSection sourceMetadata={data.sourceMetadata} />
-                    )}
-                    
-                    {/* Sources List */}
-                    <div className="space-y-3">
-                      {data.sources && data.sources.length > 0 ? (
-                        data.sources.map((source, index) => {
-                          const fav = source.favicon || getFavicon(source.url);
-                          const hostname = getHostname(source.url);
-                          return (
-                            <a
-                              key={index}
-                              href={source.url || '#'}
-                              target={source.url ? "_blank" : undefined}
-                              rel={source.url ? "nofollow noopener noreferrer" : undefined}
-                              className="flex items-start gap-3 rounded-xl p-3 sm:p-4 hover:bg-accent transition-all duration-200 border border-border/50 hover:border-[#4285F4]/40 hover:shadow-sm group"
-                            >
-                              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full overflow-hidden flex-shrink-0 shadow-sm border border-border/20 bg-background">
-                                {fav ? (
-                                  <img src={fav} alt={source.title} className="w-full h-full object-contain p-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
-                                ) : null}
-                                <div className={`w-full h-full bg-gradient-to-br from-[#4285F4] to-[#0F9D58] flex items-center justify-center ${fav ? 'hidden' : ''}`}>
-                                  <Globe className="w-3 h-3 text-white" />
-                                </div>
-                              </div>
-                              <div className="min-w-0 flex-1 space-y-2">
-                                <div className="font-semibold text-foreground leading-snug line-clamp-2 group-hover:text-[#4285F4] transition-colors">
-                                  {source.title}
-                                </div>
-                                {source.url && (
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <div className="text-xs text-muted-foreground truncate max-w-[180px] sm:max-w-[300px] md:max-w-[420px]">
-                                      {hostname || source.url}
-                                    </div>
-                                    {hostname && (
-                                      <div className="px-2 py-1 bg-muted/50 rounded-md text-xs text-muted-foreground flex-shrink-0">
-                                        {new URL(source.url).protocol.replace(':', '')}
-                                      </div>
-                                    )}
-                                    {typeof source.credibility === 'number' && (
-                                      <div className="px-2 py-1 bg-primary/10 text-primary rounded-md text-xs font-medium flex-shrink-0">
-                                        {Math.round(source.credibility * 100)}% credible
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                              <LinkIcon className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground group-hover:text-[#4285F4] transition-colors flex-shrink-0 mt-1" />
-                            </a>
-                          );
-                        })
-                      ) : (
-                        <div className="text-sm text-muted-foreground p-8 bg-muted/30 rounded-xl text-center">
-                          {translate('card.dialog.noSources')}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+          </div>
 
-              {/* Overall Verdict (right) */}
-              <div className="flex items-center gap-2 w-full justify-between sm:w-auto sm:justify-start sm:self-auto">
-                <span className="text-xs sm:text-sm font-medium text-muted-foreground">{translate('card.label.overallVerdict')}</span>
-                <Badge className={`${getLabelVariant(data.verificationLevel)} text-white px-4 py-1 pointer-events-none`}>
-                  {data.verdict}
-                </Badge>
-              </div>
+          {/* ── 6. Sources + Final Verdict ────────────────────── */}
+          <div className="flex items-center gap-2 justify-between pt-2 border-t border-border/50">
+            <SourcesDialog sources={data.sources} />
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-muted-foreground">Verdict:</span>
+              <Badge className={`${style.badgeBg} text-white px-2 py-0 pointer-events-none font-semibold text-[10px]`}>
+                {data.verdict}
+              </Badge>
             </div>
           </div>
+
         </CardContent>
       </Card>
     </div>
   );
-}
+});
+
+export default UnifiedResponseCard;

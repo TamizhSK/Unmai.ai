@@ -1,7 +1,7 @@
 
 'use client';
 
-import { createContext, useState, useContext, ReactNode, useCallback } from 'react';
+import { createContext, useState, useContext, ReactNode, useCallback, useMemo } from 'react';
 
 type TranslationReplacements = Record<string, string | number>;
 
@@ -481,8 +481,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     [language]
   );
 
+  const value = useMemo(() => ({ language, setLanguage, translate }), [language, setLanguage, translate]);
+
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, translate }}>
+    <LanguageContext.Provider value={value}>
       {children}
     </LanguageContext.Provider>
   );

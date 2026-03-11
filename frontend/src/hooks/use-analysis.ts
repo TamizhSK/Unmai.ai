@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   analyzeUnified,
-  verifySource,
-  translateText
+  analyzeUnifiedStream,
+  translateText,
+  translateBatch
 } from '@/lib/simple-api-client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -14,12 +15,14 @@ type AiMessage = {
   type: 'ai';
   task: AnalysisTask;
   result: any;
-  sourceResult?: any;
 };
 
 export function useAnalysis() {
   const [isLoading, setIsLoading] = useState(false);
+  const [analysisStage, setAnalysisStage] = useState<string>('');
+  const [expectedChecks, setExpectedChecks] = useState<string[]>([]);
   const { toast } = useToast();
+  const activeRequestRef = useRef<string | null>(null);
 
   const performAnalysis = async (
     input: string,
@@ -28,6 +31,11 @@ export function useAnalysis() {
     addMessage: (message: any) => void,
     removeLastMessage: () => void
   ) => {
+    // Deduplicate: skip if the same request is already in-flight
+    const requestKey = `${input}:${file?.dataUrl?.slice(0, 50) ?? ''}:${language}`;
+    if (activeRequestRef.current === requestKey) return;
+    activeRequestRef.current = requestKey;
+
     setIsLoading(true);
 
     try {
@@ -35,7 +43,9 @@ export function useAnalysis() {
       const currentFile = file;
 
       let originalLanguage = language;
-      if (language !== 'en-US' && currentInput && typeof currentInput === 'string') {
+      // Only translate non-URL text inputs (translating URLs would mangle them)
+      const looksLikeUrl = /^https?:\/\//i.test(currentInput.trim());
+      if (language !== 'en-US' && currentInput && typeof currentInput === 'string' && !looksLikeUrl && !currentFile) {
         try {
           const translatedText = await translateText(currentInput, 'en-US');
           currentInput = typeof translatedText === 'string' ? translatedText : currentInput;
@@ -68,68 +78,100 @@ export function useAnalysis() {
         'text-analysis';
 
       let result: any;
-      let sourceResult: any;
 
       // Build payload for unified analyzer
       const buildPayload = () => {
         if (contentType === 'text') return { text: currentInput };
         if (contentType === 'url') return { url: currentInput };
-        if (currentFile && (contentType === 'image' || contentType === 'video' || contentType === 'audio')) {
-          const dataKey = contentType === 'image' ? 'imageData' : contentType === 'video' ? 'videoData' : 'audioData';
-          return { [dataKey]: currentFile.dataUrl, mimeType: currentFile.type } as any;
-        }
-        return { text: currentInput };
+              if (currentFile && (contentType === 'image' || contentType === 'video' || contentType === 'audio')) {
+                const dataKey = contentType === 'image' ? 'imageData' : contentType === 'video' ? 'videoData' : 'audioData';
+                const payload: any = { [dataKey]: currentFile.dataUrl, mimeType: currentFile.type };
+                if (contentType === 'audio') {
+                  payload.language = originalLanguage;
+                }
+                return payload;
+              }        return { text: currentInput };
       };
 
-      const searchEngineId = process.env.NEXT_PUBLIC_CUSTOM_SEARCH_ENGINE_ID;
+      // Call streaming endpoint for real-time progress updates.
+      // Progress is shown via the skeleton in MessagesContainer (driven by analysisStage/expectedChecks state).
+      // We do NOT add loading messages to the messages array — that caused stuck "Analysis could not be completed" bugs.
+      let streamError: string | null = null;
 
-      // Call unified backend for primary analysis
-      result = await analyzeUnified(contentType, buildPayload(), searchEngineId);
-
-      // Optional enrichment for URL: verify source and safe search (presented in UI via sourceResult)
-      if (contentType === 'url') {
+      try {
+        await analyzeUnifiedStream(
+          contentType,
+          buildPayload(),
+          (stage, message, _elapsed, checks) => {
+            setAnalysisStage(message);
+            if (checks) setExpectedChecks(checks);
+          },
+          (streamResult) => { result = streamResult; },
+          (err) => {
+            console.error('[STREAM ERROR]', err);
+            streamError = err;
+          },
+        );
+      } catch (streamCatchError: any) {
+        console.error('[STREAM CATCH ERROR]', streamCatchError);
+        // Streaming failed — fall back to non-streaming endpoint
         try {
-          const [verifySourceResult] = await Promise.all([
-            verifySource(currentInput, 'url')
-            // safeSearchUrl can still be inspected from result if unified analyzer returns it; keep lightweight here
-          ]);
-          sourceResult = verifySourceResult;
-        } catch (e) {
-          console.warn('Optional source verification failed:', e);
+          result = await analyzeUnified(contentType, buildPayload());
+        } catch (fallbackError: any) {
+          console.error('[FALLBACK ERROR]', fallbackError);
+          streamError = fallbackError.message || 'Analysis failed';
         }
       }
 
+      // Handle error case — remove user message and show toast
+      if (streamError && !result) {
+        console.error('[FINAL ERROR]', streamError);
+        toast({
+          title: "Analysis Failed",
+          description: streamError.length > 100 ? "An error occurred during analysis. Please try again." : streamError,
+          variant: "destructive",
+        });
+        removeLastMessage(); // Remove the user message
+        return; // Exit early on error
+      }
+
+      // Batch translate all translatable fields in a single API call (was N sequential calls)
       const translateUnifiedFields = async (targetLang: string, payload: any) => {
         const unifiedKeys = [
-          'oneLineDescription',
-          'summary',
-          'informationSummary',
-          'educationalInsight',
-          'inputDescription',
-          'explanation',
-          'claim',
-          'evidence'
+          'oneLineDescription', 'summary', 'informationSummary',
+          'educationalInsight', 'inputDescription', 'explanation', 'claim', 'evidence'
         ];
+
+        // Collect all texts to translate in one batch
+        const textsToTranslate: string[] = [];
+        const keyMap: Array<{ type: 'field'; key: string } | { type: 'source'; index: number }> = [];
+
         for (const key of unifiedKeys) {
           if (payload && typeof payload[key] === 'string' && payload[key].trim()) {
-            try {
-              payload[key] = await translateText(payload[key], targetLang);
-            } catch (translationError) {
-              console.error(`Translation failed for key ${key}:`, translationError);
-            }
+            textsToTranslate.push(payload[key]);
+            keyMap.push({ type: 'field', key });
           }
         }
         if (Array.isArray(payload?.sources)) {
-          payload.sources = await Promise.all(payload.sources.map(async (source: any) => {
+          payload.sources.forEach((source: any, i: number) => {
             if (source && typeof source.title === 'string' && source.title.trim()) {
-              try {
-                source.title = await translateText(source.title, targetLang);
-              } catch (translationError) {
-                console.error('Source title translation failed:', translationError);
-              }
+              textsToTranslate.push(source.title);
+              keyMap.push({ type: 'source', index: i });
             }
-            return source;
-          }));
+          });
+        }
+
+        if (textsToTranslate.length === 0) return;
+
+        try {
+          const translated = await translateBatch(textsToTranslate, targetLang);
+          translated.forEach((t, idx) => {
+            const mapping = keyMap[idx];
+            if (mapping.type === 'field') payload[mapping.key] = t;
+            else if (mapping.type === 'source') payload.sources[mapping.index].title = t;
+          });
+        } catch (err) {
+          console.error('Batch translation failed, falling back to originals:', err);
         }
       };
 
@@ -137,10 +179,11 @@ export function useAnalysis() {
         await translateUnifiedFields(originalLanguage, result);
       }
 
-      const aiMessage: AiMessage = { type: 'ai', task, result, sourceResult };
+      const aiMessage: AiMessage = { type: 'ai', task, result };
       addMessage(aiMessage);
 
     } catch (e: any) {
+      console.error('[OUTER CATCH ERROR]', e);
       let description = "An error occurred during analysis. Please check your input or try again later.";
       if (e.message?.includes('503') || e.message?.includes('overloaded')) {
         description = "The analysis service is currently experiencing high demand. Please try again in a few moments.";
@@ -150,9 +193,12 @@ export function useAnalysis() {
       toast({ title: "Analysis Failed", description, variant: "destructive" });
       removeLastMessage();
     } finally {
+      activeRequestRef.current = null;
       setIsLoading(false);
+      setAnalysisStage('');
+      setExpectedChecks([]);
     }
   };
 
-  return { isLoading, performAnalysis };
+  return { isLoading, analysisStage, expectedChecks, performAnalysis };
 }

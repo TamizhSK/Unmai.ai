@@ -2,6 +2,21 @@
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
+// Auth token management
+let _authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  _authToken = token;
+}
+
+export function clearAuthToken() {
+  _authToken = null;
+}
+
+export function getAuthToken(): string | null {
+  return _authToken;
+}
+
 // Connection health check
 let isBackendHealthy = true;
 let lastHealthCheck = 0;
@@ -50,13 +65,17 @@ async function apiCall<T>(endpoint: string, data: any, retries = 2): Promise<T> 
       const REQUEST_TIMEOUT_MS = 120000; // 120 second timeout to accommodate cold starts and long AI runs
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+      if (_authToken) {
+        headers['Authorization'] = `Bearer ${_authToken}`;
+      }
+
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'Unmai-Frontend/1.0'
-        },
+        headers,
         body: JSON.stringify(data),
         signal: controller.signal,
       });
@@ -103,39 +122,134 @@ async function apiCall<T>(endpoint: string, data: any, retries = 2): Promise<T> 
 }
 
 // Simplified API functions
-export async function factCheckClaim(claim: string) {
-  return apiCall('/api/fact-check', { claim });
-}
+
 
 export async function analyzeUnified(type: 'text' | 'url' | 'image' | 'video' | 'audio', payload: any, searchEngineId?: string) {
   return apiCall('/api/analyze', { type, payload, searchEngineId });
 }
 
-export async function getCredibilityScore(text: string) {
-  return apiCall('/api/credibility-score', { text });
+// SSE streaming analysis — calls /api/analyze/stream with progress callbacks
+export async function analyzeUnifiedStream(
+  type: 'text' | 'url' | 'image' | 'video' | 'audio',
+  payload: any,
+  onProgress: (stage: string, message: string, elapsed: number, expectedChecks?: string[]) => void,
+  onResult: (result: any) => void,
+  onError: (error: string) => void,
+): Promise<void> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000);
+  let resultReceived = false;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'text/event-stream',
+  };
+  if (_authToken) {
+    headers['Authorization'] = `Bearer ${_authToken}`;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/analyze/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ type, payload }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Stream failed (${response.status}): ${errorText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No readable stream');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let currentEvent = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          try {
+            const parsed = JSON.parse(data);
+            if (currentEvent === 'progress') {
+              onProgress(parsed.stage, parsed.message, parsed.elapsed, parsed.expectedChecks);
+            } else if (currentEvent === 'result') {
+              resultReceived = true;
+              onResult(parsed);
+            } else if (currentEvent === 'error') {
+              // Error event — but check if we also got a fallback result
+              if (!resultReceived) {
+                onError(parsed.message || parsed.error || 'Analysis failed');
+              }
+            } else if (currentEvent === 'done') {
+              // Stream completed
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+    }
+
+    // Process any remaining buffer data (in case last event had no trailing newline)
+    if (buffer.trim()) {
+      const remainingLines = buffer.split('\n');
+      let currentEvent = '';
+      for (const line of remainingLines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          try {
+            const parsed = JSON.parse(line.slice(6));
+            if (currentEvent === 'result' && !resultReceived) {
+              resultReceived = true;
+              onResult(parsed);
+            }
+          } catch {}
+        }
+      }
+    }
+
+    // If stream ended without result, that's an error
+    if (!resultReceived) {
+      throw new Error('Stream ended without receiving result');
+    }
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      onError('Analysis timed out. Please try again.');
+    } else if (error instanceof Error && error.message === 'Stream ended without receiving result') {
+      // This means the connection closed prematurely - throw to trigger fallback
+      throw error;
+    } else {
+      onError(error instanceof Error ? error.message : 'Stream error occurred');
+    }
+  }
 }
 
-export async function detectDeepfake(media: string, contentType: 'image' | 'video', sourceCredibility?: number) {
-  return apiCall('/api/detect-deepfake', { media, contentType, sourceCredibility });
-}
 
 
 
-export async function assessSafety(content: string, contentType: 'text' | 'url' | 'image') {
-  return apiCall('/api/safety-assessment', { content, contentType });
-}
 
-export async function verifySource(content: string, contentType: 'text' | 'url' | 'image') {
-  return apiCall('/api/verify-source', { content, contentType });
-}
 
-export async function performWebAnalysis(query: string, contentType: 'text' | 'url', searchEngineId?: string) {
-  return apiCall('/api/web-analysis', { query, contentType, searchEngineId });
-}
 
-export async function safeSearchUrl(url: string) {
-  return apiCall('/api/safe-search', { url });
-}
+
+
+
 
 export async function translateText(text: string, targetLanguage: string) {
   // Validate input
@@ -145,6 +259,77 @@ export async function translateText(text: string, targetLanguage: string) {
   if (!targetLanguage || typeof targetLanguage !== 'string') {
     throw new Error('Invalid target language for translation');
   }
-  
+
   return apiCall('/api/translate-text', { text: text.trim(), targetLanguage });
+}
+
+// Batch translate multiple texts in a single API call
+export async function translateBatch(texts: string[], targetLanguage: string): Promise<string[]> {
+  if (!texts.length) return [];
+  const nonEmpty = texts.map((t, i) => ({ t: t?.trim(), i })).filter(x => x.t);
+  if (!nonEmpty.length) return texts;
+
+  const result = await apiCall<{ translations: string[] }>(
+    '/api/translate-batch',
+    { texts: nonEmpty.map(x => x.t), targetLanguage }
+  );
+
+  const output = [...texts];
+  nonEmpty.forEach((x, idx) => {
+    output[x.i] = result.translations?.[idx] ?? texts[x.i];
+  });
+  return output;
+}
+
+// Authenticated GET request helper
+export async function authGet<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
+  if (!_authToken) {
+    throw new Error('Not authenticated');
+  }
+
+  const url = new URL(`${API_BASE_URL}${endpoint}`);
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  }
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${_authToken}`,
+    },
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || `Request failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
+// Auth API calls (POST without retry — auth errors shouldn't be retried)
+export async function authPost<T>(endpoint: string, data: any): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+  if (_authToken) {
+    headers['Authorization'] = `Bearer ${_authToken}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ error: `Request failed (${response.status})` }));
+    throw new Error(body.error || `Request failed (${response.status})`);
+  }
+
+  return response.json();
 }

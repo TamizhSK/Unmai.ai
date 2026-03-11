@@ -24,6 +24,8 @@ import { FileVideo, FileAudio } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from './ui/scroll-area';
+import dynamic from 'next/dynamic';
+import { UnifiedResponseCard } from './unified-response-card';
 import { DynamicAnalysisResult } from './dynamic-analysis-result';
 import Image from 'next/image';
 
@@ -173,38 +175,18 @@ export function UserMessage({ content, file }: { content: string; file: {dataUrl
   );
 }
 
-function AnalysisLoadingSkeleton() {
-  return (
-    <div className={`flex items-start gap-3 w-full animate-in fade-in-0 slide-in-from-bottom-2 duration-500`}>
-      <Avatar className="h-8 w-8 sm:h-9 sm:w-9 flex-shrink-0">
-        <AvatarImage src="/favicon.ico" alt="Unmai" className="object-contain p-0.5" />
-        <AvatarFallback className="bg-background border">
-          <img src="/favicon.ico" alt="" className="h-full w-full object-contain p-0.5" />
-        </AvatarFallback>
-      </Avatar>
-      <div className="relative max-w-[85%] sm:max-w-[75%] md:max-w-[65%] lg:max-w-xl">
-        <div className="relative bg-card rounded-2xl p-3 sm:p-4 shadow-md border border-border/50 space-y-3">
-          <Skeleton className="h-4 w-[280px]" />
-          <Skeleton className="h-4 w-[280px]" />
-          <Skeleton className="h-4 w-[240px]" />
-          <Skeleton className="h-4 w-[240px]" />
-          <div className="pt-2">
-            <Skeleton className="h-4 w-[100px]" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-export function MessagesContainer({ 
-  messages, 
+
+export function MessagesContainer({
+  messages,
   isLoading = false,
   performAnalysis,
   addMessage,
   removeLastMessage,
-}: { 
-  messages: any[]; 
+  analysisStage,
+  expectedChecks,
+}: {
+  messages: any[];
   isLoading?: boolean;
   performAnalysis: (
     input: string,
@@ -215,6 +197,8 @@ export function MessagesContainer({
   ) => Promise<void>;
   addMessage: (message: any) => void;
   removeLastMessage: () => void;
+  analysisStage?: string;
+  expectedChecks?: string[];
 }) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -240,8 +224,8 @@ export function MessagesContainer({
     return distanceFromBottom < 100; // px threshold
   };
 
+  // Trigger analysis when a new user message appears
   useEffect(() => {
-    // If the latest message is a user message and hasn't been analyzed yet, trigger analysis
     const lastIndex = messages.length - 1;
     if (lastIndex >= 0 && lastIndex !== lastAnalyzedIndexRef.current) {
       const last = messages[lastIndex];
@@ -251,35 +235,53 @@ export function MessagesContainer({
         const file = last?.file ? { dataUrl: last.file.dataUrl, type: last.file.type } : null;
         const language = last?.language ?? 'en-US';
         performAnalysis(input, file, language, addMessage, removeLastMessage).catch(() => {});
-        // Ensure we scroll to show the skeleton immediately
-        scrollToBottom();
+        // Immediate scroll to show the skeleton
+        requestAnimationFrame(scrollToBottom);
       }
     }
+  }, [messages, performAnalysis, addMessage, removeLastMessage]);
 
-    // While loading or when messages update near bottom, keep view pinned
+  // Auto-scroll on stage changes and new messages — smooth, non-blocking
+  useEffect(() => {
     if (isNearBottom()) {
       scrollToBottom();
     }
-  }, [messages, isLoading, performAnalysis, addMessage, removeLastMessage]);
+  }, [messages, isLoading, analysisStage]);
 
   return (
     <div className="flex-1 relative overflow-hidden">
 
       <ScrollArea className="h-full" ref={scrollAreaRef}>
-        <div className="mx-auto max-w-5xl space-y-4 pb-6 px-3 sm:px-6 pt-16 sm:pt-20">
-          {messages.map((msg, index) => (
-            <Message 
-              key={index} 
-              isUser={msg.type === 'user'}
-              hasMedia={msg.type === 'user' && msg.file && (msg.file.type.startsWith('image/') || msg.file.type.startsWith('video/'))}
-            >
-              {msg.type === 'user' ? (
-                <UserMessage content={msg.input} file={msg.file} />
-              ) : (
-                <DynamicAnalysisResult task={msg.task} result={msg.result} sourceResult={msg.sourceResult} />
-              )}
-            </Message>
-          ))}
+        <div className="mx-auto max-w-5xl space-y-4 pb-6 px-3 sm:px-6 pt-16 sm:pt-20" aria-live="polite" aria-label="Conversation">
+          {messages.map((msg, index) => {
+            // Skip loading-type messages — progress is shown by the skeleton below
+            if (msg.type === 'loading') return null;
+            // Skip AI messages with empty/invalid results (prevents ghost card frames)
+            if (msg.type === 'ai' && (!msg.result || typeof msg.result !== 'object')) return null;
+
+            if (msg.type === 'user') {
+              return (
+                <Message key={index} isUser hasMedia={msg.file && (msg.file.type.startsWith('image/') || msg.file.type.startsWith('video/'))}>
+                  <UserMessage content={msg.input} file={msg.file} />
+                </Message>
+              );
+            }
+
+            // AI messages — render without the Message card wrapper (UnifiedResponseCard has its own)
+            return (
+              <div key={index} className="flex items-start gap-2.5 w-full animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
+                <Avatar className="h-7 w-7 flex-shrink-0 mt-0.5">
+                  <AvatarImage src="/favicon.ico" alt="Unmai" className="object-contain p-0.5" />
+                  <AvatarFallback className="bg-background border">
+                    <img src="/favicon.ico" alt="" className="h-full w-full object-contain p-0.5" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <DynamicAnalysisResult task={msg.task} result={msg.result} />
+                </div>
+              </div>
+            );
+          })}
           {/* Skeleton placeholder for AI response */}
           {(() => {
             const lastIndex = messages.length - 1;
@@ -288,7 +290,17 @@ export function MessagesContainer({
             const showSkeleton = pendingForLatest || isLoading;
             
             return showSkeleton ? (
-              <AnalysisLoadingSkeleton />
+              <div className="flex items-start gap-2.5 w-full animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
+                <Avatar className="h-7 w-7 flex-shrink-0 mt-0.5">
+                  <AvatarImage src="/favicon.ico" alt="Unmai" className="object-contain p-0.5" />
+                  <AvatarFallback className="bg-background border">
+                    <img src="/favicon.ico" alt="" className="h-full w-full object-contain p-0.5" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <DynamicAnalysisResult task="loading" result={{ kind: 'loading', stage: analysisStage, expectedChecks }} />
+                </div>
+              </div>
             ) : null;
           })()}
           {/* Invisible element to scroll to */}
