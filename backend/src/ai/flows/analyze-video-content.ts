@@ -1,11 +1,7 @@
 import { z } from 'zod';
 import { groundedModel, generativeModel, generativeVisionModel } from '../genkit.js';
-// Commented out Google Cloud Video Intelligence for prototype - using Gemini API only
-// import { v1 as videoIntelligence, protos as viProtos } from '@google-cloud/video-intelligence';
 import { performWebAnalysis } from './perform-web-analysis.js';
-import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
-// import { getAuthConfig, getProjectId } from '../auth.js';
 
 // Cache for storing analysis results (5 minute TTL)
 const analysisCache = new Map<string, { timestamp: number; result: any }>();
@@ -155,23 +151,43 @@ function buildVideoPart(videoData: string, mimeType?: string): any {
 
 // Minimal, resilient JSON cleaner to parse model outputs that may include code fences/noise
 function tryParseJsonLoose(text: string): any {
+  if (!text || text.trim().length === 0) return null;
   try {
+    // Strip ALL markdown code fences
     const stripped = text
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/gi, '')
       .trim();
     const start = stripped.indexOf('{');
+    if (start === -1) return null;
     const end = stripped.lastIndexOf('}');
-    const candidate = start !== -1 && end !== -1 ? stripped.substring(start, end + 1) : stripped;
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      // Attempt to remove trailing commas
-      const noTrailingCommas = candidate.replace(/,(\s*[}\]])/g, '$1');
-      return JSON.parse(noTrailingCommas);
-    }
-  } catch (e) {
+    // Use everything from first { to last } if both exist, or from { to end if truncated
+    const candidate = (end !== -1 && end > start)
+      ? stripped.substring(start, end + 1)
+      : stripped.substring(start);
+
+    // Try direct parse
+    try { return JSON.parse(candidate); } catch {}
+    // Fix trailing commas
+    const cleaned = candidate.replace(/,(\s*[}\]])/g, '$1');
+    try { return JSON.parse(cleaned); } catch {}
+
+    // Try to fix truncated JSON by closing open strings and braces
+    let fixable = cleaned;
+    // Remove trailing incomplete key-value (e.g., `"summary": "The speaker re`)
+    fixable = fixable.replace(/,\s*"[^"]*":\s*"[^"]*$/s, '');
+    // Close unclosed string
+    const quoteCount = (fixable.match(/(?<!\\)"/g) || []).length;
+    if (quoteCount % 2 !== 0) fixable += '"';
+    // Close any open braces/brackets
+    const openBraces = (fixable.match(/\{/g) || []).length;
+    const closeBraces = (fixable.match(/\}/g) || []).length;
+    const openBrackets = (fixable.match(/\[/g) || []).length;
+    const closeBrackets = (fixable.match(/\]/g) || []).length;
+    for (let i = 0; i < openBrackets - closeBrackets; i++) fixable += ']';
+    for (let i = 0; i < openBraces - closeBraces; i++) fixable += '}';
+    try { return JSON.parse(fixable); } catch { return null; }
+  } catch {
     return null;
   }
 }
@@ -616,6 +632,99 @@ function calculateScores(contentAnalysis: any, manipulationAnalysis: { isManipul
   };
 }
 
+// Consolidation: Integrated Presentation Formatter
+async function formatPresentation(params: {
+  transcription: string;
+  events: string[];
+  analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN';
+  claims: any[];
+  webSources: any[];
+}): Promise<{
+  oneLineDescription: string;
+  summary: string;
+  educationalInsight: string;
+  sources: Array<{ url: string; title: string; credibility: number }>;
+}> {
+  const { transcription, events, analysisLabel, claims, webSources } = params;
+  
+  const prompt = `You are a professional video misinformation analyst. Generate factual, informative content based on the analysis results.
+
+TASK: Convert the video analysis signals into a clean, factual presentation.
+
+TRANSCRIPTION: "${transcription.substring(0, 1000)}"
+EVENTS: ${JSON.stringify(events)}
+RISK LEVEL: ${analysisLabel}
+CLAIMS FOUND: ${JSON.stringify(claims.map(c => ({ claim: c.claim, verdict: c.verdict })))}
+WEB SOURCES: ${JSON.stringify(webSources.slice(0, 3).map(s => s.title))}
+
+REQUIREMENTS:
+1. Generate FACTUAL, INFORMATIVE content - not generic placeholders.
+2. oneLineDescription: Concise 1-2 line description explaining what the video is about and its key finding.
+3. summary: Detailed 3-4 sentence analysis explaining specific findings, evidence, and visual/audio indicators.
+4. educationalInsight: 150-200 words of readable guidance on video manipulation (deepfakes, selective editing, AI generation) and protection strategies.
+5. sources: Select the 3-5 most relevant and credible sources.
+
+OUTPUT FORMAT - ONLY VALID JSON:
+{
+  "oneLineDescription": "concise description",
+  "summary": "detailed factual analysis",
+  "educationalInsight": "actionable guidance",
+  "sources": [
+    { "url": "string", "title": "string", "credibility": number }
+  ]
+}`;
+
+  try {
+    const result = await groundedModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 2000, responseMimeType: 'application/json' }
+    });
+
+    const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parsed = tryParseJsonLoose(responseText);
+    if (parsed) {
+      return {
+        oneLineDescription: parsed.oneLineDescription || 'Video analysis completed.',
+        summary: parsed.summary || 'Detailed summary unavailable.',
+        educationalInsight: parsed.educationalInsight || 'Verify video content through official channels.',
+        sources: Array.isArray(parsed.sources) ? parsed.sources.slice(0, 5).map((s: any) => ({
+          url: s.url || '',
+          title: s.title || '',
+          credibility: Math.min(1, Math.max(0, typeof s.credibility === 'number' ? (s.credibility > 1 ? s.credibility / 100 : s.credibility) : 0.5)),
+        })) : []
+      };
+    }
+  } catch (error) {
+    console.error('[ERROR] Video presentation formatting failed:', error);
+  }
+
+  // Data-driven fallback using actual analysis results
+  console.warn('[WARN] Video formatPresentation Gemini call failed — using data fallback');
+
+  const claimSummaries = claims.map(c => `${c.claim} (${c.verdict})`).join('; ');
+  const oneLineDescription = transcription
+    ? `Video analyzed: ${transcription.substring(0, 100)}${transcription.length > 100 ? '...' : ''}`
+    : `Video content analysis completed — ${analysisLabel} risk level.`;
+  const summary = claimSummaries
+    ? `Analysis identified the following claims: ${claimSummaries}. ${events.length > 0 ? `Key events detected: ${events.slice(0, 3).join(', ')}.` : ''}`
+    : `Video analysis found ${events.length} events. Risk level: ${analysisLabel}.`;
+
+  return {
+    oneLineDescription,
+    summary,
+    educationalInsight: 'Verify video claims through multiple independent sources. Be wary of deepfakes, selective editing, and AI-generated videos. Check if the video appears in multiple credible news sources before trusting its content.',
+    sources: webSources.length > 0
+      ? webSources.slice(0, 5).map((s: any) => ({
+          url: s.url || '', title: s.title || 'Source',
+          credibility: Math.min(1, Math.max(0, typeof s.credibility === 'number' ? (s.credibility > 1 ? s.credibility / 100 : s.credibility) : 0.7)),
+        }))
+      : [
+          { url: 'https://www.reuters.com/fact-check', title: 'Reuters Fact Check', credibility: 0.94 },
+          { url: 'https://www.factcheck.org', title: 'FactCheck.org', credibility: 0.93 }
+        ]
+  };
+}
+
 // Main analysis function
 export async function analyzeVideoContent(input: VideoAnalysisInput, options?: { searchEngineId?: string }): Promise<VideoAnalysisOutput> {
   // Generate cache key from video data and options
@@ -639,13 +748,16 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
     ]);
 
     // Early exit if critical data is missing
-    if (!intelligenceAnalysis?.transcription) {
-      throw new Error('Could not process video content: No transcription available');
+    // Use transcription if available, otherwise use video description from understanding
+    const primaryContent = intelligenceAnalysis?.transcription || understanding?.contentDescription || '';
+    
+    if (!primaryContent) {
+      throw new Error('Could not process video content: No visual or audio content detected');
     }
 
     const metadata = {
       location: intelligenceAnalysis.location,
-      transcription: intelligenceAnalysis.transcription,
+      transcription: intelligenceAnalysis.transcription || understanding.contentDescription || 'No audio detected',
       events: intelligenceAnalysis.events,
       isManipulated: deepfakeInfo.isManipulated,
       technicalData: intelligenceAnalysis.technicalData,
@@ -653,10 +765,10 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
 
     // Run fact-checking and web analysis in parallel
     const [contentAnalysis, webAnalysis] = await Promise.all([
-      analyzeVideoContentAndFactCheck(input.videoData, intelligenceAnalysis.transcription)
+      analyzeVideoContentAndFactCheck(input.videoData, primaryContent)
         .catch(() => ({ factualClaims: [] })),
       performWebAnalysis({
-        query: intelligenceAnalysis.transcription.substring(0, 500),
+        query: primaryContent.substring(0, 500),
         contentType: 'text',
         mediaType: 'video',
         searchEngineId: options?.searchEngineId
@@ -710,26 +822,13 @@ export async function analyzeVideoContent(input: VideoAnalysisInput, options?: {
     // Calculate scores and prepare for presentation
     const scores = calculateScores(contentAnalysis, { isManipulated, confidence: manipulationConfidence });
     
-    // Prepare candidate sources with fallbacks
-    const candidateSources = uniqueSources.map((s: any) => ({
-      url: s.url || '',
-      title: s.title || 'Untitled Source',
-      snippet: s.snippet || '',
-      relevance: s.relevance || 0.5
-    }));
-    const presentation = await formatUnifiedPresentation({
-      contentType: 'video',
+    // Step 7: Consolidated formatting
+    const presentation = await formatPresentation({
+      transcription: intelligenceAnalysis.transcription,
+      events: intelligenceAnalysis.events,
       analysisLabel,
-      rawSignals: {
-        transcription: intelligenceAnalysis.transcription,
-        events: intelligenceAnalysis.events,
-        factualClaims: contentAnalysis.factualClaims,
-        isManipulated,
-        manipulationConfidence,
-        metadata,
-        geminiUnderstanding: understanding,
-      },
-      candidateSources
+      claims: contentAnalysis.factualClaims,
+      webSources: directSources
     });
 
     const deepAnalysis = await generateDeepAnalysisNarrative({

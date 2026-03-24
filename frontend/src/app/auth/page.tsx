@@ -1,31 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
-import { User, Mail, Lock, Loader2, Shield, Search, Brain } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { User, Mail, Lock, Loader2, ArrowLeft, Shield, Search, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Image from 'next/image';
 
-type AuthDialogProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-};
-
-export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
-  const { login, signup } = useAuth();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+export default function AuthPage() {
+  const router = useRouter();
+  const { login, signup, isAuthenticated } = useAuth();
+  const [mode, setMode] = useState<'login' | 'signup'>('signup');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) router.push('/');
+  }, [isAuthenticated, router]);
 
   const resetForm = () => {
     setEmail('');
@@ -68,7 +64,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
         await signup(email.trim(), password, displayName.trim());
       }
       resetForm();
-      onOpenChange(false);
+      router.push('/');
     } catch (err: any) {
       setError(err.message || 'Something went wrong');
     } finally {
@@ -77,44 +73,79 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   };
 
   const features = [
-    { icon: Shield, text: 'AI-powered verification' },
-    { icon: Search, text: 'Multi-source fact checking' },
-    { icon: Brain, text: 'Text, image, video & audio analysis' },
+    { icon: Shield, label: 'AI-Powered Verification', desc: 'Detect deepfakes, misinformation, and manipulated media' },
+    { icon: Search, label: 'Multi-Source Fact Checking', desc: 'Cross-reference claims across trusted databases' },
+    { icon: Brain, label: 'Smart Analysis', desc: 'Text, image, video, audio, and URL analysis' },
   ];
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => {
-      if (!isOpen) resetForm();
-      onOpenChange(isOpen);
-    }}>
-      <DialogContent className="sm:max-w-[420px] p-0 gap-0 overflow-hidden rounded-2xl border-border/50">
-        {/* Header with gradient accent */}
-        <div className="px-6 pt-6 pb-4">
-          <DialogHeader className="space-y-2">
-            <DialogTitle className="text-center text-xl font-bold">
-              {mode === 'login' ? 'Welcome back to' : 'Join'}{' '}
+    <div className="min-h-[100svh] flex flex-col lg:flex-row">
+      {/* Left side - Branding & Image (top on mobile, left on desktop) */}
+      <div className="relative lg:w-1/2 flex flex-col items-center justify-center p-6 sm:p-8 lg:p-12 bg-gradient-to-br from-[#4285F4]/10 via-[#EA4335]/5 to-[#34A853]/10 dark:from-[#4285F4]/20 dark:via-[#EA4335]/10 dark:to-[#34A853]/20">
+        {/* Back button */}
+        <button
+          onClick={() => router.push('/')}
+          className="absolute top-4 left-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
+
+        <div className="max-w-md w-full space-y-6 lg:space-y-8">
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <Image src="/unmaiai.png" alt="Unmai.ai" width={48} height={48} className="rounded-xl" />
+            <h1 className="text-3xl lg:text-4xl font-bold">
               <span
-                className="bg-clip-text text-transparent font-extrabold"
+                className="bg-clip-text text-transparent"
                 style={{ backgroundImage: 'linear-gradient(to left, #4285F4 0%, #DB4437 33%, #F4B400 66%, #0F9D58 100%)' }}
               >
                 unmai.ai
               </span>
-            </DialogTitle>
-            <DialogDescription className="text-center text-sm text-muted-foreground">
+            </h1>
+          </div>
+
+          <p className="text-lg lg:text-xl text-muted-foreground leading-relaxed">
+            Verify credibility and uncover truth with AI-powered analysis
+          </p>
+
+          {/* Feature highlights */}
+          <div className="space-y-4 hidden sm:block">
+            {features.map((f) => (
+              <div key={f.label} className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <f.icon className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-sm">{f.label}</p>
+                  <p className="text-xs text-muted-foreground">{f.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Right side - Auth Form */}
+      <div className="flex-1 lg:w-1/2 flex items-center justify-center p-6 sm:p-8 lg:p-12">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center lg:text-left">
+            <h2 className="text-2xl font-bold">
+              {mode === 'login' ? 'Welcome back' : 'Create your account'}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
               {mode === 'login'
                 ? 'Sign in to access your analysis history'
-                : 'Create an account to save your verifications'}
-            </DialogDescription>
-          </DialogHeader>
-        </div>
+                : 'Join unmai.ai to save and track your verifications'}
+            </p>
+          </div>
 
-        <div className="px-6 pb-6 space-y-5">
           {/* Mode toggle */}
-          <div className="flex rounded-xl bg-muted/50 p-1 gap-1">
+          <div className="flex rounded-lg bg-muted p-1">
             <button
               type="button"
               onClick={() => switchMode('login')}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
+              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
                 mode === 'login'
                   ? 'bg-background shadow-sm text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
@@ -125,7 +156,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
             <button
               type="button"
               onClick={() => switchMode('signup')}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
+              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
                 mode === 'signup'
                   ? 'bg-background shadow-sm text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
@@ -135,68 +166,68 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3.5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'signup' && (
-              <div className="space-y-1.5">
-                <label htmlFor="auth-displayName" className="text-sm font-medium flex items-center gap-2">
+              <div>
+                <label htmlFor="displayName" className="text-sm font-medium mb-1.5 flex items-center gap-2">
                   <User className="h-3.5 w-3.5 text-muted-foreground" />
                   Display Name
                 </label>
                 <Input
-                  id="auth-displayName"
+                  id="displayName"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="Your name"
                   autoComplete="name"
-                  className="h-11 rounded-xl bg-muted/30 border-border/50 focus-visible:ring-primary/30"
+                  className="h-11"
                 />
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <label htmlFor="auth-email" className="text-sm font-medium flex items-center gap-2">
+            <div>
+              <label htmlFor="email" className="text-sm font-medium mb-1.5 flex items-center gap-2">
                 <Mail className="h-3.5 w-3.5 text-muted-foreground" />
                 Email
               </label>
               <Input
-                id="auth-email"
+                id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="h-11 rounded-xl bg-muted/30 border-border/50 focus-visible:ring-primary/30"
+                className="h-11"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label htmlFor="auth-password" className="text-sm font-medium flex items-center gap-2">
+            <div>
+              <label htmlFor="password" className="text-sm font-medium mb-1.5 flex items-center gap-2">
                 <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                 Password
               </label>
               <Input
-                id="auth-password"
+                id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="8+ chars, 1 uppercase, 1 number"
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                className="h-11 rounded-xl bg-muted/30 border-border/50 focus-visible:ring-primary/30"
+                className="h-11"
               />
             </div>
 
             {error && (
-              <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2.5 text-center">
+              <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2.5">
                 {error}
               </p>
             )}
 
             <Button
               type="submit"
-              className="w-full h-11 gap-2 text-sm font-semibold rounded-xl text-white shadow-md hover:shadow-lg transition-all"
+              className="w-full h-11 gap-2 text-base font-medium"
               disabled={loading}
               style={{
-                background: loading ? undefined : 'linear-gradient(135deg, #4285F4, #0F9D58)',
+                background: loading ? undefined : 'linear-gradient(135deg, #4285F4, #34A853)',
               }}
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -206,23 +237,11 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
             </Button>
           </form>
 
-          {/* Feature highlights for signup */}
-          {mode === 'signup' && (
-            <div className="pt-2 space-y-2">
-              {features.map((f) => (
-                <div key={f.text} className="flex items-center gap-2.5 text-xs text-muted-foreground">
-                  <f.icon className="h-3.5 w-3.5 text-primary/70 flex-shrink-0" />
-                  <span>{f.text}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <p className="text-[10px] text-center text-muted-foreground/60 pt-1">
+          <p className="text-xs text-center text-muted-foreground">
             By continuing, you agree to our Terms of Service and Privacy Policy.
           </p>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }

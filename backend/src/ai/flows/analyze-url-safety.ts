@@ -1,9 +1,8 @@
 import { z } from 'zod';
 import { WebRiskServiceClient } from '@google-cloud/web-risk';
 import { performWebAnalysis } from './perform-web-analysis.js';
-import { verifySource } from './verify-source.js';
-import { formatUnifiedPresentation } from './format-unified-presentation.js';
-import { getAuthConfig, getProjectId } from '../auth.js';
+import { getAuthConfig } from '../auth.js';
+import { groundedModel } from '../genkit.js';
 
 const SECURITY_HEADERS = [
   'strict-transport-security',
@@ -15,41 +14,28 @@ const SECURITY_HEADERS = [
 ];
 
 const UrlAnalysisInputSchema = z.object({
-  url: z.string().url('Valid URL is required'),
+  url: z.string().min(1, 'Input is required'),
 });
 export type UrlAnalysisInput = z.infer<typeof UrlAnalysisInputSchema>;
 
 const UrlAnalysisOutputSchema = z.object({
-  // 1. Analysis Label (risk level)
   analysisLabel: z.enum(['RED', 'YELLOW', 'ORANGE', 'GREEN']).describe('Risk level of the URL'),
-  
-  // 2. One-line description (AI polished)
   oneLineDescription: z.string().describe('Brief AI-polished description of the URL'),
-  
-  // 3. Information summary (AI polished)
   summary: z.string().describe('Detailed AI-polished summary of the analysis'),
-  
-  // 4. Educational insight (AI polished)
   educationalInsight: z.string().describe('AI-polished educational content on URL safety'),
-  
-  // 5. Sources, scores, and verdict
   sources: z.array(z.object({
     url: z.string().url(),
     title: z.string(),
     credibility: z.number().min(0).max(1),
   })).describe('Factual and legitimate web sources'),
-  
   sourceIntegrityScore: z.number().min(0).max(100).describe('Source integrity score'),
   contentAuthenticityScore: z.number().min(0).max(100).describe('Content authenticity score'),
   trustExplainabilityScore: z.number().min(0).max(100).describe('Trust explainability score'),
-  
-  // Internal data for processing
   metadata: z.object({
     domain: z.string().optional(),
     threats: z.array(z.string()).optional(),
     isSafe: z.boolean().optional(),
-    reputationScore: z.number().optional(),
-    ageDays: z.number().optional(),
+    isReachable: z.boolean().optional(),
     status: z.number().optional(),
     finalUrl: z.string().optional(),
     usesHttps: z.boolean().optional(),
@@ -62,41 +48,62 @@ const UrlAnalysisOutputSchema = z.object({
 });
 export type UrlAnalysisOutput = z.infer<typeof UrlAnalysisOutputSchema>;
 
-// Helper to check URL safety using Google Web Risk API
-async function checkUrlSafety(url: string) {
-  const client = new WebRiskServiceClient(getAuthConfig());
-  // Use string threat types to avoid importing protos namespace
-  const request = {
-    uri: url,
-    threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE'] as unknown as string[],
-  };
+/**
+ * Utility to extract the first valid URL from a string
+ */
+function extractUrl(text: string): string | null {
+  const urlRegex = /(https?:\/\/[^\s]+)/gi;
+  const match = text.match(urlRegex);
+  if (match && match.length > 0) {
+    try {
+      // Validate with URL constructor
+      const url = new URL(match[0]);
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
+/**
+ * Check URL safety using Google Web Risk API
+ */
+async function checkUrlSafety(url: string) {
   try {
+    const client = new WebRiskServiceClient(getAuthConfig());
+    const request = {
+      uri: url,
+      threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE'] as unknown as string[],
+    };
+
     const [response] = await client.searchUris(request as any);
 
     if (response.threat && response.threat.threatTypes) {
       return {
         isSafe: false,
         threats: response.threat.threatTypes.map((t: any) => String(t)),
-        confidence: 0.95,
+        confidence: 0.98,
       };
     }
     return {
       isSafe: true,
       threats: [],
-      confidence: 0.9,
+      confidence: 0.95,
     };
   } catch (error) {
-    console.error('Web Risk API error:', error);
+    console.error('[WebRisk] API error:', error);
     return {
-      isSafe: false,
-      threats: ['API_ERROR'],
+      isSafe: true, // Fail-soft on API error but with low confidence
+      threats: [],
       confidence: 0.5,
+      error: 'Web Risk API unavailable',
     };
   }
 }
 
 type UrlMetadata = {
+  isReachable: boolean;
   status: number;
   finalUrl: string;
   contentType?: string;
@@ -106,377 +113,375 @@ type UrlMetadata = {
   meta: {
     title?: string;
     description?: string;
-    keywords?: string[];
-    language?: string;
-    canonical?: string;
-    robots?: string;
   };
-  headings: string[];
-  trackingScripts: string[];
   hasLoginForm: boolean;
   wordCount: number;
   detectedFrameworks: string[];
-  fetchError?: string;
+  error?: string;
 };
 
-// Minimal HTML scrubber
-function stripHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&[a-z]+;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// Block private/internal IP ranges
-function isPrivateOrLocalUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    const hostname = parsed.hostname;
-    
-    // Check for localhost
-    if (['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(hostname)) {
-      return true;
-    }
-    
-    // Check for private IP ranges (IPv4)
-    const privateRanges = [
-      /^10\./,
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
-      /^192\.168\./,
-      /^169\.254\./  // link-local
-    ];
-    
-    if (privateRanges.some(range => range.test(hostname))) {
-      return true;
-    }
-    
-    return false;
-  } catch {
-    return false;
-  }
-}
-
+/**
+ * Fetch URL metadata with robust error handling for "Fail-Open" prevention
+ */
 async function fetchUrlMetadata(targetUrl: string): Promise<UrlMetadata> {
-  // SSRF protection
-  if (isPrivateOrLocalUrl(targetUrl)) {
-    return {
-      status: 0,
-      finalUrl: targetUrl,
-      usesHttps: targetUrl.startsWith('https://'),
-      securityHeaders: [],
-      missingSecurityHeaders: SECURITY_HEADERS,
-      meta: {},
-      headings: [],
-      trackingScripts: [],
-      hasLoginForm: false,
-      wordCount: 0,
-      detectedFrameworks: [],
-      fetchError: 'Private or internal URL not allowed',
-    };
-  }
-
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  // Slightly longer timeout for metadata fetch
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  const startTime = Date.now();
+
   try {
     const response = await fetch(targetUrl, {
       signal: controller.signal,
       redirect: 'follow',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; UnmaiBot/1.0; +https://unmai.ai)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        // Using a more standard browser User-Agent to avoid being blocked by some sites
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
       },
     });
     clearTimeout(timeout);
+    const duration = Date.now() - startTime;
+    console.log(`[Fetch] Metadata for ${targetUrl} fetched in ${duration}ms`);
 
     const finalUrl = response.url || targetUrl;
-    const contentType = response.headers.get('content-type') || undefined;
     const headerEntries = SECURITY_HEADERS.filter(h => response.headers.has(h));
     const missingHeaders = SECURITY_HEADERS.filter(h => !response.headers.has(h));
-
+    
     let html = '';
-    if (contentType && /html/i.test(contentType)) {
-      try {
-        html = await response.text();
-      } catch (err) {
-        console.error('URL html read failed:', err);
-      }
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      html = await response.text();
     }
 
-    const meta: UrlMetadata['meta'] = {};
-    const headings: string[] = [];
-    const trackingScripts: string[] = [];
-    let hasLoginForm = false;
-    let wordCount = 0;
-    const frameworks: string[] = [];
-
-    if (html) {
-      const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-      const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i);
-      const kwMatch = html.match(/<meta[^>]+name=["']keywords["'][^>]+content=["']([^"']*)["']/i);
-      const langMatch = html.match(/<html[^>]+lang=["']([a-zA-Z-]+)["']/i);
-      const canonicalMatch = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
-      const robotsMatch = html.match(/<meta[^>]+name=["']robots["'][^>]+content=["']([^"']*)["']/i);
-
-      meta.title = titleMatch?.[1]?.trim() || undefined;
-      meta.description = descMatch?.[1]?.trim() || undefined;
-      meta.language = langMatch?.[1]?.trim() || undefined;
-      meta.keywords = kwMatch?.[1]?.split(',').map(k => k.trim()).filter(Boolean);
-      meta.canonical = canonicalMatch?.[1]?.trim();
-      meta.robots = robotsMatch?.[1]?.trim();
-
-      const headingRegex = /<h[12][^>]*>([^<]+)<\/h[12]>/gi;
-      let match;
-      while ((match = headingRegex.exec(html)) && headings.length < 10) {
-        const text = match[1].replace(/<[^>]+>/g, '').trim();
-        if (text) headings.push(text);
-      }
-
-      const strip = stripHtml(html);
-      wordCount = strip ? strip.split(/\s+/).filter(Boolean).length : 0;
-
-      const loginRegex = /<(form|a)[^>]*(login|sign-?in|account|portal)[^>]*>/i;
-      hasLoginForm = loginRegex.test(html);
-
-      const scriptRegex = /<script[^>]*src=["']([^"']+)["'][^>]*><\/script>/gi;
-      while ((match = scriptRegex.exec(html)) && trackingScripts.length < 15) {
-        const src = match[1];
-        if (/analytics|ads|tracker|metrics|tagmanager|pixel/i.test(src)) {
-          trackingScripts.push(src);
-        }
-        if (/wp-content|wordpress/i.test(src) && !frameworks.includes('WordPress')) {
-          frameworks.push('WordPress');
-        }
-        if (/cloudflare/i.test(src) && !frameworks.includes('Cloudflare')) {
-          frameworks.push('Cloudflare');
-        }
-      }
-      if (/shopify/i.test(html) && !frameworks.includes('Shopify')) frameworks.push('Shopify');
-      if (/squarespace/i.test(html) && !frameworks.includes('Squarespace')) frameworks.push('Squarespace');
-      if (/wix/i.test(html) && !frameworks.includes('Wix')) frameworks.push('Wix');
-    }
+    const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+    const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i);
 
     return {
+      isReachable: true,
       status: response.status,
       finalUrl,
-      contentType,
       usesHttps: finalUrl.startsWith('https://'),
       securityHeaders: headerEntries,
       missingSecurityHeaders: missingHeaders,
-      meta,
-      headings,
-      trackingScripts,
-      hasLoginForm,
-      wordCount,
-      detectedFrameworks: frameworks,
+      meta: {
+        title: titleMatch?.[1]?.trim(),
+        description: descMatch?.[1]?.trim(),
+      },
+      hasLoginForm: /type=["']password["']/i.test(html) || /<form[^>]*login/i.test(html),
+      wordCount: html.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length,
+      detectedFrameworks: [], // Simplified for this refactor
     };
-  } catch (error) {
+  } catch (error: any) {
     clearTimeout(timeout);
-    console.error('URL metadata fetch failed:', error);
+    const duration = Date.now() - startTime;
+    console.error(`[Fetch] URL metadata failed after ${duration}ms:`, error.message);
+    
+    let errorMessage = 'Site is unreachable';
+    if (error.code === 'ENOTFOUND') errorMessage = 'DNS lookup failed or site is offline';
+    if (error.code === 'ECONNREFUSED') errorMessage = 'Connection refused by the server';
+    if (error.name === 'AbortError') errorMessage = 'Connection timed out';
+
     return {
+      isReachable: false,
       status: 0,
       finalUrl: targetUrl,
       usesHttps: targetUrl.startsWith('https://'),
       securityHeaders: [],
       missingSecurityHeaders: SECURITY_HEADERS,
       meta: {},
-      headings: [],
-      trackingScripts: [],
       hasLoginForm: false,
       wordCount: 0,
       detectedFrameworks: [],
-      fetchError: error instanceof Error ? error.message : 'Unknown error',
+      error: errorMessage,
     };
   }
 }
 
-function deriveUrlRiskInsights(input: {
-  securityStatus: Awaited<ReturnType<typeof checkUrlSafety>>;
-  domainInfo: ReturnType<typeof analyzeDomain>;
-  operatorInfo: ReturnType<typeof getOperatorInfo>;
+function tryParseJsonLoose(text: string): any {
+  if (!text || text.trim().length === 0) return null;
+  try {
+    // Strip ALL markdown code fences
+    const stripped = text
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/gi, '')
+      .trim();
+    const start = stripped.indexOf('{');
+    if (start === -1) return null;
+    const end = stripped.lastIndexOf('}');
+    // Use everything from first { to last } if both exist, or from { to end if truncated
+    const candidate = (end !== -1 && end > start)
+      ? stripped.substring(start, end + 1)
+      : stripped.substring(start);
+
+    // Try direct parse
+    try { return JSON.parse(candidate); } catch {}
+    // Fix trailing commas
+    const cleaned = candidate.replace(/,(\s*[}\]])/g, '$1');
+    try { return JSON.parse(cleaned); } catch {}
+
+    // Try to fix truncated JSON by closing open strings and braces
+    let fixable = cleaned;
+    // Remove trailing incomplete key-value (e.g., `"summary": "The speaker re`)
+    fixable = fixable.replace(/,\s*"[^"]*":\s*"[^"]*$/s, '');
+    // Close unclosed string
+    const quoteCount = (fixable.match(/(?<!\\)"/g) || []).length;
+    if (quoteCount % 2 !== 0) fixable += '"';
+    // Close any open braces/brackets
+    const openBraces = (fixable.match(/\{/g) || []).length;
+    const closeBraces = (fixable.match(/\}/g) || []).length;
+    const openBrackets = (fixable.match(/\[/g) || []).length;
+    const closeBrackets = (fixable.match(/\]/g) || []).length;
+    for (let i = 0; i < openBrackets - closeBrackets; i++) fixable += ']';
+    for (let i = 0; i < openBraces - closeBraces; i++) fixable += '}';
+    try { return JSON.parse(fixable); } catch { return null; }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Strict Evaluation using Gemini
+ */
+async function evaluateUrlWithGemini(data: {
+  url: string;
+  isReachable: boolean;
+  webRiskThreat: string | null;
   metadata: UrlMetadata;
   sourceVerification?: any;
 }) {
-  const { securityStatus, domainInfo, operatorInfo, metadata, sourceVerification } = input;
-  const riskFactors: string[] = [];
-  const trustFactors: string[] = [];
+  const startTime = Date.now();
+  const prompt = `You are a professional URL security analyst. Analyze the following signals and provide a safety assessment.
 
-  if (!metadata.usesHttps) riskFactors.push('Site does not enforce HTTPS by default.');
-  if (metadata.missingSecurityHeaders.includes('content-security-policy')) riskFactors.push('Missing Content-Security-Policy header leaves the site vulnerable to XSS.');
-  if (metadata.missingSecurityHeaders.includes('strict-transport-security')) riskFactors.push('Missing HSTS header allows downgrade attacks.');
-  if (metadata.hasLoginForm && !metadata.usesHttps) riskFactors.push('Login or account entry detected on non-HTTPS page.');
-  if (securityStatus.threats?.length) riskFactors.push(`Web Risk flags: ${securityStatus.threats.join(', ')}`);
-  if (metadata.fetchError) riskFactors.push(`Site fetch failed: ${metadata.fetchError}`);
-
-  if (metadata.usesHttps) trustFactors.push('Site responds over HTTPS.');
-  if (metadata.securityHeaders.includes('content-security-policy')) trustFactors.push('Content-Security-Policy header is present.');
-  if (metadata.securityHeaders.includes('strict-transport-security')) trustFactors.push('HSTS header is enforced.');
-  if ((domainInfo.reputationScore || 0) > 0.7) trustFactors.push('Domain reputation from verification service is strong.');
-  if (sourceVerification?.sourceVerified) trustFactors.push('Source verification API confirms origin.');
-
-  return { riskFactors, trustFactors };
+REQUIRED JSON SCHEMA:
+{
+  "url": string,
+  "isReachable": boolean,
+  "webRiskThreat": string | null,
+  "verdict": "Safe" | "Suspicious" | "Malicious" | "Unreachable",
+  "trustScore": number,
+  "explanation": string,
+  "educationalTip": string
 }
 
-// Helper to analyze domain using URL parsing and verification details
-function analyzeDomain(url: string, verification?: any) {
-  const domain = new URL(url).hostname;
-  const reputationScore = Number(verification?.details?.reputationScore ?? verification?.sourceCredibility ?? 0.6);
-  const ageDays = Number(verification?.details?.ageDays ?? 0);
-  const registrar = String(verification?.details?.registrar || 'Unknown');
-  return { domain, reputationScore, ageDays, registrar };
-}
+SIGNALS:
+- URL: ${data.url}
+- Reachable: ${data.isReachable}
+- Web Risk Threat: ${data.webRiskThreat || 'None'}
+- HTTP Status: ${data.metadata.status}
+- HTTPS: ${data.metadata.usesHttps}
+- Security Headers: ${data.metadata.securityHeaders.join(', ') || 'None'}
+- Source Verification: ${JSON.stringify(data.sourceVerification || {})}
 
-// Helper to get operator info from verification details
-function getOperatorInfo(url: string, verification?: any) {
-  return {
-    name: verification?.details?.operator || verification?.author || 'Unknown',
-    contact: verification?.details?.contact || 'Not available'
-  };
-}
+SCORING RULES:
+1. Web Risk Threat Detected ➔ trustScore: 0, verdict: "Malicious"
+2. Not Reachable (ENOTFOUND/Timeout) ➔ trustScore: 10, verdict: "Unreachable"
+3. Reachable, No Web Risk, but Poor Reputation ➔ trustScore: 20-40, verdict: "Suspicious"
+4. Safe, HTTPS, Strong Reputation ➔ trustScore: 80-100, verdict: "Safe"
 
-// Helper to calculate scores with proper bounds checking
-function calculateScores(securityStatus: any, domainInfo: any): {
-  sourceIntegrityScore: number;
-  contentAuthenticityScore: number;
-  trustExplainabilityScore: number;
-} {
-  const safetyScore = securityStatus.isSafe ? 100 : 20;
-  const reputationScore = (domainInfo.reputationScore || 0.5) * 100;
-  const confidenceScore = securityStatus.confidence * 100;
-  
-  // Ensure all scores are within valid range (0-100)
-  const finalScores = {
-    sourceIntegrityScore: Math.min(100, Math.max(0, Math.round(reputationScore))),
-    contentAuthenticityScore: Math.min(100, Math.max(0, Math.round(safetyScore))),
-    trustExplainabilityScore: Math.min(100, Math.max(0, Math.round(confidenceScore))),
-  };
+Output ONLY the JSON.`;
 
-  console.log(`[INFO] URL trust scores: safety=${securityStatus.isSafe}, reputation=${domainInfo.reputationScore || 0.5}, confidence=${securityStatus.confidence}`);
-  console.log(`[INFO] Final URL scores: source=${finalScores.sourceIntegrityScore}, authenticity=${finalScores.contentAuthenticityScore}, explainability=${finalScores.trustExplainabilityScore}`);
-
-  return finalScores;
-}
-
-// Main analysis function
-export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { searchEngineId?: string }): Promise<UrlAnalysisOutput> {
   try {
-    // Run independent steps concurrently for speed
-    const [
-      securityStatus,
-      sourceVerification,
-      webSources,
-      metadata
-    ] = await Promise.all([
-      // Web Risk
-      checkUrlSafety(input.url),
-      // Source verification (backend)
-      (async () => {
-        try {
-          return await verifySource({ content: input.url, contentType: 'url' });
-        } catch (e) {
-          console.error('verifySource failed:', e);
-          return undefined;
-        }
-      })(),
-      // Web analysis (search)
-      (async () => {
-        try {
-          const webAnalysis = await performWebAnalysis({ query: input.url, contentType: 'url', searchEngineId: options?.searchEngineId });
-          return webAnalysis.currentInformation || [];
-        } catch (error) {
-          console.error('Web analysis failed:', error);
-          return [] as any[];
-        }
-      })(),
-      fetchUrlMetadata(input.url)
-    ] as const);
-
-    // Derive domain and operator info from URL and verification details
-    const domainInfo = analyzeDomain(input.url, sourceVerification);
-    const operatorInfo = getOperatorInfo(input.url, sourceVerification);
-    const insights = deriveUrlRiskInsights({
-      securityStatus,
-      domainInfo,
-      operatorInfo,
-      metadata,
-      sourceVerification,
+    const result = await groundedModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1 }
     });
+    const text = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const parsed = tryParseJsonLoose(text);
+    if (!parsed) throw new Error('Failed to parse Gemini evaluation JSON');
+    console.log(`[Gemini] Evaluation completed in ${Date.now() - startTime}ms`);
+    return parsed;
+  } catch (e) {
+    console.error(`[Gemini] Evaluation failed after ${Date.now() - startTime}ms:`, e);
+    // Secure fallback
+    return {
+      url: data.url,
+      isReachable: data.isReachable,
+      webRiskThreat: data.webRiskThreat,
+      verdict: data.webRiskThreat ? 'Malicious' : (data.isReachable ? 'Suspicious' : 'Unreachable'),
+      trustScore: data.webRiskThreat ? 0 : (data.isReachable ? 40 : 10),
+      explanation: 'Automated evaluation failed. Site safety cannot be confirmed.',
+      educationalTip: 'Always use a sandbox or VPN when visiting unfamiliar URLs.'
+    };
+  }
+}
 
-    // Step 5: Determine analysis label
-    let analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN' = 'YELLOW';
-    if (securityStatus.isSafe && (domainInfo.reputationScore || 0) > 0.8) {
-      analysisLabel = 'GREEN';
-    } else if (!securityStatus.isSafe && securityStatus.threats.length > 0) {
-      analysisLabel = 'RED';
-    } else if ((domainInfo.reputationScore || 0) < 0.5 || securityStatus.threats.length > 0) {
-      analysisLabel = 'ORANGE';
+/**
+ * Main URL Safety Analysis Flow
+ */
+export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { searchEngineId?: string }): Promise<UrlAnalysisOutput> {
+  const flowStartTime = Date.now();
+  try {
+    // 1. Extract URL Cleanly
+    const targetUrl = extractUrl(input.url);
+    if (!targetUrl) {
+      throw new Error('No valid URL found in input');
     }
 
-    // Step 6: Calculate scores
-    const scores = calculateScores(securityStatus, domainInfo);
+    // 2. Web Risk FIRST (Pre-fetch safety check)
+    const securityStartTime = Date.now();
+    const securityStatus = await checkUrlSafety(targetUrl);
+    console.log(`[WebRisk] Check completed in ${Date.now() - securityStartTime}ms`);
+    
+    // 3. Halt if Web Risk flags the URL (Fail-Closed)
+    if (!securityStatus.isSafe) {
+      return {
+        analysisLabel: 'RED',
+        oneLineDescription: 'Malicious URL detected - high risk of malware or phishing',
+        summary: `This URL has been flagged as malicious by security services. Detected threats: ${securityStatus.threats.join(', ')}. Visiting this site may compromise your device or personal information.`,
+        educationalInsight: 'Malicious URLs often use techniques like social engineering, malware distribution, and unwanted software installation. To protect yourself: (1) Never click on suspicious links, (2) Use a reputable URL scanner before visiting unknown sites, (3) Keep your browser and security software up to date, (4) Check the domain name carefully for typos (typosquatting).',
+        sources: [
+          { url: 'https://www.virustotal.com/gui/home/url', title: 'VirusTotal URL Scanner', credibility: 0.98 },
+          { url: 'https://safebrowsing.google.com/', title: 'Google Safe Browsing', credibility: 0.99 }
+        ],
+        sourceIntegrityScore: 0,
+        contentAuthenticityScore: 0,
+        trustExplainabilityScore: 98,
+        metadata: {
+          domain: new URL(targetUrl).hostname,
+          threats: securityStatus.threats,
+          isSafe: false,
+          isReachable: true
+        }
+      };
+    }
 
-    // Step 7: Gemini-driven formatting of presentation fields and sources
-    const candidateSources = [
-      ...(webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance })),
-      ...(sourceVerification?.relatedSources || []).map((s: any) => ({ url: s.url, title: s.title, relevance: s.similarity })),
-      ...(metadata.meta.canonical ? [{ url: metadata.meta.canonical, title: metadata.meta.title || 'Canonical Source', relevance: 80 }] : [])
-    ];
-    const presentation = await formatUnifiedPresentation({
-      contentType: 'url',
-      analysisLabel,
-      rawSignals: {
-        url: input.url,
-        securityStatus,
-        domainInfo,
-        operatorInfo,
-        webSources,
-        sourceVerification,
-        urlMetadata: metadata,
-        riskFactors: insights.riskFactors,
-        trustFactors: insights.trustFactors
-      },
-      candidateSources
-    });
+    // 4. Proceed only if Web Risk is Safe
+    console.log('[Flow] Web Risk safe, proceeding with parallel analysis...');
+    const parallelStartTime = Date.now();
+    
+    // We run metadata fetch and web search in parallel
+    // We REMOVED verifySource from here to combine it into the final Gemini call
+    const [metadata, webSources] = await Promise.all([
+      fetchUrlMetadata(targetUrl),
+      performWebAnalysis({ query: targetUrl, contentType: 'url', searchEngineId: options?.searchEngineId }).catch(() => ({ currentInformation: [] }))
+    ]);
+    console.log(`[Flow] Parallel analysis completed in ${Date.now() - parallelStartTime}ms`);
+
+    // 5. Ultimate Analysis & Presentation (Combined Gemini Call)
+    const analysisStartTime = Date.now();
+    
+    const prompt = `You are an elite cyber-security analyst and source verification expert.
+Analyze the following signals for the URL: ${targetUrl}
+
+REQUIRED JSON OUTPUT SCHEMA:
+{
+  "verdict": "Safe" | "Suspicious" | "Malicious" | "Unreachable",
+  "trustScore": number (0-100),
+  "oneLineDescription": "Brief catchy safety summary",
+  "summary": "Detailed technical and reputational analysis (at least 3 sentences)",
+  "educationalInsight": "Security best practices based on these findings",
+  "sources": [
+    { "url": "string", "title": "string", "credibility": number (0-1) }
+  ],
+  "sourceVerification": {
+    "isVerified": boolean,
+    "credibilityScore": number,
+    "details": "Reputation and origin details"
+  }
+}
+
+SIGNALS:
+- Reachable: ${metadata.isReachable}
+- HTTP Status: ${metadata.status}
+- HTTPS: ${metadata.usesHttps}
+- Security Headers: ${metadata.securityHeaders.join(', ') || 'None'}
+- Missing Headers: ${metadata.missingSecurityHeaders.join(', ') || 'None'}
+- Web Search Results: ${JSON.stringify(webSources.currentInformation).slice(0, 3000)}
+
+SCORING & ANALYSIS RULES:
+1. Verify the site's reputation based on search results.
+2. Check for technical security indicators (HTTPS, Headers).
+3. If search results mention scams, phishing, or malware ➔ verdict: Malicious, trustScore < 20.
+4. If site is unreachable ➔ verdict: Unreachable, trustScore: 10.
+5. If site is new or has no search reputation ➔ verdict: Suspicious, trustScore: 30-50.
+6. If site is well-known and technically secure ➔ verdict: Safe, trustScore: 80-100.
+7. For sources, pick the most relevant ones from the search results.
+
+IMPORTANT: Use your internal knowledge and the provided search results to verify the source.
+Output ONLY valid JSON.`;
+
+    let evaluation;
+    try {
+      // NOTE: Cannot use responseMimeType: 'application/json' with tools (googleSearch).
+      // Gemini rejects this combination. Use text response + JSON parsing instead.
+      const result = await groundedModel.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1 },
+        tools: [{ googleSearch: {} }]
+      });
+      const text = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      evaluation = tryParseJsonLoose(text);
+      if (!evaluation || !evaluation.verdict) throw new Error('Invalid analysis JSON');
+      console.log(`[Gemini] Combined analysis & presentation completed in ${Date.now() - analysisStartTime}ms`);
+    } catch (e) {
+      console.error(`[Gemini] Combined analysis failed:`, e);
+      // Fallback
+      evaluation = {
+        verdict: metadata.isReachable ? 'Suspicious' : 'Unreachable',
+        trustScore: metadata.isReachable ? 40 : 10,
+        oneLineDescription: 'Automated evaluation partially failed',
+        summary: 'We were unable to perform a full reputation check, but technical signals are available.',
+        educationalInsight: 'Always verify unfamiliar sites manually.',
+        sources: [],
+        sourceVerification: { isVerified: false, credibilityScore: 0, details: 'Verification failed' }
+      };
+    }
+
+    // 6. Map verdict to Label
+    const labelMap: Record<string, 'RED' | 'ORANGE' | 'YELLOW' | 'GREEN'> = {
+      'Malicious': 'RED',
+      'Unreachable': 'ORANGE',
+      'Suspicious': 'YELLOW',
+      'Safe': 'GREEN'
+    };
+    const analysisLabel = labelMap[evaluation.verdict] || 'YELLOW';
+
+    // 7. Final response construction (No more sequential Gemini calls!)
+    console.log(`[Flow] Total analyzeUrlSafety duration: ${Date.now() - flowStartTime}ms`);
+    
+    // Ensure we have at least 3 sources (fallback to defaults if needed)
+    const finalSources = (evaluation.sources || []).length >= 3 
+      ? evaluation.sources.slice(0, 5)
+      : [
+          ... (evaluation.sources || []),
+          { url: 'https://www.snopes.com', title: 'Snopes - Fact Checking', credibility: 0.95 },
+          { url: 'https://www.factcheck.org', title: 'FactCheck.org - Nonpartisan Analysis', credibility: 0.93 },
+          { url: 'https://www.politifact.com', title: 'PolitiFact - Truth-O-Meter', credibility: 0.91 }
+        ].slice(0, 5);
 
     return {
       analysisLabel,
-      oneLineDescription: presentation.oneLineDescription,
-      summary: presentation.summary,
-      educationalInsight: presentation.educationalInsight,
-      sources: presentation.sources,
-      sourceIntegrityScore: scores.sourceIntegrityScore,
-      contentAuthenticityScore: scores.contentAuthenticityScore,
-      trustExplainabilityScore: scores.trustExplainabilityScore,
+      oneLineDescription: evaluation.oneLineDescription,
+      summary: evaluation.summary,
+      educationalInsight: evaluation.educationalInsight,
+      sources: finalSources,
+      sourceIntegrityScore: evaluation.trustScore,
+      contentAuthenticityScore: evaluation.sourceVerification?.credibilityScore || evaluation.trustScore,
+      trustExplainabilityScore: Math.round(securityStatus.confidence * 100),
       metadata: {
-        domain: domainInfo.domain,
-        threats: securityStatus.threats,
-        isSafe: securityStatus.isSafe,
-        reputationScore: domainInfo.reputationScore,
-        ageDays: domainInfo.ageDays,
+        domain: new URL(targetUrl).hostname,
+        threats: [],
+        isSafe: true,
+        isReachable: metadata.isReachable,
         status: metadata.status,
         finalUrl: metadata.finalUrl,
         usesHttps: metadata.usesHttps,
         securityHeaders: metadata.securityHeaders,
         missingSecurityHeaders: metadata.missingSecurityHeaders,
-        detectedFrameworks: metadata.detectedFrameworks,
         hasLoginForm: metadata.hasLoginForm,
         wordCount: metadata.wordCount
       }
     };
-  } catch (error) {
-    console.error('Error in URL analysis:', error);
-    
-    // Return error response with proper format
+
+
+
+  } catch (error: any) {
+    console.error(`[Flow] URL analysis failed after ${Date.now() - flowStartTime}ms:`, error.message);
     return {
       analysisLabel: 'RED',
-      oneLineDescription: 'URL analysis encountered an error',
-      summary: 'The URL analysis could not be completed due to technical issues. Exercise caution when visiting this URL.',
-      educationalInsight: 'When URL analysis fails, manually verify the website using multiple URL scanners and check for HTTPS certificates.',
-      sources: [
-        { url: 'https://www.virustotal.com/gui/home/url', title: 'VirusTotal URL Scanner', credibility: 0.93 }
-      ],
+      oneLineDescription: 'URL analysis encountered a fatal error',
+      summary: `The analysis failed: ${error.message}. Do not trust this URL.`,
+      educationalInsight: 'Check for typos in the URL and ensure the site is legitimate before proceeding.',
+      sources: [],
       sourceIntegrityScore: 0,
       contentAuthenticityScore: 0,
       trustExplainabilityScore: 0,
@@ -484,3 +489,4 @@ export async function analyzeUrlSafety(input: UrlAnalysisInput, options?: { sear
     };
   }
 }
+

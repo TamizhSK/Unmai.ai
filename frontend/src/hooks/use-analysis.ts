@@ -102,8 +102,8 @@ export function useAnalysis() {
         await analyzeUnifiedStream(
           contentType,
           buildPayload(),
-          (stage, message, _elapsed, checks) => {
-            setAnalysisStage(message);
+          (stage, _message, _elapsed, checks) => {
+            setAnalysisStage(stage);
             if (checks) setExpectedChecks(checks);
           },
           (streamResult) => { result = streamResult; },

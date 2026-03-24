@@ -8,8 +8,8 @@
     "dev": "tsx src/server.ts",
     "dev:genkit": "genkit start -- tsx src/ai/dev.ts",
     "dev:watch": "tsx --watch src/server.ts",
-    "build": "echo 'Build completed - using tsx runtime compilation'",
-    "start": "tsx src/server.ts",
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "test:env": "node -e \"require('dotenv').config(); console.log('Environment check passed'); console.log('GCP_PROJECT_ID:', process.env.GCP_PROJECT_ID ? '[OK] SET' : '[ERROR] MISSING'); console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? '[OK] SET' : '[ERROR] MISSING');\"",
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@genkit-ai/vertexai": "^1.19.2",
+    "@google-cloud/firestore": "^8.3.0",
     "@google-cloud/secret-manager": "^6.1.0",
     "@google-cloud/speech": "^7.2.0",
     "@google-cloud/translate": "^9.2.0",

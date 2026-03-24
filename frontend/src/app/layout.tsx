@@ -40,6 +40,9 @@ export const metadata: Metadata = {
     shortcut: "/favicon.ico",
     apple: "/favicon.ico",
   },
+  verification: {
+    google: "CLfVGYALbYG2f4XnxxNtd2ABQ-X02oiP7yXTI-u4TeE",
+  },
 };
 
 export const viewport: Viewport = {

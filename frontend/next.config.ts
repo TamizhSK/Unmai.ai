@@ -1,5 +1,4 @@
 import type { NextConfig } from 'next';
-import path from 'path';
 
 // Bundle analyzer: run with ANALYZE=true npm run build
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -8,9 +7,6 @@ const withBundleAnalyzer = process.env.ANALYZE === 'true'
   : (config: NextConfig) => config;
 
 const nextConfig: NextConfig = {
-  // Explicitly set the root to silence workspace warnings
-  outputFileTracingRoot: path.join(__dirname, '..'),
-
   // Standalone output for optimized Cloud Run deployment
   output: 'standalone',
   
@@ -18,17 +14,6 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   generateEtags: false,
   compress: true,
-  
-  // External packages for server components
-  serverExternalPackages: [
-    '@google-cloud/vertexai',
-    '@google-cloud/speech', 
-    '@google-cloud/translate',
-    '@google-cloud/video-intelligence',
-    '@google-cloud/vision',
-    '@google-cloud/web-risk',
-    'sharp'
-  ],
   
   // Build optimizations
   typescript: {

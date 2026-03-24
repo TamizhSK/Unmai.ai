@@ -27,9 +27,9 @@ const VerifySourceOutputSchema = z.object({
     similarity: z.number().min(0).max(100),
   })).describe('Related sources found during verification.'),
   originalSource: z.object({
-    url: z.string(),
-    title: z.string(),
-    snippet: z.string(),
+    url: z.string().nullable().optional(),
+    title: z.string().nullable().optional(),
+    snippet: z.string().nullable().optional(),
   }).optional().describe('The original source of the content.'),
 });
 export type VerifySourceOutput = z.infer<typeof VerifySourceOutputSchema>;

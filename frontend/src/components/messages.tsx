@@ -34,9 +34,9 @@ export function Message({ children, isUser = false, hasMedia = false }: { childr
     <div className={`flex items-start gap-3 ${isUser ? 'justify-end' : ''} w-full animate-in fade-in-0 slide-in-from-bottom-2 duration-500`}>
       {!isUser && (
         <Avatar className="h-8 w-8 sm:h-9 sm:w-9 flex-shrink-0">
-          <AvatarImage src="/favicon.ico" alt="Unmai" className="object-contain p-0.5" />
+          <AvatarImage src="/unmaiai.png" alt="Unmai" className="object-contain p-0.5" />
           <AvatarFallback className="bg-background border">
-            <img src="/favicon.ico" alt="" className="h-full w-full object-contain p-0.5" />
+            <img src="/unmaiai.png" alt="" className="h-full w-full object-contain p-0.5" />
           </AvatarFallback>
         </Avatar>
       )}
@@ -203,26 +203,43 @@ export function MessagesContainer({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastAnalyzedIndexRef = useRef<number>(-1);
+  const userScrolledUpRef = useRef(false);
   const isDark = useTheme();
 
-  // Smooth scroll to bottom when new messages arrive
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ 
-      behavior: 'smooth',
-      block: 'end'
-    });
+  // Get the scroll viewport element
+  const getViewport = (): HTMLElement | null => {
+    const root = scrollAreaRef.current;
+    if (!root) return null;
+    return root.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
   };
 
-  // Determine if user is near the bottom of the viewport
+  // Smooth scroll to bottom
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    const viewport = getViewport();
+    if (!viewport) return;
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+  };
+
+  // Check if user is near the bottom (within 150px)
   const isNearBottom = () => {
-    const root = scrollAreaRef.current;
-    if (!root) return true;
-    const viewport = root.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+    const viewport = getViewport();
     if (!viewport) return true;
     const { scrollTop, scrollHeight, clientHeight } = viewport;
-    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
-    return distanceFromBottom < 100; // px threshold
+    return scrollHeight - (scrollTop + clientHeight) < 150;
   };
+
+  // Track user scroll to detect manual scroll-up
+  useEffect(() => {
+    const viewport = getViewport();
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      userScrolledUpRef.current = !isNearBottom();
+    };
+
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    return () => viewport.removeEventListener('scroll', handleScroll);
+  });
 
   // Trigger analysis when a new user message appears
   useEffect(() => {
@@ -235,16 +252,25 @@ export function MessagesContainer({
         const file = last?.file ? { dataUrl: last.file.dataUrl, type: last.file.type } : null;
         const language = last?.language ?? 'en-US';
         performAnalysis(input, file, language, addMessage, removeLastMessage).catch(() => {});
-        // Immediate scroll to show the skeleton
-        requestAnimationFrame(scrollToBottom);
+        // User just sent a message — always scroll to show the skeleton
+        userScrolledUpRef.current = false;
+        requestAnimationFrame(() => scrollToBottom('smooth'));
       }
     }
   }, [messages, performAnalysis, addMessage, removeLastMessage]);
 
-  // Auto-scroll on stage changes and new messages — smooth, non-blocking
+  // Auto-scroll on new messages and stage changes — respect user scroll position
   useEffect(() => {
-    if (isNearBottom()) {
-      scrollToBottom();
+    // If user has scrolled up, do NOT force scroll
+    if (userScrolledUpRef.current) return;
+
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.type === 'ai') {
+      // New AI result — scroll to show it
+      requestAnimationFrame(() => setTimeout(() => scrollToBottom('smooth'), 80));
+    } else {
+      // During loading/stage changes — gentle scroll if near bottom
+      requestAnimationFrame(() => scrollToBottom('smooth'));
     }
   }, [messages, isLoading, analysisStage]);
 
@@ -252,7 +278,7 @@ export function MessagesContainer({
     <div className="flex-1 relative overflow-hidden">
 
       <ScrollArea className="h-full" ref={scrollAreaRef}>
-        <div className="mx-auto max-w-5xl space-y-4 pb-6 px-3 sm:px-6 pt-16 sm:pt-20" aria-live="polite" aria-label="Conversation">
+        <div className="mx-auto max-w-5xl space-y-3 sm:space-y-4 pb-4 sm:pb-6 px-2 sm:px-4 md:px-6 pt-14 sm:pt-20" aria-live="polite" aria-label="Conversation">
           {messages.map((msg, index) => {
             // Skip loading-type messages — progress is shown by the skeleton below
             if (msg.type === 'loading') return null;
@@ -269,16 +295,8 @@ export function MessagesContainer({
 
             // AI messages — render without the Message card wrapper (UnifiedResponseCard has its own)
             return (
-              <div key={index} className="flex items-start gap-2.5 w-full animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
-                <Avatar className="h-7 w-7 flex-shrink-0 mt-0.5">
-                  <AvatarImage src="/favicon.ico" alt="Unmai" className="object-contain p-0.5" />
-                  <AvatarFallback className="bg-background border">
-                    <img src="/favicon.ico" alt="" className="h-full w-full object-contain p-0.5" />
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <DynamicAnalysisResult task={msg.task} result={msg.result} />
-                </div>
+              <div key={index} className="w-full animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
+                <DynamicAnalysisResult task={msg.task} result={msg.result} />
               </div>
             );
           })}
@@ -290,16 +308,8 @@ export function MessagesContainer({
             const showSkeleton = pendingForLatest || isLoading;
             
             return showSkeleton ? (
-              <div className="flex items-start gap-2.5 w-full animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
-                <Avatar className="h-7 w-7 flex-shrink-0 mt-0.5">
-                  <AvatarImage src="/favicon.ico" alt="Unmai" className="object-contain p-0.5" />
-                  <AvatarFallback className="bg-background border">
-                    <img src="/favicon.ico" alt="" className="h-full w-full object-contain p-0.5" />
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <DynamicAnalysisResult task="loading" result={{ kind: 'loading', stage: analysisStage, expectedChecks }} />
-                </div>
+              <div className="w-full animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
+                <DynamicAnalysisResult task="loading" result={{ kind: 'loading', stage: analysisStage, expectedChecks }} />
               </div>
             ) : null;
           })()}

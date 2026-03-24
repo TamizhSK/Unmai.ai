@@ -87,18 +87,13 @@ class SecureEnvironment {
   }
 
   private async loadFromGoogleSecrets(): Promise<boolean> {
-    // COMMENTED OUT FOR PROTOTYPE - Google Cloud Secret Manager disabled
-    console.log('[INFO] Google Cloud Secret Manager disabled for prototype');
-    return false;
-    
-    /* Original code commented out due to ongoing GCP issues
     try {
       // Skip Google Cloud authentication in development mode
       if (process.env.NODE_ENV === 'development') {
         console.log('[INFO] Development mode - skipping Google Cloud Secret Manager');
         return false;
       }
-      
+
       // Check if we're in Google Cloud environment
       if (!process.env.GOOGLE_CLOUD_PROJECT && !process.env.GCP_PROJECT_ID) {
         return false;
@@ -107,16 +102,16 @@ class SecureEnvironment {
       // Try to load from Google Secret Manager
       const { SecretManagerServiceClient } = await import('@google-cloud/secret-manager');
       const client = new SecretManagerServiceClient();
-      
+
       const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID;
-      
+
       // Load GEMINI_API_KEY from secrets
       if (!process.env.GEMINI_API_KEY) {
         try {
           const [version] = await client.accessSecretVersion({
             name: `projects/${projectId}/secrets/gemini-api-key/versions/latest`,
           });
-          
+
           const secretValue = version.payload?.data?.toString();
           if (secretValue) {
             process.env.GEMINI_API_KEY = secretValue;
@@ -133,7 +128,7 @@ class SecureEnvironment {
           const [version] = await client.accessSecretVersion({
             name: `projects/${projectId}/secrets/google-custom-search-api-key/versions/latest`,
           });
-          
+
           const secretValue = version.payload?.data?.toString();
           if (secretValue) {
             process.env.GOOGLE_CUSTOM_SEARCH_API_KEY = secretValue;
@@ -149,7 +144,6 @@ class SecureEnvironment {
       console.warn('[WARN] Google Secret Manager not available:', error);
       return false;
     }
-    */
   }
 
   private loadFromJWT(): boolean {
@@ -227,19 +221,17 @@ class SecureEnvironment {
       return;
     }
 
-    console.log('[INFO] Loading secure environment (PROTOTYPE MODE - GCP disabled)...');
-
     // Try loading in order of preference:
-    // 1. Google Cloud Secret Manager (DISABLED FOR PROTOTYPE)
+    // 1. Google Cloud Secret Manager (production)
     // 2. JWT environment files (secure local/staging)
     // 3. Regular .env files (development fallback)
 
     let loaded = false;
 
-    // Google Cloud secrets disabled for prototype
-    // if (await this.loadFromGoogleSecrets()) {
-    //   loaded = true;
-    // }
+    // Google Cloud secrets (enabled for production)
+    if (await this.loadFromGoogleSecrets()) {
+      loaded = true;
+    }
 
     // Try JWT environment (secure local/staging)
     if (!loaded && this.loadFromJWT()) {
@@ -285,10 +277,10 @@ class SecureEnvironment {
   }
 }
 
-// Create and export singleton instance (GCP_PROJECT_ID optional for prototype)
+// Create and export singleton instance with GCP enabled
 const secureEnv = SecureEnvironment.getInstance({
-  required: [/* 'GCP_PROJECT_ID', */ 'GEMINI_API_KEY'], // GCP_PROJECT_ID commented out for prototype
-  optional: ['GOOGLE_CUSTOM_SEARCH_API_KEY', 'GOOGLE_SEARCH_ENGINE_ID', 'GCP_PROJECT_ID']
+  required: ['GCP_PROJECT_ID', 'GCP_LOCATION', 'GEMINI_API_KEY'],
+  optional: ['GOOGLE_CUSTOM_SEARCH_API_KEY', 'GOOGLE_SEARCH_ENGINE_ID', 'GOOGLE_CLOUD_PROJECT']
 });
 
 // Auto-load environment

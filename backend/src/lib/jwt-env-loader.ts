@@ -94,16 +94,14 @@ class JWTEnvironmentLoader {
 
       // Check if JWT environment files exist
       if (!fs.existsSync(jwtEnvPath) || !fs.existsSync(secretPath)) {
-        console.log('[INFO] JWT environment files not found, using dotenv fallback');
-        
-        // Try to load dotenv dynamically
+        // Use dotenv fallback silently
         try {
           const { config } = await import('dotenv');
           config({ path: path.join(projectRoot, '.env') });
-        } catch (dotenvError) {
-          console.log('[INFO] dotenv not available, using environment variables only');
+        } catch {
+          // Silently continue
         }
-        
+
         this.loaded = true;
         return;
       }
@@ -139,17 +137,15 @@ class JWTEnvironmentLoader {
         }
       }
 
-      console.log('[INFO] JWT environment loaded successfully');
-      
-      // PROTOTYPE FIX: Force load local .env to allow overrides (e.g. for new API key)
+      console.log('[Auth] JWT environment loaded');
+
+      // Load local .env to allow overrides
       try {
         const { config } = await import('dotenv');
-        // Try loading from standard locations with override enabled
         config({ path: path.join(process.cwd(), '.env'), override: true });
         config({ path: path.join(projectRoot, '.env'), override: true });
-        console.log('[INFO] Loaded local .env overrides for prototype');
       } catch (dotenvError) {
-        console.warn('[WARN] Failed to load .env overrides:', dotenvError);
+        // Silently continue
       }
 
       this.loaded = true;
@@ -200,7 +196,7 @@ export async function loadJWTEnvironment(): Promise<void> {
   await jwtEnvLoader.loadEnvironment();
 }
 
-export function validateEnvironment(requiredVars: string[] = [/* 'GCP_PROJECT_ID', */ 'GEMINI_API_KEY']): boolean {
+export function validateEnvironment(requiredVars: string[] = ['GCP_PROJECT_ID', 'GCP_LOCATION', 'GEMINI_API_KEY']): boolean {
   return jwtEnvLoader.validateRequiredVars(requiredVars);
 }
 

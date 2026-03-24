@@ -1,7 +1,14 @@
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { config } from 'dotenv';
+import { createUser, loginUser, getUserById, saveAnalysis, getUserHistory, verifyToken } from './lib/auth-service.js';
+import { environmentInitializer } from './lib/environment-initializer.js';
+
+// CRITICAL: Initialize environment ONCE at application startup
+// This is the ONLY place where environment loading should happen
+await environmentInitializer.initialize();
+
+// Now import flows (environment is already loaded)
 import { factCheckClaim } from './ai/flows/fact-check-claim.js';
 import { getCredibilityScore } from './ai/flows/get-credibility-score.js';
 import { detectDeepfake } from './ai/flows/detect-deepfake.js';
@@ -12,43 +19,98 @@ import { performWebAnalysis } from './ai/flows/perform-web-analysis.js';
 import { safeSearchUrl } from './ai/flows/safe-search-url.js';
 import { translateTextFlow } from './ai/flows/translate-text.js';
 
-// Load environment variables with JWT support
-try {
-  // Try to load JWT environment first (production/secure)
-  const { loadJWTEnvironment } = await import('./lib/jwt-env-loader.js');
-  await loadJWTEnvironment();
-} catch (error) {
-  // Fallback to regular dotenv (development)
-  console.log('[INFO] JWT environment not available, using dotenv fallback');
-  config();
-}
-
-// Validate required environment variables (GCP_PROJECT_ID commented out for prototype)
-const requiredEnvVars = [/* 'GCP_PROJECT_ID', */ 'GEMINI_API_KEY'];
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    console.error(`Missing required environment variable: ${envVar}`);
-    process.exit(1);
-  }
-}
-
-// Log prototype mode
-console.log('[INFO] PROTOTYPE MODE - Using Gemini API key exclusively (GCP disabled)');
-
-// Validate optional Custom Search configuration
-const customSearchKey = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
-const customSearchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
-if (customSearchKey && customSearchEngineId) {
-  console.log('Google Custom Search API configured');
-} else if (customSearchKey || customSearchEngineId) {
-  console.warn('Partial Custom Search configuration - both API key and Search Engine ID are needed');
-}
+// Log GCP configuration (minimal, production-ready logging)
+console.log(`[Server] GCP Project: ${process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT}`);
+console.log(`[Server] Vision API: Available via ADC`);
+console.log(`[Server] Video Intelligence API: Available via ADC`);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || '50mb';
 
-app.use(cors());
+// Production-ready CORS
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:3000', 'http://localhost:3001'];
+
+// In production, also allow the Cloud Run domain
+if (process.env.NODE_ENV === 'production') {
+  allowedOrigins.push('https://unmai-ai.run.place', 'https://www.unmai-ai.run.place');
+}
+
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production'
+    ? (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(null, true); // Allow all for now, but log
+          console.warn(`[CORS] Request from unlisted origin: ${origin}`);
+        }
+      }
+    : true, // Allow all in development
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+}));
+
+// Security headers
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+// Simple rate limiter (per IP, per minute)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '60'); // requests per minute
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  // Skip rate limiting for health checks
+  if (req.path === '/health' || req.path === '/health/detailed') return next();
+
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+    return next();
+  }
+
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) {
+    return res.status(429).json({
+      error: 'Too Many Requests',
+      message: 'Rate limit exceeded. Please try again later.',
+      retryAfter: Math.ceil((entry.resetAt - now) / 1000),
+    });
+  }
+  next();
+});
+
+// Clean up rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip);
+  }
+}, 300000);
+
+// Request timeout (3 minutes for AI analysis, 30s otherwise)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const timeout = req.path.includes('/analyze') ? 180000 : 30000;
+  req.setTimeout(timeout);
+  res.setTimeout(timeout);
+  next();
+});
+
 app.use(express.json({ limit: REQUEST_SIZE_LIMIT }));
 // Support form submissions (e.g. multipart clients sending urlencoded payloads)
 app.use(express.urlencoded({ extended: true, limit: REQUEST_SIZE_LIMIT }));
@@ -70,6 +132,97 @@ app.post('/api/analyze', async (req: Request, res: Response) => {
       message: 'Unable to analyze content at this time',
       timestamp: new Date().toISOString()
     });
+  }
+});
+
+// Streaming endpoint for real-time analysis (Server-Sent Events)
+app.post('/api/analyze/stream', async (req: Request, res: Response) => {
+  try {
+    const { type, payload, searchEngineId } = req.body || {};
+    if (!type || !payload) {
+      return res.status(400).json({ error: 'type and payload are required' });
+    }
+    
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    
+    // Send initial connection event
+    res.write('event: connected\ndata: {"status":"connected"}\n\n');
+
+    const startTime = Date.now();
+    const emit = (stage: string, message: string, expectedChecks?: string[]) => {
+      const elapsed = Date.now() - startTime;
+      res.write(`event: progress\ndata: ${JSON.stringify({ stage, message, elapsed, expectedChecks })}\n\n`);
+    };
+
+    // Ordered stage names matching frontend LOADER_STAGES
+    const STAGE_SEQUENCE = [
+      { stage: 'detecting',    message: 'Detecting input type...' },
+      { stage: 'extracting',   message: 'Extracting content from input...' },
+      { stage: 'claims',       message: 'Identifying factual claims...' },
+      { stage: 'queries',      message: 'Generating search queries...' },
+      { stage: 'evidence',     message: 'Searching fact-check databases & sources...' },
+      { stage: 'ranking',      message: 'Ranking source credibility...' },
+      { stage: 'reasoning',    message: 'AI analyzing evidence...' },
+      { stage: 'explanation',  message: 'Generating explanation...' },
+      { stage: 'complete',     message: 'Preparing verification report...' },
+    ];
+
+    // Emit first two stages immediately so UI updates fast
+    emit(STAGE_SEQUENCE[0].stage, STAGE_SEQUENCE[0].message, STAGE_SEQUENCE.map(s => s.message));
+    setTimeout(() => emit(STAGE_SEQUENCE[1].stage, STAGE_SEQUENCE[1].message), 800);
+
+    // For input types that are known to be slower, emit intermediate stages during analysis
+    const isMedia = ['image', 'video', 'audio'].includes(type);
+    const stageDurations = isMedia
+      ? [0, 800, 2500, 5000, 8000, 11000, 14000, 17000]
+      : [0, 800, 1800, 3000, 5000, 7000, 9000, 11000];
+    const stageTimers: ReturnType<typeof setTimeout>[] = [];
+    for (let i = 2; i < STAGE_SEQUENCE.length - 1; i++) {
+      const s = STAGE_SEQUENCE[i];
+      const timer = setTimeout(() => emit(s.stage, s.message), stageDurations[i] ?? stageDurations[stageDurations.length - 1]);
+      stageTimers.push(timer);
+    }
+
+    try {
+      // Perform the analysis
+      const result = await analyzeUnified({ type, payload } as any, { searchEngineId });
+
+      // Clear pending timers — real result arrived
+      stageTimers.forEach(t => clearTimeout(t));
+
+      // Emit complete stage then result
+      emit(STAGE_SEQUENCE[STAGE_SEQUENCE.length - 1].stage, STAGE_SEQUENCE[STAGE_SEQUENCE.length - 1].message);
+      res.write(`event: result\ndata: ${JSON.stringify(result)}\n\n`);
+      res.write('event: done\ndata: {"status":"complete"}\n\n');
+      res.end();
+
+      // Persist to Firestore for authenticated users (fire-and-forget)
+      const auth = req.headers.authorization;
+      if (auth?.startsWith('Bearer ')) {
+        try {
+          const { uid } = verifyToken(auth.slice(7));
+          const summary = (payload as any)?.text?.slice(0, 200) ?? (payload as any)?.url ?? type;
+          saveAnalysis(uid, type, summary, result).catch(() => {});
+        } catch { /* unauthenticated or invalid token — skip */ }
+      }
+    } catch (error) {
+      stageTimers.forEach(t => clearTimeout(t));
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Unified analyze stream failed: ${errorMessage}`);
+      res.write(`event: error\ndata: ${JSON.stringify({ error: errorMessage })}\n\n`);
+      res.end();
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Stream endpoint failed: ${errorMessage}`);
+    
+    // Send error event
+    res.write(`event: error\ndata: ${JSON.stringify({ error: errorMessage })}\n\n`);
+    res.end();
   }
 });
 
@@ -106,11 +259,10 @@ app.get('/health/detailed', (req: Request, res: Response) => {
     },
     services: {
       geminiApi: !!process.env.GEMINI_API_KEY,
-      gcpProject: false, // Disabled for prototype
-      customSearch: {
-        configured: !!(customSearchKey && customSearchEngineId),
-        hasApiKey: !!customSearchKey,
-        hasEngineId: !!customSearchEngineId
+      gcpProject: !!(process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT),
+      searchService: {
+        configured: true,
+        method: 'Multi-source (Fact Check + Knowledge Graph + Wikipedia + News)'
       }
     },
     buildInfo: {
@@ -322,7 +474,111 @@ app.post('/api/translate-text', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/translate-batch', async (req: Request, res: Response) => {
+  try {
+    const { texts, targetLanguage } = req.body;
+    if (!Array.isArray(texts) || !targetLanguage) {
+      return res.status(400).json({ error: 'texts (array) and targetLanguage are required' });
+    }
+    // Translate all texts in parallel, falling back to original on individual failure
+    const translations = await Promise.all(
+      texts.map(async (text: string) => {
+        if (!text || typeof text !== 'string') return text;
+        try {
+          const result = await translateTextFlow({ text: text.trim(), targetLanguage });
+          return typeof result === 'string' ? result : text;
+        } catch {
+          return text; // fallback to original
+        }
+      })
+    );
+    res.json({ translations });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Batch translation failed: ${errorMessage}`);
+    res.status(500).json({
+      error: 'Batch translation service unavailable',
+      message: 'Unable to translate texts at this time',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
+
+
+// ── Auth endpoints ────────────────────────────────────────────────────────────
+
+app.post('/api/auth/signup', async (req: Request, res: Response) => {
+  try {
+    const { email, password, displayName } = req.body;
+    if (!email || !password || !displayName) {
+      return res.status(400).json({ error: 'email, password, and displayName are required' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+    const result = await createUser(email, password, displayName);
+    res.json(result);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Signup failed';
+    res.status(msg === 'Email already in use' ? 409 : 500).json({ error: msg });
+  }
+});
+
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'email and password are required' });
+    }
+    const result = await loginUser(email, password);
+    res.json(result);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Login failed';
+    res.status(msg === 'Invalid email or password' ? 401 : 500).json({ error: msg });
+  }
+});
+
+app.post('/api/auth/logout', (req: Request, res: Response) => {
+  // Stateless JWT — client clears token; no server-side invalidation needed
+  res.json({ success: true });
+});
+
+// ── User endpoints ────────────────────────────────────────────────────────────
+
+function extractUid(req: Request): string | null {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) return null;
+  try {
+    return verifyToken(auth.slice(7)).uid;
+  } catch {
+    return null;
+  }
+}
+
+app.get('/api/user/profile', async (req: Request, res: Response) => {
+  const uid = extractUid(req);
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const user = await getUserById(uid);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load profile' });
+  }
+});
+
+app.get('/api/user/history', async (req: Request, res: Response) => {
+  const uid = extractUid(req);
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string || '20'), 50);
+    const history = await getUserHistory(uid, limit);
+    res.json({ history });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load history' });
+  }
+});
 
 // Fallback for unknown routes - ensure JSON response
 app.use((req: Request, res: Response, _next: NextFunction) => {

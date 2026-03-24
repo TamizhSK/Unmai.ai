@@ -245,16 +245,11 @@ function extractFromText(responseText: string): Record<string, unknown> {
     .map(s => s.trim())
     .filter(s => s.length > 20 && !s.match(/^(json|```|{|})/i));
   
-  explanation = sentences.slice(0, 3).join('. ').trim();
+  explanation = sentences.join('. ').trim();
   
   // Ensure proper ending
   if (explanation && !explanation.match(/[.!?]$/)) {
     explanation += '.';
-  }
-
-  // Limit explanation length
-  if (explanation.length > 300) {
-    explanation = explanation.substring(0, 297) + '...';
   }
 
   return {
@@ -314,6 +309,10 @@ CRITICAL RULES:
   try {
     const result = await groundedModel.generateContent({
       contents: [{role: 'user', parts: [{text: prompt}]}],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 2000,
+      }
     });
 
     response = result.response;

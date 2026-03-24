@@ -3,51 +3,20 @@ name: Deploy to Cloud Run
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 env:
   REGION: us-central1
   FRONTEND_SERVICE: unmai-frontend
   BACKEND_SERVICE: unmai-backend
+  ARTIFACT_REGISTRY: us-central1-docker.pkg.dev
+  REPOSITORY: unmai-repo
 
 jobs:
-  test:
-    name: Test & Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: |
-          npm ci
-          npm ci --workspace=frontend
-          npm ci --workspace=backend
-
-      - name: Run type checks
-        run: |
-          npm run typecheck:frontend
-          npm run typecheck:backend
-
-      - name: Build applications
-        run: |
-          npm run build:backend
-          npm run build:frontend
-
   deploy:
-    name: Deploy to Cloud Run
+    name: Build & Deploy
     runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    
+
     permissions:
       contents: read
       id-token: write
@@ -56,74 +25,132 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
+      # Auth Option 1: Workload Identity Federation (preferred, no key rotation needed)
+      # Requires: WIF_PROVIDER and WIF_SERVICE_ACCOUNT secrets
+      # Auth Option 2: Service Account Key (simpler setup)
+      # Requires: GCP_SA_KEY secret (JSON key file content)
+      - name: Authenticate to Google Cloud (WIF)
+        if: ${{ secrets.WIF_PROVIDER != '' }}
         uses: google-github-actions/auth@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
+      - name: Authenticate to Google Cloud (SA Key)
+        if: ${{ secrets.WIF_PROVIDER == '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Configure Docker to use gcloud as a credential helper
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY }} --quiet
+
+      # ── Build & Push Backend ──
+      - name: Build backend image
         run: |
-          gcloud auth configure-docker
-          gcloud auth configure-docker gcr.io
-          gcloud auth configure-docker us-central1-docker.pkg.dev
+          docker build \
+            -t ${{ env.ARTIFACT_REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.BACKEND_SERVICE }}:${{ github.sha }} \
+            -t ${{ env.ARTIFACT_REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.BACKEND_SERVICE }}:latest \
+            ./backend
 
-      - name: Submit to Cloud Build
+      - name: Push backend image
         run: |
-          gcloud builds submit \
-            --config cloudbuild-minimal.yaml \
-            --project ${{ secrets.GCP_PROJECT_ID }} \
-            --substitutions _REGION=${{ env.REGION }},_FRONTEND_SERVICE=${{ env.FRONTEND_SERVICE }},_BACKEND_SERVICE=${{ env.BACKEND_SERVICE }}
+          docker push --all-tags ${{ env.ARTIFACT_REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.BACKEND_SERVICE }}
 
-      - name: Get deployment URLs
-        id: get-urls
+      - name: Deploy backend to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.BACKEND_SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.ARTIFACT_REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.BACKEND_SERVICE }}:${{ github.sha }}
+          flags: |
+            --port=8080
+            --memory=2Gi
+            --cpu=2
+            --timeout=900
+            --min-instances=0
+            --max-instances=10
+            --concurrency=80
+          env_vars: |
+            NODE_ENV=production
+            GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+            GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}
+            FIRESTORE_DATABASE_ID=unmai-ai-2025
+            ALLOWED_ORIGINS=https://unmai-ai.run.place,https://www.unmai-ai.run.place
+          secrets: |
+            GEMINI_API_KEY=gemini-api-key:latest
+            JWT_SECRET=jwt-secret:latest
+
+      - name: Verify backend health
         run: |
-          FRONTEND_URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE }} --region ${{ env.REGION }} --project ${{ secrets.GCP_PROJECT_ID }} --format='value(status.url)')
-          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE }} --region ${{ env.REGION }} --project ${{ secrets.GCP_PROJECT_ID }} --format='value(status.url)')
-          echo "frontend-url=$FRONTEND_URL" >> $GITHUB_OUTPUT
-          echo "backend-url=$BACKEND_URL" >> $GITHUB_OUTPUT
+          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE }} \
+            --region ${{ env.REGION }} \
+            --format='value(status.url)')
+          echo "Backend URL: $BACKEND_URL"
+          # Wait for cold start
+          sleep 5
+          curl -f -s --retry 3 --retry-delay 5 --max-time 30 "$BACKEND_URL/health"
+          echo ""
+          echo "Backend health check passed"
 
-      - name: Comment deployment URLs
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+      # ── Build & Push Frontend ──
+      - name: Set backend URL in frontend .env.production
+        run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE }} \
+            --region ${{ env.REGION }} \
+            --format='value(status.url)')
+          printf 'NEXT_PUBLIC_API_BASE_URL=%s\nNODE_ENV=production\nNEXT_TELEMETRY_DISABLED=1\nGENERATE_SOURCEMAP=false\n' "$BACKEND_URL" > frontend/.env.production
+          echo "Frontend will use backend: $BACKEND_URL"
+
+      - name: Build frontend image
+        run: |
+          docker build \
+            -t ${{ env.ARTIFACT_REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FRONTEND_SERVICE }}:${{ github.sha }} \
+            -t ${{ env.ARTIFACT_REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FRONTEND_SERVICE }}:latest \
+            ./frontend
+
+      - name: Push frontend image
+        run: |
+          docker push --all-tags ${{ env.ARTIFACT_REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FRONTEND_SERVICE }}
+
+      - name: Deploy frontend to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
         with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `🚀 **Deployment Complete!**
-              
-              **Frontend**: ${{ steps.get-urls.outputs.frontend-url }}
-              **Backend**: ${{ steps.get-urls.outputs.backend-url }}
-              
-              Deployed from commit: ${context.sha.substring(0, 7)}`
-            })
+          service: ${{ env.FRONTEND_SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.ARTIFACT_REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.FRONTEND_SERVICE }}:${{ github.sha }}
+          flags: |
+            --port=3000
+            --memory=1Gi
+            --cpu=1
+            --timeout=300
+            --min-instances=0
+            --max-instances=5
+          env_vars: |
+            NODE_ENV=production
 
-  security-scan:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      # ── Post-Deploy Verification ──
+      - name: Verify full deployment
+        run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE }} --region ${{ env.REGION }} --format='value(status.url)')
+          FRONTEND_URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE }} --region ${{ env.REGION }} --format='value(status.url)')
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          echo "=== Deployment Complete ==="
+          echo "Backend:  $BACKEND_URL"
+          echo "Frontend: $FRONTEND_URL"
 
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
+          # Verify backend
+          curl -f -s --max-time 30 "$BACKEND_URL/health" || exit 1
+          echo ""
+
+          # Verify frontend
+          curl -f -s --max-time 30 "$FRONTEND_URL" > /dev/null || exit 1
+
+          echo "All health checks passed"

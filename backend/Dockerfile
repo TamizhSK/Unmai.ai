@@ -32,15 +32,9 @@ RUN npm install --prefer-offline
 # Copy source code
 COPY . .
 
-# Create dist directory and tsx launcher
-ENV NODE_ENV=production
-ENV GENERATE_SOURCEMAP=false
-RUN mkdir -p dist
-
 # Compile TypeScript to JavaScript
+ENV NODE_ENV=production
 RUN npx tsc --project tsconfig.json
-
-# The compiled server.js will be in dist/server.js, so we can run it directly
 
 # --- Runner stage ---
 FROM node:20-slim AS runner
@@ -61,17 +55,17 @@ RUN addgroup --system --gid 1001 backend && \
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/src ./src
 
 # Change ownership to non-root user
 RUN chown -R backend:backend /app
 USER backend
 
-# Health check with timeout
+# Cloud Run uses PORT env var (default 8080)
+# Health check uses the PORT env variable
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:3001/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
 
-EXPOSE 3001
-ENV PORT=3001
+EXPOSE 8080
+ENV PORT=8080
 
 CMD ["node", "dist/server.js"]

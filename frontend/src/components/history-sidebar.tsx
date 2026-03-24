@@ -24,17 +24,19 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 type HistoryItem = {
   id: string;
-  contentType: string;
-  analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN';
+  type: string;
   oneLineDescription: string;
+  verdict: string;
+  trustScore: number;
   createdAt: string;
 };
 
-const LABEL_COLORS: Record<string, string> = {
-  RED: 'bg-red-500',
-  ORANGE: 'bg-orange-500',
-  YELLOW: 'bg-yellow-500',
-  GREEN: 'bg-green-500',
+const VERDICT_COLORS: Record<string, string> = {
+  True: 'bg-emerald-500',
+  False: 'bg-red-500',
+  Misleading: 'bg-amber-500',
+  Unverified: 'bg-gray-400',
+  unknown: 'bg-gray-400',
 };
 
 function relativeTime(dateStr: string): string {
@@ -188,12 +190,12 @@ export function HistorySidebar({ onNewChat }: { onNewChat: () => void }) {
                         className="animate-in fade-in-0 slide-in-from-left-1"
                         style={{ animationDelay }}
                       >
-                        <SidebarMenuButton 
+                        <SidebarMenuButton
                           tooltip={item.oneLineDescription || 'Analysis'}
                           className="group relative overflow-hidden transition-all duration-200 hover:bg-sidebar-accent/50 hover:shadow-sm"
                         >
-                          <span 
-                            className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${LABEL_COLORS[item.analysisLabel] || 'bg-gray-400'} transition-transform duration-200 group-hover:scale-110 shadow-sm`} 
+                          <span
+                            className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${VERDICT_COLORS[item.verdict] || 'bg-gray-400'} transition-transform duration-200 group-hover:scale-110 shadow-sm`}
                           />
                           <span className="truncate text-sm">{item.oneLineDescription || 'Analysis'}</span>
                           <span className="ml-auto text-[10px] text-sidebar-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">

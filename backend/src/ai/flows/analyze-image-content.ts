@@ -1,11 +1,7 @@
 import { z } from 'zod';
-// Commented out Google Cloud Vision for prototype - using Gemini API only
-// import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { performWebAnalysis } from './perform-web-analysis.js';
-import { formatUnifiedPresentation } from './format-unified-presentation.js';
 import { detectDeepfake } from './detect-deepfake.js';
-import { generativeModel, generativeVisionModel } from '../genkit.js';
-// import { getAuthConfig, getProjectId } from '../auth.js';
+import { groundedModel, generativeModel, generativeVisionModel } from '../genkit.js';
 
 const ImageAnalysisInputSchema = z.object({
   imageData: z.string().min(1, 'Image data is required'), // Base64 or URL
@@ -85,21 +81,42 @@ function buildImagePart(imageData: string, mimeType?: string): any {
 }
 
 function tryParseJsonLoose(text: string): any {
+  if (!text || text.trim().length === 0) return null;
   try {
+    // Strip ALL markdown code fences
     const stripped = text
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/gi, '')
       .trim();
     const start = stripped.indexOf('{');
+    if (start === -1) return null;
     const end = stripped.lastIndexOf('}');
-    const candidate = start !== -1 && end !== -1 ? stripped.substring(start, end + 1) : stripped;
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      const noTrailingCommas = candidate.replace(/,(\s*[}\]])/g, '$1');
-      return JSON.parse(noTrailingCommas);
-    }
+    // Use everything from first { to last } if both exist, or from { to end if truncated
+    const candidate = (end !== -1 && end > start)
+      ? stripped.substring(start, end + 1)
+      : stripped.substring(start);
+
+    // Try direct parse
+    try { return JSON.parse(candidate); } catch {}
+    // Fix trailing commas
+    const cleaned = candidate.replace(/,(\s*[}\]])/g, '$1');
+    try { return JSON.parse(cleaned); } catch {}
+
+    // Try to fix truncated JSON by closing open strings and braces
+    let fixable = cleaned;
+    // Remove trailing incomplete key-value (e.g., `"summary": "The speaker re`)
+    fixable = fixable.replace(/,\s*"[^"]*":\s*"[^"]*$/s, '');
+    // Close unclosed string
+    const quoteCount = (fixable.match(/(?<!\\)"/g) || []).length;
+    if (quoteCount % 2 !== 0) fixable += '"';
+    // Close any open braces/brackets
+    const openBraces = (fixable.match(/\{/g) || []).length;
+    const closeBraces = (fixable.match(/\}/g) || []).length;
+    const openBrackets = (fixable.match(/\[/g) || []).length;
+    const closeBrackets = (fixable.match(/\]/g) || []).length;
+    for (let i = 0; i < openBrackets - closeBrackets; i++) fixable += ']';
+    for (let i = 0; i < openBraces - closeBraces; i++) fixable += '}';
+    try { return JSON.parse(fixable); } catch { return null; }
   } catch {
     return null;
   }
@@ -1022,6 +1039,116 @@ function calculateScores(contentAnalysis: any, manipulationAnalysis: Manipulatio
   };
 }
 
+// Consolidation: Integrated Presentation Formatter
+async function formatPresentation(params: {
+  description: string;
+  ocrText: string;
+  analysisLabel: 'RED' | 'YELLOW' | 'ORANGE' | 'GREEN';
+  factualClaims: any[];
+  webSources: any[];
+  understanding?: { description?: string; detectedObjects?: string[]; potentialIssues?: string[] };
+  isManipulated?: boolean;
+}): Promise<{
+  oneLineDescription: string;
+  summary: string;
+  educationalInsight: string;
+  sources: Array<{ url: string; title: string; credibility: number }>;
+}> {
+  const { description, ocrText, analysisLabel, factualClaims, webSources, understanding, isManipulated } = params;
+  // Use the vision understanding description if available (much richer than text-based description)
+  const richDescription = understanding?.description || description;
+
+  const detectedObjects = understanding?.detectedObjects?.join(', ') || '';
+  const potentialIssues = understanding?.potentialIssues?.join(', ') || '';
+
+  // Filter out bogus claims like "No text is visible" that come from empty OCR
+  const meaningfulClaims = factualClaims.filter(c =>
+    c.claim && !/no text|no readable text|no discernible/i.test(c.claim)
+  );
+
+  // Sanitize web sources for the prompt — only use real ones, never let Gemini invent sources
+  const realSources = webSources
+    .filter((s: any) => s.url && s.title)
+    .slice(0, 5)
+    .map((s: any) => ({
+      url: String(s.url),
+      title: String(s.title),
+      credibility: Math.min(1, Math.max(0, typeof s.credibility === 'number' ? (s.credibility > 1 ? s.credibility / 100 : s.credibility) : 0.7)),
+    }));
+
+  const prompt = `You are an image misinformation analyst. Analyze the VISUAL CONTENT of this image and produce a JSON response.
+
+IMPORTANT: Focus on what the image VISUALLY SHOWS — faces, objects, scenes, manipulation indicators. Do NOT focus on absence of text.
+
+IMAGE VISUAL ANALYSIS: ${richDescription}
+${detectedObjects ? `DETECTED OBJECTS: ${detectedObjects}` : ''}
+${potentialIssues ? `VISUAL ISSUES DETECTED: ${potentialIssues}` : ''}
+${isManipulated ? `MANIPULATION STATUS: Image shows signs of manipulation/deepfake` : ''}
+RISK LEVEL: ${analysisLabel}
+${meaningfulClaims.length > 0 ? `VERIFIED CLAIMS: ${meaningfulClaims.map(c => `${c.claim} (${c.verdict})`).join('; ')}` : ''}
+
+Respond with ONLY a valid JSON object:
+{
+  "oneLineDescription": "concise description of what the image shows and key visual finding",
+  "summary": "3-4 sentence detailed visual analysis explaining specific findings about the image content, any manipulation indicators, and assessment",
+  "educationalInsight": "150-200 words on how to identify image manipulation (deepfakes, face swaps, AI generation) and protect yourself"
+}`;
+
+  try {
+    const result = await generativeModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 2000 }
+    });
+
+    const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    console.log('[formatPresentation:image] Response length:', responseText.length, 'first 100:', responseText.substring(0, 100));
+    const parsed = tryParseJsonLoose(responseText);
+    if (parsed) {
+      console.log('[formatPresentation:image] Parsed successfully');
+      return {
+        oneLineDescription: parsed.oneLineDescription || `${richDescription.substring(0, 150)}`,
+        summary: parsed.summary || `Visual analysis of image: ${richDescription}`,
+        educationalInsight: parsed.educationalInsight || 'Verify images through reverse image search. Check for visual inconsistencies and unnatural features.',
+        // ALWAYS use real web sources — never Gemini-generated sources
+        sources: realSources,
+      };
+    }
+    console.warn('[WARN] Image formatPresentation: tryParseJsonLoose returned null, raw:', responseText.substring(0, 300));
+  } catch (error) {
+    console.error('[ERROR] Image presentation formatting failed:', error);
+  }
+
+  // Data-driven fallback using actual analysis results
+  console.warn('[WARN] Image formatPresentation Gemini call failed — using data fallback');
+
+  const manipulationNote = isManipulated ? ' Potential manipulation or deepfake detected.' : '';
+  const oneLineDescription = richDescription && richDescription !== 'Image understanding unavailable'
+    ? `${richDescription.substring(0, 200)}${manipulationNote}`
+    : `Image content analysis completed — ${analysisLabel} risk level.${manipulationNote}`;
+
+  const summaryParts: string[] = [];
+  if (richDescription && richDescription !== 'Image understanding unavailable') {
+    summaryParts.push(richDescription);
+  }
+  if (potentialIssues) summaryParts.push(`Visual issues detected: ${potentialIssues}.`);
+  if (manipulationNote) summaryParts.push(manipulationNote.trim());
+  if (meaningfulClaims.length > 0) {
+    summaryParts.push(`Claims: ${meaningfulClaims.map(c => `${c.claim} (${c.verdict})`).join('; ')}.`);
+  }
+  summaryParts.push(`Risk level: ${analysisLabel}.`);
+
+  return {
+    oneLineDescription,
+    summary: summaryParts.join(' '),
+    educationalInsight: 'Verify images through reverse image search tools like TinEye or Google Images. Check for visual inconsistencies, unnatural lighting, and blurred edges that may indicate manipulation or AI generation. Deepfake technology can swap faces convincingly — look for mismatched skin tones, inconsistent lighting on the face vs background, and artifacts around face edges.',
+    // ALWAYS use real web sources
+    sources: realSources.length > 0 ? realSources : [
+      { url: 'https://www.tineye.com', title: 'TinEye Reverse Image Search', credibility: 0.88 },
+      { url: 'https://www.snopes.com', title: 'Snopes Fact Checking', credibility: 0.95 },
+    ]
+  };
+}
+
 // Main analysis function
 export async function analyzeImageContent(input: ImageAnalysisInput, options?: { searchEngineId?: string }): Promise<ImageAnalysisOutput> {
   try {
@@ -1192,24 +1319,18 @@ export async function analyzeImageContent(input: ImageAnalysisInput, options?: {
       aiConfidence: vertexInsights?.aiConfidence,
     });
 
-    // Step 8: Gemini-driven formatting of presentation fields and sources
-    const candidateSources = [
-      ...(webSources || []).map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, relevance: s.relevance })),
-      ...(enrichedMetadata.possibleSources || []).map((s) => ({ url: s.url, title: s.title, relevance: typeof s.score === 'number' ? s.score * 100 : undefined })),
-    ];
-    const presentation = await formatUnifiedPresentation({
-      contentType: 'image',
+    // Step 8: Consolidated formatting
+    console.log('[DEBUG:image] understanding.description:', understanding?.description?.substring(0, 150));
+    console.log('[DEBUG:image] contentAnalysis.description:', contentAnalysis.description?.substring(0, 150));
+    console.log('[DEBUG:image] combinedIsManipulated:', combinedIsManipulated);
+    const presentation = await formatPresentation({
+      description: contentAnalysis.description,
+      ocrText,
       analysisLabel,
-      rawSignals: {
-        description: contentAnalysis.description,
-        factualClaims: contentAnalysis.factualClaims,
-        isManipulated: combinedIsManipulated,
-        manipulationConfidence: combinedManipulationConfidence,
-        ocrText,
-        metadata: visionMetadata,
-        geminiUnderstanding: understanding,
-      },
-      candidateSources,
+      factualClaims: contentAnalysis.factualClaims,
+      webSources,
+      understanding,
+      isManipulated: combinedIsManipulated,
     });
 
     const deepAnalysis = await generateDeepAnalysisNarrative({

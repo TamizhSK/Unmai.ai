@@ -1,22 +1,23 @@
 /**
  * Unified Response Card (v3) — Professional Verification UI
- * 
+ *
  * Redesigned for:
  * - Compact layout that fits at 100% zoom
  * - Accurate donut chart color mapping
  * - Professional loader with real analysis stages
  * - Stage-synchronized progress bar
  * - Smooth animations and auto-scroll
- * 
+ *
  * Max width: 720px for optimal readability
  */
 
 "use client";
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { AnalysisLoader } from '@/components/analysis/AnalysisLoader';
 
 import {
   ExternalLink,
@@ -28,14 +29,6 @@ import {
   XCircle,
   AlertTriangle,
   HelpCircle,
-  Activity,
-  Database,
-  Search,
-  FileCheck,
-  BrainCircuit,
-  ClipboardCheck,
-  Layers,
-  Sparkles,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -283,87 +276,16 @@ const DonutChart = ({ value, label, icon, size = 'lg', delay = 0 }: DonutChartPr
   );
 };
 
-// ─── Professional Loader Stages ─────────────────────────────────────────────
-
-interface LoaderStage {
-  id: string;
-  label: string;
-  icon: React.ComponentType<any>;
-  progress: number;
-}
-
-// Stage IDs MUST match backend PIPELINE_STAGES in unified-analysis.ts exactly:
-// detecting → extracting → claims → queries → evidence → ranking → reasoning → explanation → complete
-const LOADER_STAGES: LoaderStage[] = [
-  { id: 'detecting', label: 'Detecting input type', icon: Activity, progress: 8 },
-  { id: 'extracting', label: 'Extracting content', icon: Layers, progress: 20 },
-  { id: 'claims', label: 'Identifying factual claims', icon: FileCheck, progress: 32 },
-  { id: 'queries', label: 'Generating search queries', icon: Search, progress: 42 },
-  { id: 'evidence', label: 'Searching fact-check databases & sources', icon: Database, progress: 55 },
-  { id: 'ranking', label: 'Ranking source credibility', icon: Shield, progress: 68 },
-  { id: 'reasoning', label: 'AI analyzing evidence', icon: BrainCircuit, progress: 80 },
-  { id: 'explanation', label: 'Generating explanation', icon: Sparkles, progress: 92 },
-  { id: 'complete', label: 'Preparing verification report', icon: ClipboardCheck, progress: 100 },
-];
+// ─── Professional Loader (using reusable AnalysisLoader component) ──────────
 
 interface LoaderProps {
   stage?: string;
   message?: string;
   progress?: number;
-  expectedChecks?: string[];
 }
 
-const Loader = ({ stage, message, progress, expectedChecks }: LoaderProps) => {
-  const [currentStageIndex, setCurrentStageIndex] = useState(0);
-  const [displayProgress, setDisplayProgress] = useState(0);
-
-  // Sync stage from backend SSE events
-  useEffect(() => {
-    if (progress !== undefined) {
-      const idx = LOADER_STAGES.findIndex(s => s.progress >= progress);
-      if (idx !== -1) setCurrentStageIndex(idx);
-    } else {
-      const stageLower = (stage || '').toLowerCase();
-      const stageIdx = LOADER_STAGES.findIndex(s =>
-        s.id === stageLower || stageLower.includes(s.id) || s.label.toLowerCase().includes(stageLower)
-      );
-      if (stageIdx !== -1) setCurrentStageIndex(stageIdx);
-    }
-  }, [stage, progress]);
-
-  // Animate progress bar smoothly
-  useEffect(() => {
-    const targetProgress = LOADER_STAGES[currentStageIndex]?.progress || 0;
-    const step = () => {
-      setDisplayProgress(prev => {
-        if (prev >= targetProgress) return targetProgress;
-        return prev + Math.max(0.5, (targetProgress - prev) * 0.08);
-      });
-    };
-    const interval = setInterval(step, 30);
-    return () => clearInterval(interval);
-  }, [currentStageIndex]);
-
-  const stageLabel = LOADER_STAGES[currentStageIndex]?.label || 'Analyzing...';
-
-  return (
-    <div className="py-1">
-      <div className="space-y-2.5">
-        {/* Stage label */}
-        <p className="text-xs text-muted-foreground">
-          {stageLabel}... <span className="text-muted-foreground/50">({currentStageIndex + 1}/{LOADER_STAGES.length})</span>
-        </p>
-
-        {/* Progress bar */}
-        <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-          <div
-            className="h-full bg-blue-500 rounded-full transition-none"
-            style={{ width: `${Math.min(100, displayProgress)}%` }}
-          />
-        </div>
-      </div>
-    </div>
-  );
+const Loader = ({ stage, progress }: LoaderProps) => {
+  return <AnalysisLoader stage={stage} progress={progress} />;
 };
 
 // ─── Source Favicon ─────────────────────────────────────────────────────────
@@ -421,7 +343,7 @@ const SourcesDialog = ({ sources }: { sources: UnifiedResponseData['sources'] })
         </Button>
       </DialogTrigger>
       
-      <DialogContent className="max-w-[95vw] sm:max-w-xl max-h-[85vh] overflow-hidden flex flex-col rounded-lg p-0">
+      <DialogContent className="max-w-[95vw] sm:max-w-xl max-h-[80vh] sm:max-h-[85vh] overflow-hidden flex flex-col rounded-lg p-0">
         <DialogHeader className="flex-shrink-0 pb-3 border-b px-5 pt-5">
           <DialogTitle className="text-base">Sources & References</DialogTitle>
           <DialogDescription className="text-sm">
@@ -494,25 +416,15 @@ export const UnifiedResponseCard = React.memo(function UnifiedResponseCard({
     }
   }, [onHeightChange]);
 
-  // Auto-scroll handling
-  useEffect(() => {
-    if (isMounted && cardRef.current) {
-      const isLoading = (response as any)?.kind === 'loading';
-      
-      // Smooth scroll to card
-      cardRef.current.scrollIntoView({ 
-        behavior: 'smooth', 
-        block: 'start',
-      });
-    }
-  }, [response, isMounted]);
+  // Auto-scroll is handled by the parent MessagesContainer.
+  // The card should NOT independently force scroll — it causes jumps when user has scrolled up.
 
   const isLoading = (r: UnifiedResponse): r is AnalysisLoadingSkeleton => 
     (r as any)?.kind === 'loading';
 
   if (isLoading(response)) {
     return (
-      <div ref={cardRef} className="w-full max-w-[560px]">
+      <div ref={cardRef} className="w-full max-w-[560px] min-w-0 overflow-hidden">
         <Loader {...(response as AnalysisLoadingSkeleton)} />
       </div>
     );
@@ -523,9 +435,9 @@ export const UnifiedResponseCard = React.memo(function UnifiedResponseCard({
   const VerdictIcon = style.icon;
 
   return (
-    <div ref={cardRef} className="w-full max-w-[560px]">
+    <div ref={cardRef} className="w-full max-w-[560px] min-w-0 overflow-hidden">
       <Card className={`bg-card text-card-foreground shadow-md rounded-xl overflow-hidden border ${style.border}`}>
-        <CardContent className="p-3.5 space-y-2.5">
+        <CardContent className="p-2.5 sm:p-3.5 space-y-2 sm:space-y-2.5">
 
           {/* ── 1. Verdict Header ─────────────────────────────── */}
           <div className="flex items-center gap-2 pb-2.5 border-b border-border/50">
@@ -566,11 +478,11 @@ export const UnifiedResponseCard = React.memo(function UnifiedResponseCard({
           )}
 
           {/* ── 5. Trust Metrics (Donut Charts) ───────────────── */}
-          <div className="space-y-2 pt-1.5 border-t border-border/50">
+          <div className="space-y-1.5 sm:space-y-2 pt-1.5 border-t border-border/50">
             <h3 className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider text-center">
               Trust Metrics
             </h3>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-1 sm:gap-2">
               <DonutChart
                 value={data.scores.sourceIntegrity}
                 label="Source"

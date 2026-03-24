@@ -3,42 +3,41 @@ version: '3.8'
 services:
   backend:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "3001:8080"
     environment:
-      - NODE_ENV=development
-      - PORT=3001
+      - NODE_ENV=production
+      - PORT=8080
       - REQUEST_SIZE_LIMIT=50mb
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-    volumes:
-      - ./backend/src:/app/backend/src
-      - ./backend/dist:/app/backend/dist
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-unmai-ai-2025}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-unmai-ai-2025}
+      - FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID:-unmai-ai-2025}
+      - JWT_SECRET=${JWT_SECRET:-unmai-ai-jwt-secret-2025-change-in-prod}
+      - ALLOWED_ORIGINS=http://localhost:3000,https://unmai-ai.run.place,https://www.unmai-ai.run.place
     networks:
       - unmai-network
+    restart: unless-stopped
 
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_BASE_URL=http://backend:3001
+        - NEXT_PUBLIC_API_BASE_URL=http://backend:8080
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=development
-      - NEXT_PUBLIC_API_BASE_URL=http://backend:3001
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE_URL=http://backend:8080
     depends_on:
       - backend
     networks:
       - unmai-network
+    restart: unless-stopped
 
 networks:
   unmai-network:
     driver: bridge
-
-# For development, you can also add volumes for hot reloading:
-# volumes:
-#   - ./frontend/src:/app/frontend/src
-#   - ./frontend/pages:/app/frontend/pages

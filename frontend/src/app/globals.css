@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, #6366f1, #818cf8, #a78bfa, #c084fc, #6366f1);
+  background-size: 200% auto;
+  animation: shimmer 2s linear infinite;
+}
+
 /* Google Sans Font Loading */
 @font-face {
     font-family: 'Google Sans';
@@ -286,6 +297,23 @@
 @media (max-width: 640px) {
     .mobile-compact {
         @apply text-sm p-2;
+    }
+
+    /* Prevent horizontal overflow on small screens */
+    body {
+        overflow-x: hidden;
+    }
+
+    /* Tighter card padding on mobile */
+    .card-hover:hover {
+        transform: none;
+    }
+}
+
+@media (max-width: 480px) {
+    /* Extra small screens (320-480px) */
+    h1 {
+        font-size: 2rem !important;
     }
 }
 

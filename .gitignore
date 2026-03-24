@@ -112,3 +112,4 @@ firestore-debug.log
 test-api-key.js
 run-backend-only.js
 verify-app-working.js
+key.json

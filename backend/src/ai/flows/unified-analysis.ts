@@ -33,8 +33,8 @@ export type UnifiedAnalyzeInput =
   | { type: 'audio'; payload: { audioData: string; mimeType?: string } };
 
 function toOneLine(text: string): string {
-  const line = text.replace(/\s+/g, ' ').trim();
-  return line.length > 160 ? line.slice(0, 157) + '…' : line;
+  // Remove character limits for clearer, more complete headlines
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 function toUnified(
@@ -53,12 +53,17 @@ function toUnified(
   const analysisLabel = args.analysisLabel ?? 'YELLOW';
   const summary = args.summary ?? fallbackOneLiner;
   const educationalInsight = args.educationalInsight ?? 'No educational insight available.';
-  const sources = args.sources ?? [];
-  const sourceIntegrityScore = Math.round(args.sourceIntegrityScore ?? 60);
-  const contentAuthenticityScore = Math.round(args.contentAuthenticityScore ?? 60);
-  const trustExplainabilityScore = Math.round(args.trustExplainabilityScore ?? 60);
+  const sourceIntegrityScore = Math.round(Math.min(100, Math.max(0, args.sourceIntegrityScore ?? 60)));
+  const contentAuthenticityScore = Math.round(Math.min(100, Math.max(0, args.contentAuthenticityScore ?? 60)));
+  const trustExplainabilityScore = Math.round(Math.min(100, Math.max(0, args.trustExplainabilityScore ?? 60)));
   const oneLineDescription = args.oneLineDescription ? toOneLine(args.oneLineDescription) : toOneLine(summary);
-  
+
+  // Clamp credibility values to 0-1 range. AI models sometimes return values >1 (e.g. 85 instead of 0.85).
+  const sources = (args.sources ?? []).map(s => ({
+    ...s,
+    credibility: Math.min(1, Math.max(0, s.credibility > 1 ? s.credibility / 100 : s.credibility)),
+  }));
+
   return UnifiedResponseSchema.parse({
     analysisLabel,
     oneLineDescription,
@@ -73,58 +78,42 @@ function toUnified(
 
 // OPTIMIZED UNIFIED ANALYSIS FUNCTION
 export async function analyzeUnified(input: UnifiedAnalyzeInput, options?: { searchEngineId?: string }): Promise<UnifiedResponse> {
-  console.log(`[INFO] Starting optimized ${input.type} analysis`);
   const startTime = Date.now();
 
   try {
     switch (input.type) {
       case 'text': {
-        console.log(`[INFO] Processing text analysis (${input.payload.text.length} chars)`);
         const out = await analyzeTextContent({ text: input.payload.text }, options);
-        const result = toUnified(out, `Analysis of text with ${out.claims?.length ?? 0} claims.`);
-        console.log(`[INFO] Text analysis completed in ${Date.now() - startTime}ms`);
-        return result;
+        return toUnified(out, `Analysis of text with ${out.claims?.length ?? 0} claims.`);
       }
       
       case 'url': {
-        console.log(`[INFO] Processing URL analysis: ${input.payload.url}`);
         const out = await analyzeUrlSafety({ url: input.payload.url }, options);
-        const result = toUnified(out, `URL analysis for ${input.payload.url}.`);
-        console.log(`[INFO] URL analysis completed in ${Date.now() - startTime}ms`);
-        return result;
+        return toUnified(out, `URL analysis for ${input.payload.url}.`);
       }
       
       case 'image': {
-        console.log(`[INFO] Processing image analysis (${input.payload.mimeType || 'unknown format'})`);
         const out = await analyzeImageContent({ 
           imageData: input.payload.imageData, 
           mimeType: input.payload.mimeType 
         }, options);
-        const result = toUnified(out, 'Image analysis completed.');
-        console.log(`[INFO] Image analysis completed in ${Date.now() - startTime}ms`);
-        return result;
+        return toUnified(out, 'Image analysis completed.');
       }
       
       case 'video': {
-        console.log(`[INFO] Processing video analysis (${input.payload.mimeType || 'unknown format'})`);
         const out = await analyzeVideoContent({ 
           videoData: input.payload.videoData, 
           mimeType: input.payload.mimeType 
         }, options);
-        const result = toUnified(out, 'Video analysis completed.');
-        console.log(`[INFO] Video analysis completed in ${Date.now() - startTime}ms`);
-        return result;
+        return toUnified(out, 'Video analysis completed.');
       }
       
       case 'audio': {
-        console.log(`[INFO] Processing audio analysis (${input.payload.mimeType || 'unknown format'})`);
         const out = await analyzeAudioContent({ 
           audioData: input.payload.audioData, 
           mimeType: input.payload.mimeType 
         }, options);
-        const result = toUnified(out, 'Audio analysis completed.');
-        console.log(`[INFO] Audio analysis completed in ${Date.now() - startTime}ms`);
-        return result;
+        return toUnified(out, 'Audio analysis completed.');
       }
       
       default: {

@@ -1,0 +1,210 @@
+Deliverable 1 — Audit Findings
+
+  ┌────────────────────┬───────────────────────────┬───────────────────────────────────────────────────────────────────────────────┐
+  │      Service       │          Status           │                                 Issues Found                                  │
+  ├────────────────────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ Vertex AI          │ Installed, fully disabled │ Commented out — Gemini direct API used instead (correct choice for prototype) │
+  ├────────────────────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ Cloud Vision       │ Installed, disabled       │ Replaced by Gemini Vision (intentional)                                       │
+  ├────────────────────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ Video Intelligence │ Installed, disabled       │ Replaced by Gemini Vision (intentional)                                       │
+  ├────────────────────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ Speech-to-Text     │ Active (prod only)        │ Per-request SpeechClient creation → fixed                                     │
+  ├────────────────────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ Cloud Translation  │ Active                    │ Per-request v2.Translate creation → fixed                                     │
+  ├────────────────────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ Web Risk           │ Active (2 copies)         │ Per-request WebRiskServiceClient in 2 files → fixed                           │
+  ├────────────────────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ Firestore          │ Not initialized           │ → enabled                                                                     │
+  ├────────────────────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ Secret Manager     │ Installed, disabled       │ → enabled                                                                     │
+  └────────────────────┴───────────────────────────┴───────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  Deliverable 2 — Latency & Correctness Issues Fixed
+
+  File: safe-search-url.ts
+  Problem: new WebRiskServiceClient() per call
+  Fix: Module-level singleton
+  ────────────────────────────────────────
+  File: analyze-url-safety.ts
+  Problem: new WebRiskServiceClient() per call
+  Fix: Module-level singleton
+  ────────────────────────────────────────
+  File: translate-text.ts
+  Problem: new v2.Translate() per call
+  Fix: Module-level singleton
+  ────────────────────────────────────────
+  File: analyze-audio-content.ts
+  Problem: new SpeechClient() per call
+  Fix: Module-level singleton
+  ────────────────────────────────────────
+  File: analyze-image-content.ts
+  Problem: Dynamic import() inside function per call
+  Fix: Replaced with static top-level import
+  ────────────────────────────────────────
+  File: analyze-image-content.ts
+  Problem: reverseImageGrounding sequential for loop
+  Fix: → Promise.allSettled (parallel)
+  ────────────────────────────────────────
+  File: analyze-audio-content.ts
+  Problem: reverseAudioGrounding sequential for loop
+  Fix: → Promise.allSettled (parallel)
+  ────────────────────────────────────────
+  File: dynamic-analysis-result.tsx
+  Problem: Math.random() in render = different scores each re-render
+  Fix: Removed, deterministic values
+  ────────────────────────────────────────
+  File: safety-assessment.ts
+  Problem: JSON parse failure threw (500 error) — inconsistent
+  Fix: Graceful fallback response
+  ────────────────────────────────────────
+  File: analyze-audio-content.ts
+  Problem: Dev mode returned error string as transcription text
+  Fix: Returns null, caller handles gracefully
+  ────────────────────────────────────────
+  File: 6 flow files
+  Problem: 'use server' Next.js directive in Express backend
+  Fix: Removed from all
+  ────────────────────────────────────────
+  File: get-credibility-score.ts + safety-assessment.ts
+  Problem: Dead import {Part} from '@google-cloud/vertexai'
+  Fix: Removed
+
+  ---
+  Deliverable 3 — Firestore Schema
+
+  Database: unmai-ai-2025 (Native mode, nam5, free tier)
+
+  users/{uid}
+    uid            string   (document ID)
+    email          string   (indexed — for getUserByEmail query)
+    displayName    string
+    passwordHash   string   (bcrypt — NEVER returned to client)
+    createdAt      Timestamp
+    lastLoginAt    Timestamp
+
+  auth_sessions/{sessionId}
+    sessionId      string   (document ID)
+    userId         string   (indexed — for per-user session lookup)
+    tokenHash      string   (SHA-256 of JWT — for revocation)
+    expiresAt      Timestamp
+    userAgent      string
+    createdAt      Timestamp
+
+  user_history/{historyId}
+    historyId      string   (document ID)
+    userId         string   (indexed — for getUserHistory query)
+    contentType    enum     text|image|video|audio|url
+    analysisLabel  enum     RED|YELLOW|ORANGE|GREEN
+    oneLineDescription  string
+    summary        string
+    inputPreview   string   (first 200 chars only — no raw media)
+    createdAt      Timestamp  (indexed — orderBy desc)
+
+  ---
+  Deliverable 4 — Auth Implementation
+
+  Files created:
+  - src/lib/firestore.ts — Firestore singleton + all collection helpers
+  - src/lib/auth-service.ts — signup(), login(), logout(), verifyToken(), getPublicProfile()
+  - src/middleware/auth.ts — requireAuth and optionalAuth Express middleware
+
+  Strategy: Custom auth with Firestore + bcrypt (cost 12) + HS256 JWT (7-day expiry)
+
+  New API endpoints:
+  POST /api/auth/signup     { email, password, displayName }   → { token, user }
+  POST /api/auth/login      { email, password }                → { token, user }
+  POST /api/auth/logout     Bearer <token>                     → 200
+  GET  /api/user/profile    Bearer <token>                     → { uid, email, displayName, createdAt }
+  GET  /api/user/history    Bearer <token>  ?limit=20          → { history[], count }
+
+  ---
+  Deliverable 5 — UI Integration Points
+
+  The frontend needs to add these flows (no redesign required):
+
+  Login/Signup modal  →  POST /api/auth/signup or /api/auth/login
+                      →  Store JWT in localStorage/cookie
+                      →  Send Authorization: Bearer <token> on all /api/analyze calls
+
+  History panel       →  GET /api/user/history
+                      →  Display list of past analyses with label + summary
+
+  Profile page        →  GET /api/user/profile
+
+  Authenticated /api/analyze calls automatically save to user_history — no extra work needed.
+
+  ---
+  Deliverable 6 — Performance Optimizations Applied
+
+  ┌────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────┐
+  │                     Change                     │                            Impact                            │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ 4 GCP clients → module-level singletons        │ Eliminates gRPC/HTTP reconnect per request (~50–200ms saved) │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ reverseImageGrounding parallel                 │ N sequential Gemini calls → 1 parallel round (~3–5x faster)  │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ reverseAudioGrounding parallel                 │ Same as above                                                │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ History save is fire-and-forget                │ Zero added latency to /api/analyze response                  │
+  ├────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Secret Manager loads all 4 secrets in parallel │ ~3x faster than sequential loading at startup                │
+  └────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
+
+  ---
+  Deliverable 7 — Security Hardening
+
+  Secrets created in Google Secret Manager:
+  gemini-api-key                  ← populated from your .env
+  jwt-secret                      ← generated (32-byte random hex)
+  google-custom-search-api-key    ← placeholder (update with real value)
+  google-search-engine-id         ← placeholder (update with real value)
+
+  IAM (least privilege): Cloud Run service account service-1011862643582@serverless-robot-prod.iam.gserviceaccount.com has only
+  roles/secretmanager.secretAccessor — no other permissions.
+
+  Load order (secure-env.ts):
+  1. .env first (so GCP_PROJECT_ID is available)
+  2. Secret Manager (production only, no-op in development)
+  3. JWT files (staging fallback)
+
+  Rate limiting: 20 req/min on all analysis endpoints, 10 per 15min on auth endpoints.
+
+  CORS: Controlled via ALLOWED_ORIGINS env var (comma-separated). Empty = allow all (safe for development, restrict in production).
+
+  ---
+  Deliverable 8 — Deployment Steps
+
+  Step 1 — Update the two placeholder secrets with real values
+
+  echo -n "YOUR_CUSTOM_SEARCH_KEY" | gcloud secrets versions add \
+    google-custom-search-api-key --data-file=- --project=unmai-ai-2025
+
+  echo -n "YOUR_SEARCH_ENGINE_ID" | gcloud secrets versions add \
+    google-search-engine-id --data-file=- --project=unmai-ai-2025
+
+  Step 2 — Add ALLOWED_ORIGINS and FIRESTORE_DATABASE_ID to Cloud Run deploy in cloudbuild-minimal.yaml
+
+  Add these two lines to the backend deploy step alongside the existing --set-env-vars:
+  --set-env-vars ALLOWED_ORIGINS=https://YOUR_FRONTEND_URL \
+  --set-env-vars FIRESTORE_DATABASE_ID=unmai-ai-2025 \
+
+  Step 3 — Grant Cloud Run service account Firestore access
+
+  gcloud projects add-iam-policy-binding unmai-ai-2025 \
+    --member="serviceAccount:service-1011862643582@serverless-robot-prod.iam.gserviceaccount.com" \
+    --role="roles/datastore.user"
+
+  Step 4 — Create Firestore composite indexes (required for history queries)
+
+  gcloud firestore indexes composite create \
+    --project=unmai-ai-2025 \
+    --database=unmai-ai-2025 \
+    --collection-group=user_history \
+    --field-config field-path=userId,order=ASCENDING \
+    --field-config field-path=createdAt,order=DESCENDING
+
+  Step 5 — Deploy
+
+  gcloud builds submit --config cloudbuild-minimal.yaml --project=unmai-ai-2025

@@ -32,7 +32,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 ENV GENERATE_SOURCEMAP=false
 
-# Next.js configuration is already set in next.config.ts
+# NEXT_PUBLIC_API_BASE_URL is read from .env.production at build time by Next.js
+# (Cloud Build step writes the correct backend URL to .env.production before this build)
 
 RUN npm run build
 
