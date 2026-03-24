@@ -25,20 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Auth Option 1: Workload Identity Federation (preferred, no key rotation needed)
-      # Requires: WIF_PROVIDER and WIF_SERVICE_ACCOUNT secrets
-      # Auth Option 2: Service Account Key (simpler setup)
-      # Requires: GCP_SA_KEY secret (JSON key file content)
-      - name: Authenticate to Google Cloud (WIF)
-        if: ${{ secrets.WIF_PROVIDER != '' }}
-        uses: google-github-actions/auth@v2
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
-
-      - name: Authenticate to Google Cloud (SA Key)
-        if: ${{ secrets.WIF_PROVIDER == '' }}
+      - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
